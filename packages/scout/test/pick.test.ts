@@ -38,4 +38,8 @@ describe('pickCandidate (mock)', () => {
   it('不存在的候选 → 抛错', async () => {
     await expect(pickCandidate(ctx, 'no/such')).rejects.toThrow(/候选不存在/)
   })
+  it('已 picked 的候选不可重复立项', async () => {
+    await pickCandidate(ctx, 'chatwoot/chatwoot')
+    await expect(pickCandidate(ctx, 'chatwoot/chatwoot')).rejects.toThrow(/已立项/)
+  })
 })
