@@ -1,0 +1,34 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { openDb } from '../src/db'
+
+function tmpDbPath() {
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fc-')), 'test.db')
+}
+
+describe('openDb', () => {
+  it('建表齐全且 WAL 开启', () => {
+    const db = openDb(tmpDbPath())
+    const names = db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all()
+      .map((r: any) => r.name)
+    for (const t of ['candidates', 'projects', 'assets', 'knowledge_atoms']) expect(names).toContain(t)
+    expect(db.pragma('journal_mode', { simple: true })).toBe('wal')
+  })
+  it('幂等：重复打开不报错', () => {
+    const p = tmpDbPath()
+    openDb(p).close()
+    expect(() => openDb(p)).not.toThrow()
+  })
+  it('assets 可插入并带 warnings 列', () => {
+    const db = openDb(tmpDbPath())
+    db.prepare("INSERT INTO projects (slug) VALUES ('t1')").run()
+    db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (1, 'copy', 'pain', 't1/copy/a.md', '[]')",
+    ).run()
+    const row: any = db.prepare('SELECT * FROM assets WHERE id = 1').get()
+    expect(row.status).toBe('draft')
+    expect(row.warnings).toBe('[]')
+  })
+})
