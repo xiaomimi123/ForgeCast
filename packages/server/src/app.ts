@@ -4,6 +4,7 @@ import { analyzeProject } from '@forgecast/analyst'
 import { HOOKS, type CoreCtx } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
+import { generateVideo } from '@forgecast/studio'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -184,6 +185,20 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const slug = c.req.param('slug')
     if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
     const taskId = queue.enqueue((log) => analyzeProject(ctx, slug, { onProgress: log }))
+    return c.json({ taskId })
+  })
+
+  // —— M5 视频 ——
+  app.post('/api/projects/:slug/video', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => generateVideo(ctx, {
+      slug,
+      assetId: typeof body.assetId === 'number' ? body.assetId : undefined,
+      tpl: 'flash',
+      onProgress: log,
+    }))
     return c.json({ taskId })
   })
 

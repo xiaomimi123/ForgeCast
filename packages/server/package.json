@@ -9,6 +9,7 @@
     "@forgecast/copywriter": "workspace:*",
     "@forgecast/core": "workspace:*",
     "@forgecast/scout": "workspace:*",
+    "@forgecast/studio": "workspace:*",
     "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0"
   },

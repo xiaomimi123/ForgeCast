@@ -4,6 +4,7 @@ import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
+import { generateVideo } from '@forgecast/studio'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -85,6 +86,18 @@ async function main() {
       console.log(`分析完成: workspace/${rel}`)
       break
     }
+    case 'video': {
+      const slug = rest.find((a) => !a.startsWith('--'))
+      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash [--asset=<id>]'); process.exit(1) }
+      const ctx = createCtx()
+      const assetArg = arg('asset')
+      const { filePath } = await generateVideo(ctx, {
+        slug, tpl: 'flash', assetId: assetArg ? Number(assetArg) : undefined,
+        onProgress: (m) => console.log(`  ${m}`),
+      })
+      console.log(`视频完成: workspace/${filePath}`)
+      break
+    }
     default:
       console.log(`forgecast <command>
   dev                              启动 API(:4321) + Web(:5173)
@@ -93,7 +106,8 @@ async function main() {
   scout --add <repo-url>           手动投喂一个 repo
   pick <owner/repo>                立项：建 workspace + 落源 README/目录树
   analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
-（rebrand/video/knowledge/calendar 属后续里程碑项，未实现）`)
+  video <slug> --tpl=flash         生成 flash 视频（渲染 copy 素材为 15s 竖屏）
+（rebrand/knowledge/calendar 属后续里程碑项，未实现）`)
   }
 }
 main()

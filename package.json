@@ -11,7 +11,8 @@
     "@forgecast/analyst": "workspace:*",
     "@forgecast/copywriter": "workspace:*",
     "@forgecast/core": "workspace:*",
-    "@forgecast/scout": "workspace:*"
+    "@forgecast/scout": "workspace:*",
+    "@forgecast/studio": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
