@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { analyzeProject } from '@forgecast/analyst'
 import { HOOKS, type CoreCtx } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
@@ -176,6 +177,14 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
     }
+  })
+
+  // —— M2 analyst ——
+  app.post('/api/projects/:slug/analyze', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const taskId = queue.enqueue((log) => analyzeProject(ctx, slug, { onProgress: log }))
+    return c.json({ taskId })
   })
 
   return app

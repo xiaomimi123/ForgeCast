@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": { "dev": "tsx src/index.ts", "test": "vitest run --passWithNoTests" },
   "dependencies": {
+    "@forgecast/analyst": "workspace:*",
     "@forgecast/copywriter": "workspace:*",
     "@forgecast/core": "workspace:*",
     "@forgecast/scout": "workspace:*",

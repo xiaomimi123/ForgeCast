@@ -8,6 +8,7 @@
     "test": "pnpm -r test"
   },
   "dependencies": {
+    "@forgecast/analyst": "workspace:*",
     "@forgecast/copywriter": "workspace:*",
     "@forgecast/core": "workspace:*",
     "@forgecast/scout": "workspace:*"

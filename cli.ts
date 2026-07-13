@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { spawn } from 'node:child_process'
+import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
@@ -76,6 +77,14 @@ async function main() {
       console.log(`已立项: ${slug} → workspace/${slug}/source/（可接着 forgecast analyze ${slug}）`)
       break
     }
+    case 'analyze': {
+      const slug = rest.find((a) => !a.startsWith('--'))
+      if (!slug) { console.error('用法: forgecast analyze <slug>'); process.exit(1) }
+      const ctx = createCtx()
+      const { path: rel } = await analyzeProject(ctx, slug, { onProgress: (m) => console.log(`  ${m}`) })
+      console.log(`分析完成: workspace/${rel}`)
+      break
+    }
     default:
       console.log(`forgecast <command>
   dev                              启动 API(:4321) + Web(:5173)
@@ -83,7 +92,8 @@ async function main() {
   scout [--topics=..] [--limit=N]  发现开源项目、协议过滤+评分入候选池
   scout --add <repo-url>           手动投喂一个 repo
   pick <owner/repo>                立项：建 workspace + 落源 README/目录树
-（analyze/rebrand/video/knowledge/calendar 属后续里程碑项，未实现）`)
+  analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
+（rebrand/video/knowledge/calendar 属后续里程碑项，未实现）`)
   }
 }
 main()

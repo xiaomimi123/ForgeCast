@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@forgecast/analyst':
+        specifier: workspace:*
+        version: link:packages/analyst
       '@forgecast/copywriter':
         specifier: workspace:*
         version: link:packages/copywriter
@@ -137,6 +140,9 @@ importers:
 
   packages/server:
     dependencies:
+      '@forgecast/analyst':
+        specifier: workspace:*
+        version: link:../analyst
       '@forgecast/copywriter':
         specifier: workspace:*
         version: link:../copywriter
