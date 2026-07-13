@@ -1,2 +1,3 @@
-// @forgecast/studio — M5 视频。渲染/generate 在后续任务追加导出。
+// @forgecast/studio — M5 视频。render 内部用，不导出；generate 为主入口。
 export * from './props'
+export * from './generate'
