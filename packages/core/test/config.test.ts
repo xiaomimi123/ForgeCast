@@ -26,4 +26,9 @@ describe('loadConfig', () => {
     expect(cfg.paths.workspace).toBe('/repo/workspace')
     expect(cfg.paths.db).toBe('/repo/db/forgecast.db')
   })
+  it('github 默认 mock，可读 token', () => {
+    expect(loadConfig('/tmp/x', {}).github).toEqual({ mode: 'mock', token: '' })
+    const cfg = loadConfig('/tmp/x', { FORGECAST_GITHUB_MODE: 'live', FORGECAST_GITHUB_TOKEN: 'ghp_1' })
+    expect(cfg.github).toEqual({ mode: 'live', token: 'ghp_1' })
+  })
 })

@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 export type LlmMode = 'mock' | 'live'
+export type GithubMode = 'mock' | 'live'
 
 export interface ForgecastConfig {
   root: string
@@ -10,18 +11,18 @@ export interface ForgecastConfig {
     apiKey: string
     models: { analysis: string; copy: string; scoring: string }
   }
+  github: { mode: GithubMode; token: string }
   paths: { workspace: string; db: string; templates: string }
 }
 
 export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env): ForgecastConfig {
-  // root 未显式传入时优先用 env.INIT_CWD（pnpm/npm 会把它设为命令发起目录，即仓库根）兜底，
-  // 而不是直接用 process.cwd()：`pnpm --filter <pkg> dev/test` 会把子进程 cwd 切到该包目录下，
-  // 若用 process.cwd() 会导致 db/workspace 被建在 packages/server 之类的子目录里。
+  // 未传 root 时用 INIT_CWD 兜底（pnpm --filter 会把子进程 cwd 切到包目录）
   const resolvedRoot = root ?? env.INIT_CWD ?? process.cwd()
   const mode: LlmMode = env.FORGECAST_LLM_MODE === 'live' ? 'live' : 'mock'
   if (mode === 'live' && !env.FORGECAST_LLM_KEY) {
     throw new Error('FORGECAST_LLM_MODE=live 时必须设置 FORGECAST_LLM_KEY（.env）')
   }
+  const githubMode: GithubMode = env.FORGECAST_GITHUB_MODE === 'live' ? 'live' : 'mock'
   return {
     root: resolvedRoot,
     llm: {
@@ -33,6 +34,10 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
         copy: env.FORGECAST_MODEL_COPY ?? 'claude-sonnet-5',
         scoring: env.FORGECAST_MODEL_SCORING ?? 'claude-haiku-4-5',
       },
+    },
+    github: {
+      mode: githubMode,
+      token: env.FORGECAST_GITHUB_TOKEN ?? '',
     },
     paths: {
       workspace: path.join(resolvedRoot, 'workspace'),
