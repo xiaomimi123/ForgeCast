@@ -31,10 +31,12 @@ pnpm exec tsx cli.ts copy <slug> --hook=pain|sideline|infogap|story [--n=N]
 forgecast scout [--topics=..] [--limit=N]   # 发现开源项目、协议过滤+四维评分入候选池
 forgecast scout --add=<repo-url>            # 手动投喂一个 repo
 forgecast pick <owner/repo>                 # 立项：建 workspace + 落源 README/目录树到 source/
+forgecast analyze <slug>                    # 生成商业化分析 analysis.md（读 source/README）
+forgecast video <slug> --tpl=flash [--asset=<id>]  # 渲染 copy 素材为 15s 竖屏 flash 视频
 ```
 
 ## 目录结构
-- `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/server` 本地 API
+- `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（Remotion）；`packages/server` 本地 API
 - `apps/web` Web 控制台；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物
 
 ## Docker（可选）
