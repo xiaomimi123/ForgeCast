@@ -20,4 +20,10 @@ describe('loadConfig', () => {
     expect(cfg.llm.apiKey).toBe('sk-1')
     expect(cfg.llm.models.copy).toBe('m-copy')
   })
+  it('未传 root 时用 INIT_CWD 兜底（修 pnpm --filter 切 cwd 的坑）', () => {
+    const cfg = loadConfig(undefined, { INIT_CWD: '/repo' })
+    expect(cfg.root).toBe('/repo')
+    expect(cfg.paths.workspace).toBe('/repo/workspace')
+    expect(cfg.paths.db).toBe('/repo/db/forgecast.db')
+  })
 })
