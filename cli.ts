@@ -43,8 +43,12 @@ async function main() {
     }
     case 'scout': {
       const ctx = createCtx()
-      const addUrl = arg('add')
-      if (addUrl) {
+      // 兼容 --add=<url> 与 --add <url> 两种写法
+      const addFlagIdx = rest.indexOf('--add')
+      const addUrl = arg('add') ?? (addFlagIdx >= 0 ? rest[addFlagIdx + 1] : undefined)
+      const wantsAdd = arg('add') !== undefined || addFlagIdx >= 0
+      if (wantsAdd) {
+        if (!addUrl || addUrl.startsWith('--')) { console.error('用法: forgecast scout --add=<repo-url>（或 --add <repo-url>）'); process.exit(1) }
         await addRepo(ctx, addUrl)
         console.log(`已投喂: ${addUrl}`)
         break

@@ -22,10 +22,15 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_LLM_BASE_URL | OpenAI 兼容中转地址，默认 aitoken.homes/v1 |
 | FORGECAST_LLM_KEY | live 模式必填 |
 | FORGECAST_MODEL_ANALYSIS / COPY / SCORING | 各环节模型 id |
+| FORGECAST_GITHUB_MODE | `mock`（默认，无 token 用 fixture）/ `live`（走真实 GitHub API） |
+| FORGECAST_GITHUB_TOKEN | live 模式可选，提升 GitHub API 限流额度 |
 
 ## CLI
 ```bash
 pnpm exec tsx cli.ts copy <slug> --hook=pain|sideline|infogap|story [--n=N]
+forgecast scout [--topics=..] [--limit=N]   # 发现开源项目、协议过滤+四维评分入候选池
+forgecast scout --add=<repo-url>            # 手动投喂一个 repo
+forgecast pick <owner/repo>                 # 立项：建 workspace + 落源 README/目录树到 source/
 ```
 
 ## 目录结构
@@ -39,4 +44,4 @@ docker compose up -d
 ```
 
 ## 路线图
-见 `开源变现内容工厂-开发文档.md` §10：接下来是 M5 视频（Remotion）、M2 分析、M1 抓取、M6 日历复盘。
+见 `开源变现内容工厂-开发文档.md` §10：M1 抓取已交付引擎（CLI+API），Web 看板页待做；接下来是 M5 视频（Remotion）、M2 分析、M6 日历复盘。
