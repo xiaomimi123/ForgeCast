@@ -25,7 +25,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   if (!project) throw new Error(`项目不存在: ${slug}`)
 
   const copy: any = input.assetId
-    ? ctx.db.prepare("SELECT * FROM assets WHERE id = ? AND type = 'copy'").get(input.assetId)
+    ? ctx.db.prepare("SELECT * FROM assets WHERE id = ? AND project_id = ? AND type = 'copy'").get(input.assetId, project.id)
     : ctx.db.prepare("SELECT * FROM assets WHERE project_id = ? AND type = 'copy' ORDER BY id DESC LIMIT 1").get(project.id)
   if (!copy) throw new Error(`没有可用的文案素材（先在素材工坊生成文案）: ${slug}`)
 

@@ -37,4 +37,9 @@ describe('generateVideo (stub)', () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('empty')").run()
     await expect(generateVideo(ctx, { slug: 'empty' })).rejects.toThrow(/文案/)
   })
+  it('assetId 属于别的项目时不被误用（按 project_id 限定）', async () => {
+    // beforeEach 已建 project demo(id=1) + 一条 copy(id=1) 属 demo
+    ctx.db.prepare("INSERT INTO projects (slug) VALUES ('other')").run() // id=2
+    await expect(generateVideo(ctx, { slug: 'other', assetId: 1 })).rejects.toThrow(/文案/)
+  })
 })
