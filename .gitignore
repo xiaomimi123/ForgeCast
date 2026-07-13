@@ -3,3 +3,8 @@ dist/
 db/
 .env
 *.log
+
+# workspace 运行时产物（analysis.md 等种子数据仍跟踪）
+workspace/*/copy/
+workspace/*/covers/
+workspace/*/raw/

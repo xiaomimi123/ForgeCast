@@ -1,0 +1,17 @@
+name: forgecast           # 固定 project name（仓库路径含中文，否则派生的 project name 为空会报错）
+
+services:
+  app:                      # Hono API + CLI 入口
+    build: .
+    ports: ["127.0.0.1:4321:4321"]
+    volumes:
+      - ./workspace:/app/workspace
+      - ./db:/app/db
+      - ./templates:/app/templates
+    env_file: .env
+
+  # renderer: Remotion 渲染 worker —— P1 item 4 实装（Chromium+ffmpeg+中文字体封镜像）
+  # renderer:
+  #   build: { context: ., dockerfile: Dockerfile.renderer }
+  #   volumes:
+  #     - ./workspace:/app/workspace
