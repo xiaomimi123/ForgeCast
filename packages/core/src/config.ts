@@ -2,6 +2,7 @@ import path from 'node:path'
 
 export type LlmMode = 'mock' | 'live'
 export type GithubMode = 'mock' | 'live'
+export type VideoMode = 'render' | 'stub'
 
 export interface ForgecastConfig {
   root: string
@@ -12,6 +13,7 @@ export interface ForgecastConfig {
     models: { analysis: string; copy: string; scoring: string }
   }
   github: { mode: GithubMode; token: string }
+  video: { mode: VideoMode }
   paths: { workspace: string; db: string; templates: string }
 }
 
@@ -23,6 +25,7 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
     throw new Error('FORGECAST_LLM_MODE=live 时必须设置 FORGECAST_LLM_KEY（.env）')
   }
   const githubMode: GithubMode = env.FORGECAST_GITHUB_MODE === 'live' ? 'live' : 'mock'
+  const videoMode: VideoMode = env.FORGECAST_VIDEO_MODE === 'stub' ? 'stub' : 'render'
   return {
     root: resolvedRoot,
     llm: {
@@ -35,10 +38,8 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
         scoring: env.FORGECAST_MODEL_SCORING ?? 'claude-haiku-4-5',
       },
     },
-    github: {
-      mode: githubMode,
-      token: env.FORGECAST_GITHUB_TOKEN ?? '',
-    },
+    github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
+    video: { mode: videoMode },
     paths: {
       workspace: path.join(resolvedRoot, 'workspace'),
       db: path.join(resolvedRoot, 'db', 'forgecast.db'),

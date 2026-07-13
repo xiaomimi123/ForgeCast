@@ -31,4 +31,8 @@ describe('loadConfig', () => {
     const cfg = loadConfig('/tmp/x', { FORGECAST_GITHUB_MODE: 'live', FORGECAST_GITHUB_TOKEN: 'ghp_1' })
     expect(cfg.github).toEqual({ mode: 'live', token: 'ghp_1' })
   })
+  it('video 默认 render，可设 stub', () => {
+    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render' })
+    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub' })
+  })
 })
