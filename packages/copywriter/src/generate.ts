@@ -27,7 +27,7 @@ function readIfExists(p: string): string {
 }
 
 export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Promise<GeneratedAsset[]> {
-  const { slug, hook, n = 1, feedback, onProgress = () => {} } = input
+  const { slug, hook, n = 1, feedback, renderCovers = true, onProgress = () => {} } = input
   const project: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug)
   if (!project) throw new Error(`项目不存在: ${slug}`)
 
@@ -70,6 +70,29 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
     ).run(project.id, 'copy', hook, relPath, JSON.stringify(warnings))
     results.push({ assetId: Number(info.lastInsertRowid), type: 'copy', filePath: relPath, warnings })
     onProgress(`第 ${i}/${n} 篇完成: ${relPath}${warnings.length ? `（⚠ ${warnings.join('；')}）` : ''}`)
+
+    // —— Task 8 追加：封面渲染（失败降级为 warning，不阻断文案产出）——
+    if (renderCovers) {
+      onProgress(`渲染封面第 ${i}/${n} 篇…`)
+      const doc = parseCopyOutput(raw)
+      const coverName = `${hook}-${stamp}-${i}.png`
+      const coverRel = path.join(slug, 'covers', coverName)
+      try {
+        const { renderCover } = await import('./cover')
+        await renderCover({
+          templatesDir: ctx.config.paths.templates,
+          main: doc.cover.main, sub: doc.cover.sub,
+          outPath: path.join(ctx.config.paths.workspace, coverRel),
+        })
+        const cInfo = ctx.db.prepare(
+          'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
+        ).run(project.id, 'cover', hook, coverRel, '[]')
+        results.push({ assetId: Number(cInfo.lastInsertRowid), type: 'cover', filePath: coverRel, warnings: [] })
+        onProgress(`封面完成: ${coverRel}`)
+      } catch (err) {
+        onProgress(`⚠ 封面渲染失败（文案不受影响）: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
   }
   return results
 }

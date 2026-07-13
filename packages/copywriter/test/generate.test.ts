@@ -24,7 +24,7 @@ beforeEach(() => {
 describe('generateCopy', () => {
   it('mock 模式产出 n 篇文案：落盘 + assets 登记 + 进度回调', async () => {
     const logs: string[] = []
-    const out = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 2, onProgress: (m) => logs.push(m) })
+    const out = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 2, renderCovers: false, onProgress: (m) => logs.push(m) })
     const copies = out.filter((a) => a.type === 'copy')
     expect(copies).toHaveLength(2)
     for (const a of copies) {

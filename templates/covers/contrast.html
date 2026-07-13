@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root { --left:#37474f; --right:#00897b; --fg:#ffffff; }
+* { margin:0; box-sizing:border-box; }
+body { width:1242px; height:1660px; display:flex; flex-direction:column;
+  font-family:"PingFang SC","Noto Sans CJK SC",sans-serif; color:var(--fg); }
+.main { background:#111; font-size:92px; font-weight:900; text-align:center;
+  padding:70px 60px; line-height:1.3; }
+.row { flex:1; display:flex; }
+.cell { flex:1; display:flex; align-items:center; justify-content:center;
+  font-size:64px; font-weight:700; padding:40px; text-align:center; }
+.cell.old { background:var(--left); } .cell.new { background:var(--right); }
+.sub { background:#111; font-size:52px; text-align:center; padding:50px; }
+</style></head><body>
+<div class="main">{{main}}</div>
+<div class="row"><div class="cell old">以前 😫</div><div class="cell new">现在 😎</div></div>
+<div class="sub">{{sub}}</div>
+</body></html>
