@@ -1,0 +1,13 @@
+{
+  "name": "@forgecast/core",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "test": "vitest run --passWithNoTests" },
+  "dependencies": { "better-sqlite3": "^11.7.0" },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.11.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "forgecast",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "tsx cli.ts dev",
+    "test": "pnpm -r test"
+  },
+  "dependencies": {
+    "@forgecast/copywriter": "workspace:*",
+    "@forgecast/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
