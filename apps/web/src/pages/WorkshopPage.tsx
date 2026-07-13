@@ -50,6 +50,28 @@ export default function WorkshopPage() {
     }
   }
 
+  async function makeVideo(assetId: number) {
+    if (!selected || running) return
+    setRunning(true)
+    setLogs([])
+    try {
+      const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
+        method: 'POST', body: JSON.stringify({ assetId }),
+      })
+      subscribeTask(taskId, (e) => {
+        setLogs((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
+        logRef.current?.scrollTo({ top: 999999 })
+        if (e.type === 'done' || e.type === 'error') {
+          setRunning(false)
+          qc.invalidateQueries({ queryKey: ['assets', selected] })
+        }
+      })
+    } catch (err) {
+      setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
+      setRunning(false)
+    }
+  }
+
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
       {/* 左侧：生成面板 */}
@@ -92,7 +114,7 @@ export default function WorkshopPage() {
       <div className="space-y-4">
         {assets.data?.length === 0 && <div className="text-neutral-400 text-sm">暂无素材，点左侧「生成」</div>}
         {assets.data?.map((a) => (
-          <AssetCard key={a.id} asset={a} onRegenerate={(fb) => generate(fb)} />
+          <AssetCard key={a.id} asset={a} onRegenerate={(fb) => generate(fb)} onVideo={(id) => makeVideo(id)} />
         ))}
       </div>
     </div>

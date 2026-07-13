@@ -3,9 +3,10 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api, type Asset } from '../api'
 
-export default function AssetCard({ asset, onRegenerate }: {
+export default function AssetCard({ asset, onRegenerate, onVideo }: {
   asset: Asset
   onRegenerate: (feedback: string) => void
+  onVideo?: (assetId: number) => void
 }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
@@ -26,6 +27,15 @@ export default function AssetCard({ asset, onRegenerate }: {
     mutationFn: (status: string) => api(`/api/assets/${asset.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
   })
+
+  if (asset.type === 'video') {
+    return (
+      <div className="rounded-lg border bg-white p-3 space-y-2">
+        <div className="text-sm text-neutral-500">视频 · {asset.hook} · {asset.status}</div>
+        <video src={`/files/${asset.file_path}`} controls className="w-full max-h-96 rounded border bg-black" />
+      </div>
+    )
+  }
 
   if (asset.type === 'cover') {
     return (
@@ -78,6 +88,9 @@ export default function AssetCard({ asset, onRegenerate }: {
           value={feedback} onChange={(e) => setFeedback(e.target.value)} />
         <button className="rounded border px-3 py-1 text-sm" disabled={!feedback}
           onClick={() => { onRegenerate(feedback); setFeedback('') }}>重新生成</button>
+        {onVideo && (
+          <button className="rounded border px-3 py-1 text-sm" onClick={() => onVideo(asset.id)}>生成视频</button>
+        )}
       </div>
     </div>
   )
