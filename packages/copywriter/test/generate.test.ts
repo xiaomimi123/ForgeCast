@@ -11,9 +11,9 @@ let root: string
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-gen-'))
   const config = loadConfig(root, {}) // mock 模式
-  // 测试用真实模板目录：Task 6 实际把模板资产建在 packages/copywriter/templates/
-  // （而非仓库根 templates/），故用 '../templates' 从本测试文件定位到该目录
-  config.paths.templates = path.resolve(__dirname, '../templates')
+  // 测试用真实模板目录：模板资产在仓库根 templates/（与 loadConfig 的 <root>/templates 一致），
+  // 从本测试文件 packages/copywriter/test/ 上溯三级即仓库根
+  config.paths.templates = path.resolve(__dirname, '../../../templates')
   const db = openDb(config.paths.db)
   db.prepare("INSERT INTO projects (slug, target_buyer) VALUES ('demo-project', '中小电商卖家')").run()
   fs.mkdirSync(path.join(root, 'workspace/demo-project'), { recursive: true })
