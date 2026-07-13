@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, syncWorkspaceProjects, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from '../src/app'
+import { createTaskQueue } from '../src/tasks'
 
 let ctx: CoreCtx
 
@@ -25,7 +26,7 @@ describe('projects API', () => {
   })
   it('GET /api/projects 列表；GET 详情带 analysisMd；PATCH 可改字段', async () => {
     syncWorkspaceProjects(ctx)
-    const app = createApp(ctx)
+    const app = createApp(ctx, createTaskQueue())
     const list = await (await app.request('/api/projects')).json() as any[]
     expect(list).toHaveLength(1)
     const detail = await (await app.request('/api/projects/demo-project')).json() as any
@@ -40,7 +41,7 @@ describe('projects API', () => {
     expect(after.price_deploy).toBe(1999)
   })
   it('未知项目 404', async () => {
-    const app = createApp(ctx)
+    const app = createApp(ctx, createTaskQueue())
     expect((await app.request('/api/projects/nope')).status).toBe(404)
   })
 })

@@ -2,12 +2,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
+import type { TaskEvent, TaskQueue } from './tasks'
 
 // 可通过 PATCH 修改的项目字段白名单
 const PATCHABLE = ['brand_name', 'target_buyer', 'demo_url', 'price_deploy', 'price_custom', 'stage'] as const
 
-/** 创建 Hono app：项目 REST API（Task 10 起再传入 queue 参数） */
-export function createApp(ctx: CoreCtx): Hono {
+/** 创建 Hono app：项目 REST API + 任务队列 SSE 进度流 */
+export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   const app = new Hono()
 
   app.get('/api/projects', (c) => {
@@ -33,6 +35,24 @@ export function createApp(ctx: CoreCtx): Hono {
         .run(...keys.map((k) => body[k]), slug)
     }
     return c.json({ ok: true })
+  })
+
+  app.get('/api/tasks/:id/events', (c) => {
+    const task = queue.get(c.req.param('id'))
+    if (!task) return c.json({ error: '任务不存在' }, 404)
+    return streamSSE(c, async (stream) => {
+      let closed = false
+      const send = (e: TaskEvent) => stream.writeSSE({ data: JSON.stringify(e) })
+      for (const e of task.events) await send(e) // 回放历史（订阅前已发生的事件不丢）
+      if (task.status === 'done' || task.status === 'failed') return
+      await new Promise<void>((resolve) => {
+        const off = queue.subscribe(task.id, async (e) => {
+          await send(e)
+          if (e.type === 'done' || e.type === 'error') { off(); closed = true; resolve() }
+        })
+        stream.onAbort(() => { if (!closed) { off(); resolve() } })
+      })
+    })
   })
 
   return app
