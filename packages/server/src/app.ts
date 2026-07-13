@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { HOOKS, type CoreCtx } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
+import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -141,6 +142,40 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.body(fs.readFileSync(abs) as any, 200, {
       'content-type': MIME[path.extname(abs)] ?? 'application/octet-stream',
     })
+  })
+
+  // —— M1 scout ——
+  app.post('/api/scout', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => scoutCandidates(ctx, {
+      topics: Array.isArray(body.topics) ? body.topics : undefined,
+      limit: typeof body.limit === 'number' ? body.limit : undefined,
+    }).then((r) => { log(`发现 ${r.found} 个，评分 ${r.scored}，协议不过 ${r.rejected}`); return r }))
+    return c.json({ taskId })
+  })
+
+  app.post('/api/candidates/add', async (c) => {
+    const { url } = await c.req.json().catch(() => ({}))
+    if (typeof url !== 'string' || !url) return c.json({ error: '缺少 url' }, 400)
+    const taskId = queue.enqueue((log) => addRepo(ctx, url).then(() => log(`已投喂 ${url}`)))
+    return c.json({ taskId })
+  })
+
+  app.get('/api/candidates', (c) => {
+    return c.json(ctx.db.prepare(
+      'SELECT * FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
+    ).all())
+  })
+
+  app.post('/api/candidates/pick', async (c) => {
+    const { repo } = await c.req.json().catch(() => ({}))
+    if (typeof repo !== 'string' || !repo) return c.json({ error: '缺少 repo' }, 400)
+    try {
+      const { slug } = await pickCandidate(ctx, repo)
+      return c.json({ slug })
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
   })
 
   return app
