@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@forgecast/copywriter": "workspace:*",
-    "@forgecast/core": "workspace:*"
+    "@forgecast/core": "workspace:*",
+    "@forgecast/scout": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
+import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -40,11 +41,45 @@ async function main() {
       for (const a of out) console.log(`  [${a.type}] workspace/${a.filePath}${a.warnings.length ? ` ⚠ ${a.warnings.join('；')}` : ''}`)
       break
     }
+    case 'scout': {
+      const ctx = createCtx()
+      const addUrl = arg('add')
+      if (addUrl) {
+        await addRepo(ctx, addUrl)
+        console.log(`已投喂: ${addUrl}`)
+        break
+      }
+      const topics = arg('topics')?.split(',').map((s) => s.trim()).filter(Boolean)
+      const limit = arg('limit') ? Number(arg('limit')) : undefined
+      console.log('抓取评分中（mock/live 由 .env 决定）…')
+      const r = await scoutCandidates(ctx, { topics, limit })
+      console.log(`发现 ${r.found}，评分 ${r.scored}，协议不过 ${r.rejected}\n`)
+      const rows = ctx.db.prepare(
+        "SELECT repo, stars, license, score, score_detail FROM candidates WHERE license_ok = 1 ORDER BY score DESC LIMIT 20",
+      ).all() as any[]
+      console.log('名次  score  stars  license      repo')
+      rows.forEach((x, i) => {
+        const why = x.score_detail ? JSON.parse(x.score_detail).rationale : ''
+        console.log(`${String(i + 1).padStart(2)}   ${String(x.score).padStart(5)}  ${String(x.stars).padStart(6)}  ${(x.license ?? '').padEnd(12)} ${x.repo}  ${why}`)
+      })
+      break
+    }
+    case 'pick': {
+      const repo = rest.find((a) => !a.startsWith('--'))
+      if (!repo) { console.error('用法: forgecast pick <owner/repo>'); process.exit(1) }
+      const ctx = createCtx()
+      const { slug } = await pickCandidate(ctx, repo)
+      console.log(`已立项: ${slug} → workspace/${slug}/source/（可接着 forgecast analyze ${slug}）`)
+      break
+    }
     default:
       console.log(`forgecast <command>
   dev                              启动 API(:4321) + Web(:5173)
   copy <slug> --hook=<型> [--n=N]  生成文案+封面（mock/live 由 .env 决定）
-（scout/analyze/rebrand/video/knowledge/calendar 属后续里程碑项，未实现）`)
+  scout [--topics=..] [--limit=N]  发现开源项目、协议过滤+评分入候选池
+  scout --add <repo-url>           手动投喂一个 repo
+  pick <owner/repo>                立项：建 workspace + 落源 README/目录树
+（analyze/rebrand/video/knowledge/calendar 属后续里程碑项，未实现）`)
   }
 }
 main()

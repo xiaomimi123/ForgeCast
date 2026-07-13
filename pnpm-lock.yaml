@@ -14,6 +14,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:packages/core
+      '@forgecast/scout':
+        specifier: workspace:*
+        version: link:packages/scout
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
