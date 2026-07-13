@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx, HookType } from '@forgecast/core'
@@ -62,7 +63,8 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
     onProgress(`敏感词校验第 ${i}/${n} 篇…`)
     const warnings = checkBannedWords(raw).map((w) => `含敏感词: ${w}`)
 
-    const fileName = `${hook}-${stamp}-${i}.md`
+    const rand = randomBytes(4).toString('hex')
+    const fileName = `${hook}-${stamp}-${i}-${rand}.md`
     const relPath = path.join(slug, 'copy', fileName)
     fs.writeFileSync(path.join(copyDir, fileName), raw, 'utf8')
     const info = ctx.db.prepare(
@@ -75,7 +77,7 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
     if (renderCovers) {
       onProgress(`渲染封面第 ${i}/${n} 篇…`)
       const doc = parseCopyOutput(raw)
-      const coverName = `${hook}-${stamp}-${i}.png`
+      const coverName = `${hook}-${stamp}-${i}-${rand}.png`
       const coverRel = path.join(slug, 'covers', coverName)
       try {
         const { renderCover } = await import('./cover')

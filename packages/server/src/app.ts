@@ -63,8 +63,9 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     if (!project) return c.json({ error: '项目不存在' }, 404)
     const body = await c.req.json()
     if (!HOOKS.includes(body.hook)) return c.json({ error: `hook 必须是 ${HOOKS.join('/')}` }, 400)
+    const n = Math.min(Math.max(1, Number(body.n) || 1), 5)
     const taskId = queue.enqueue((log) => generateCopy(ctx, {
-      slug, hook: body.hook, n: body.n ?? 1, feedback: body.feedback,
+      slug, hook: body.hook, n, feedback: body.feedback,
       renderCovers: body.renderCovers ?? true, onProgress: log,
     }))
     return c.json({ taskId })

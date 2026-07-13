@@ -67,6 +67,24 @@ describe('copy 生成 + assets API', () => {
     const after = await (await app.request('/api/projects/demo-project/assets')).json() as any[]
     expect(after.find((a) => a.id === copy.id).status).toBe('approved')
   })
+  it('n=0 被夹取为 1，不产出空任务', async () => {
+    const res = await app.request('/api/projects/demo-project/copy', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hook: 'pain', n: 0, renderCovers: false }),
+    })
+    expect(res.status).toBe(200)
+    const { taskId } = await res.json() as any
+    for (let i = 0; i < 100; i++) {
+      await wait(30)
+      const s = queue.get(taskId)!.status
+      if (s === 'done') break
+      if (s === 'failed') throw new Error(queue.get(taskId)!.events.at(-1)!.message)
+      if (i === 99) throw new Error('任务超时')
+    }
+    const assets = await (await app.request('/api/projects/demo-project/assets')).json() as any[]
+    const copies = assets.filter((a) => a.type === 'copy')
+    expect(copies.length).toBeGreaterThanOrEqual(1)
+  })
   it('非法 status 拒绝', async () => {
     await generateOne()
     const assets = await (await app.request('/api/projects/demo-project/assets')).json() as any[]

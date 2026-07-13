@@ -45,4 +45,17 @@ describe('generateCopy', () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('empty')").run()
     await expect(generateCopy(ctx, { slug: 'empty', hook: 'pain' })).rejects.toThrow(/analysis\.md/)
   })
+  it('同秒内连续两次生成不覆盖：文件名互异，两份文件都存在且内容都在', async () => {
+    const out1 = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    const out2 = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    const path1 = out1[0].filePath
+    const path2 = out2[0].filePath
+    expect(path1).not.toBe(path2)
+    const abs1 = path.join(ctx.config.paths.workspace, path1)
+    const abs2 = path.join(ctx.config.paths.workspace, path2)
+    expect(fs.existsSync(abs1)).toBe(true)
+    expect(fs.existsSync(abs2)).toBe(true)
+    expect(fs.readFileSync(abs1, 'utf8')).toContain('## 小红书正文')
+    expect(fs.readFileSync(abs2, 'utf8')).toContain('## 小红书正文')
+  })
 })
