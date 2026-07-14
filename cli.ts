@@ -100,8 +100,10 @@ async function main() {
       if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash [--asset=<id>]'); process.exit(1) }
       const ctx = createCtx()
       const assetArg = arg('asset')
+      // tpl 白名单：仅 story 显式放行，其余（含未传）回落 flash
+      const tpl = arg('tpl') === 'story' ? 'story' : 'flash'
       const { filePath } = await generateVideo(ctx, {
-        slug, tpl: 'flash', assetId: assetArg ? Number(assetArg) : undefined,
+        slug, tpl, assetId: assetArg ? Number(assetArg) : undefined,
         onProgress: (m) => console.log(`  ${m}`),
       })
       console.log(`视频完成: workspace/${filePath}`)

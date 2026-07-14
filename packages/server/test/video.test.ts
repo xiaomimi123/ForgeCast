@@ -43,6 +43,14 @@ describe('video API (stub)', () => {
     const assets = await (await app.request('/api/projects/demo/assets')).json() as any[]
     expect(assets.some((a) => a.type === 'video')).toBe(true)
   })
+  it('POST video {tpl:story} → 任务完成 → video 素材', async () => {
+    const { taskId } = await (await app.request('/api/projects/demo/video', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tpl: 'story' }),
+    })).json() as any
+    await runTask(taskId)
+    const assets = await (await app.request('/api/projects/demo/assets')).json() as any[]
+    expect(assets.some((a) => a.type === 'video')).toBe(true)
+  })
   it('未知项目 → 404', async () => {
     expect((await app.request('/api/projects/nope/video', { method: 'POST' })).status).toBe(404)
   })
