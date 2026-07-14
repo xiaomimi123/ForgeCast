@@ -45,6 +45,25 @@ describe('generateCopy', () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('empty')").run()
     await expect(generateCopy(ctx, { slug: 'empty', hook: 'pain' })).rejects.toThrow(/analysis\.md/)
   })
+  it('已 sync（有原子）时用检索原子、system 不再塞整包知识 dump', async () => {
+    ctx.db.prepare("INSERT INTO knowledge_atoms (source, topic, content) VALUES ('dbskill','钩子','痛点要写现状成本，三选一量化')").run()
+    let capturedSystem = ''
+    let capturedPrompt = ''
+    const real = ctx.llm.complete.bind(ctx.llm)
+    ctx.llm.complete = async (req) => { capturedSystem = req.system ?? ''; capturedPrompt = req.prompt ?? ''; return real(req) }
+    await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    // 整包 dump（templates/knowledge/hooks-basics.md）里的句子不应进 system
+    expect(capturedSystem).not.toContain('前3秒决定完播')
+    // 检索到的原子进入 prompt 的【方法论要点】
+    expect(capturedPrompt).toContain('痛点要写现状成本')
+  })
+  it('未 sync（无原子）时回落整包知识 dump 进 system', async () => {
+    let capturedSystem = ''
+    const real = ctx.llm.complete.bind(ctx.llm)
+    ctx.llm.complete = async (req) => { capturedSystem = req.system ?? ''; return real(req) }
+    await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    expect(capturedSystem).toContain('前3秒决定完播')
+  })
   it('同秒内连续两次生成不覆盖：文件名互异，两份文件都存在且内容都在', async () => {
     const out1 = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
     const out2 = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })

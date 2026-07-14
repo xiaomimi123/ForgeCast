@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
-import { generateCopy } from '@forgecast/copywriter'
+import { generateCopy, syncKnowledge } from '@forgecast/copywriter'
 import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
@@ -162,6 +162,21 @@ async function main() {
       }
       break
     }
+    case 'knowledge': {
+      const sub = rest.find((a) => !a.startsWith('--'))
+      const ctx = createCtx()
+      if (sub === 'sync') {
+        const { count, files } = syncKnowledge(ctx, { source: arg('source') })
+        console.log(`知识同步完成：${files} 个文件 → ${count} 条原子入库（source=dbskill）`)
+      } else if (sub === 'list') {
+        const rows = ctx.db.prepare('SELECT topic, content FROM knowledge_atoms ORDER BY id').all() as any[]
+        console.log(`知识原子共 ${rows.length} 条:`)
+        for (const r of rows) console.log(`  [${r.topic ?? '—'}] ${r.content.slice(0, 60)}`)
+      } else {
+        console.error('用法: forgecast knowledge <sync|list> [--source=<dir>]'); process.exit(1)
+      }
+      break
+    }
     case 'report': {
       const r = weeklyReport(createCtx(), arg('since'))
       console.log(`周报（自 ${r.since}）  钩子 | 发布 | 询单`)
@@ -185,7 +200,8 @@ async function main() {
   lead <id> --wechat=<..>               登记询单（归因到素材）
   calendar                              今日排期建议 + 库存
   report [--since=YYYY-MM-DD]           各钩子转化周报
-（knowledge 属后续里程碑项，未实现）`)
+  knowledge sync [--source=<dir>]       摄取知识目录 markdown → 原子入库（喂文案生成）
+  knowledge list                        列出已入库知识原子`)
   }
 }
 main()

@@ -39,7 +39,12 @@ forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/�
 forgecast lead <id> --wechat=<..> [--intent=<..>]           # 登记询单（归因到素材）
 forgecast calendar                                          # 今日排期建议 + 库存/冷却
 forgecast report [--since=YYYY-MM-DD]                       # 各钩子转化周报
+forgecast knowledge sync [--source=<dir>]                   # 摄取知识目录 markdown → 原子入库（喂文案生成）
+forgecast knowledge list                                    # 列出已入库知识原子
 ```
+
+### 知识层（knowledge sync）
+`templates/knowledge/*.md` 的要点会被 `knowledge sync` 拆成「原子」入 `knowledge_atoms`，文案生成时按钩子关键词 + 目标买家检索注入（已 sync 用检索、大语料可扩展；未 sync 回落整包 md）。把你的方法论 markdown 放进该目录（或 `--source` 指向别处）后重跑 sync 即生效——无需改代码。检索当前用 LIKE（中文短词 FTS 召回差），FTS5/embedding 属后续。
 
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（Remotion）；`packages/server` 本地 API

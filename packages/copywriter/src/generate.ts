@@ -41,13 +41,14 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
   const tplDir = ctx.config.paths.templates
   const hookTemplate = fs.readFileSync(path.join(tplDir, 'prompts', `copy-${hook}.md`), 'utf8')
   const formatSpec = fs.readFileSync(path.join(tplDir, 'prompts', '_format.md'), 'utf8')
+  const terms = [...HOOK_KEYWORDS[hook], ...(project.target_buyer ? [project.target_buyer] : [])]
+  const atoms = searchAtoms(ctx.db, terms)
+  // 已 knowledge sync（有原子）→ 检索驱动、跳过整包 dump（大语料可扩展）；未 sync → 回落整包 md（P1 行为）
   const knowledgeDir = path.join(tplDir, 'knowledge')
-  const knowledgeMd = fs.existsSync(knowledgeDir)
+  const knowledgeMd = atoms.length === 0 && fs.existsSync(knowledgeDir)
     ? fs.readdirSync(knowledgeDir).filter((f) => f.endsWith('.md'))
         .map((f) => readIfExists(path.join(knowledgeDir, f))).join('\n\n')
     : ''
-  const terms = [...HOOK_KEYWORDS[hook], ...(project.target_buyer ? [project.target_buyer] : [])]
-  const atoms = searchAtoms(ctx.db, terms)
   const { system, prompt } = assemblePrompt({ hook, hookTemplate, formatSpec, knowledgeMd, atoms, analysis, feedback })
 
   const copyDir = path.join(wsDir, 'copy')
