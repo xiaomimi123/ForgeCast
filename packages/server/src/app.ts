@@ -195,8 +195,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const slug = c.req.param('slug')
     if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
     const body = await c.req.json().catch(() => ({}))
-    // tpl 白名单校验：仅 story 显式放行，其余（含未传）一律回落 flash
-    const tpl = body.tpl === 'story' ? 'story' : 'flash'
+    // tpl 白名单校验：story/demo 显式放行，其余（含未传）一律回落 flash
+    const tpl = ['story', 'demo'].includes(body.tpl) ? body.tpl : 'flash'
     const taskId = queue.enqueue((log) => generateVideo(ctx, {
       slug,
       assetId: typeof body.assetId === 'number' ? body.assetId : undefined,

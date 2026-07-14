@@ -97,11 +97,11 @@ async function main() {
     }
     case 'video': {
       const slug = rest.find((a) => !a.startsWith('--'))
-      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash [--asset=<id>]'); process.exit(1) }
+      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo [--asset=<id>]'); process.exit(1) }
       const ctx = createCtx()
       const assetArg = arg('asset')
-      // tpl 白名单：仅 story 显式放行，其余（含未传）回落 flash
-      const tpl = arg('tpl') === 'story' ? 'story' : 'flash'
+      // tpl 白名单：story/demo 显式放行，其余（含未传）回落 flash
+      const tpl = (['story', 'demo'] as const).includes(arg('tpl') as any) ? (arg('tpl') as 'story' | 'demo') : 'flash'
       const { filePath } = await generateVideo(ctx, {
         slug, tpl, assetId: assetArg ? Number(assetArg) : undefined,
         onProgress: (m) => console.log(`  ${m}`),
