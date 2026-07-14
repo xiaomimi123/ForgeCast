@@ -132,7 +132,7 @@ export default function BoardPage() {
             )
           })}
         </div>
-        {(projects.data ?? []).length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先在候选表点「立项」</div>}
+        {projects.isSuccess && projects.data.length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先在候选表点「立项」</div>}
       </div>
     </div>
   )
