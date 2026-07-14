@@ -12,7 +12,7 @@
 - 读源目录（默认 `ctx.config.paths.templates/knowledge`，`opts.source` 覆盖）下所有 `*.md`。
 - 解析为原子：`parseAtoms(md, fileStem)` —— 逐行扫描，遇标题(`#`/`##`…)更新当前 topic；遇 `- `/`* ` 要点或 `1.` 编号项 → 一个原子(topic=当前标题或 fileStem, content=去掉标记的整行文本，跳过空/纯标题行)。
 - 幂等替换：事务内 `DELETE FROM knowledge_atoms WHERE source='dbskill'` → 批量 `INSERT (source='dbskill', topic, content)` → `INSERT INTO atoms_fts(atoms_fts) VALUES('rebuild')` 同步 FTS。
-- 返回 `{ count }`。
+- 返回 `{ count, files }`（count=入库原子数，files=读取的 md 文件数，供 CLI 打印）。
 - 纯本地文件、不联网；真实 dbskill 语料由用户后续放入目录/`--source`。
 
 ### searchAtoms（改进）
