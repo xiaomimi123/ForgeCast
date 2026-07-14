@@ -51,6 +51,21 @@ describe('settings API', () => {
     expect(ctx.config.llm.apiKey).toBe('sk-live-0000')
   })
 
+  it('GET 报告 effective 模式：env 配置的 live+key 不被误显示为 mock', async () => {
+    ctx.config.llm.mode = 'live'; ctx.config.llm.apiKey = 'env-key-1234' // 模拟经 env 配置、未走 UI
+    const v = await (await app.request('/api/settings')).json() as any
+    expect(v.llm.mode).toBe('live')
+    expect(v.llm.key_masked).toBe('••••1234')
+  })
+
+  it('PUT 纯空白 key = 保持原值（不被空格误抹）', async () => {
+    await app.request('/api/settings', J({ llm_key: 'sk-keep-5678' }))
+    await app.request('/api/settings', J({ llm_key: '   ' }))
+    const v = await (await app.request('/api/settings')).json() as any
+    expect(v.llm.key_set).toBe(true)
+    expect(v.llm.key_masked).toBe('••••5678')
+  })
+
   it('test-llm：mock 模式返回未发起真实请求', async () => {
     const r = await (await app.request('/api/settings/test-llm', { method: 'POST' })).json() as any
     expect(r.ok).toBe(false)

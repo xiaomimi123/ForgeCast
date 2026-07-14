@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { analyzeProject } from '@forgecast/analyst'
-import { getAllSettings, HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
+import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
@@ -44,28 +44,23 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   })
 
   // —— 设置页：key/模型/模式（key 打码回显，绝不回明文）——
+  // 全用 effective 的 ctx.config（applyStoredSettings 已把 stored 合进；这才是真实运行态，
+  // 避免 env 配置的 live 被前端回填 stored 覆盖）
   function settingsView() {
-    const s = getAllSettings(ctx.db)
     const cfg = ctx.config
     return {
       llm: {
-        mode: s.llm_mode === 'live' ? 'live' : 'mock',
+        mode: cfg.llm.mode,
         key_set: !!cfg.llm.apiKey, key_masked: maskKey(cfg.llm.apiKey),
-        base_url: s.llm_base_url || cfg.llm.baseURL,
-        models: {
-          analysis: s.model_analysis || cfg.llm.models.analysis,
-          copy: s.model_copy || cfg.llm.models.copy,
-          scoring: s.model_scoring || cfg.llm.models.scoring,
-        },
+        base_url: cfg.llm.baseURL, models: { ...cfg.llm.models },
       },
       tts: {
-        mode: s.tts_mode === 'live' ? 'live' : 'stub',
+        mode: cfg.tts.mode,
         key_set: !!cfg.tts.apiKey, key_masked: maskKey(cfg.tts.apiKey),
-        base_url: s.tts_base_url || cfg.tts.baseURL,
-        model: s.tts_model || cfg.tts.model,
+        base_url: cfg.tts.baseURL, model: cfg.tts.model,
       },
       github: {
-        mode: s.github_mode === 'live' ? 'live' : 'mock',
+        mode: cfg.github.mode,
         token_set: !!cfg.github.token, token_masked: maskKey(cfg.github.token),
       },
     }
@@ -78,8 +73,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const kv: Partial<Record<SettingKey, string>> = {}
     for (const k of SETTING_KEYS) {
       if (!(k in body) || typeof body[k] !== 'string') continue
-      // key/token 字段留空 = 保持原值（不写空覆盖）；非空才更新
-      if ((k === 'llm_key' || k === 'tts_key' || k === 'github_token') && body[k] === '') continue
+      // key/token 字段留空/纯空白 = 保持原值（不写空覆盖，避免误抹已存 key）；非空才更新
+      if ((k === 'llm_key' || k === 'tts_key' || k === 'github_token') && body[k].trim() === '') continue
       kv[k] = body[k]
     }
     setSettings(ctx.db, kv)
