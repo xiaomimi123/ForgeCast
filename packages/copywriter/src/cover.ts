@@ -26,7 +26,7 @@ const VIDEO_EXT = new Set(['.mp4', '.mov'])
 /** 从 raw 目录挑一个封面截图源：图片优先，其次视频；无则 null（纯 fs，可单测） */
 export function pickRawShot(rawDir: string): { kind: 'image' | 'video'; path: string } | null {
   if (!fs.existsSync(rawDir)) return null
-  const files = fs.readdirSync(rawDir).sort()
+  const files = fs.readdirSync(rawDir, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name).sort()
   const img = files.find((f) => IMG_EXT.has(path.extname(f).toLowerCase()))
   if (img) return { kind: 'image', path: path.join(rawDir, img) }
   const vid = files.find((f) => VIDEO_EXT.has(path.extname(f).toLowerCase()))
@@ -43,13 +43,16 @@ export function imageToDataUri(imgPath: string): string {
 
 /** ffmpeg 抽视频首帧为 data URI；系统无 ffmpeg 或失败返回 null（fail-soft） */
 export async function videoFrameDataUri(videoPath: string): Promise<string | null> {
-  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fc-shot-')), 'frame.png')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-shot-'))
+  const out = path.join(dir, 'frame.png')
   try {
     await execFileP('ffmpeg', ['-y', '-ss', '1', '-i', videoPath, '-vframes', '1', out])
     if (!fs.existsSync(out)) return null
     return imageToDataUri(out)
   } catch {
     return null
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true }) // 清理临时抽帧目录
   }
 }
 
