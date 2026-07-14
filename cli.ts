@@ -183,8 +183,10 @@ async function main() {
       const sub = rest.find((a) => !a.startsWith('--'))
       const ctx = createCtx()
       if (sub === 'sync') {
-        const { count, files } = syncKnowledge(ctx, { source: arg('source') })
-        console.log(`知识同步完成：${files} 个文件 → ${count} 条原子入库（source=dbskill）`)
+        console.log('同步知识库中（首次会克隆 dbskill 上游到 .cache/，稍候）…')
+        const { count, version, mdFiles, source } = await syncKnowledge(ctx, { source: arg('source'), repo: arg('repo') })
+        const tag = source === 'dbskill' ? `dbskill${version ? ` v${version}` : ''}（+${mdFiles} 个知识包 md）` : `本地 ${mdFiles} 个 md`
+        console.log(`知识同步完成（${tag}）：${count} 条原子入库`)
       } else if (sub === 'list') {
         const rows = ctx.db.prepare('SELECT topic, content FROM knowledge_atoms ORDER BY id').all() as any[]
         console.log(`知识原子共 ${rows.length} 条:`)

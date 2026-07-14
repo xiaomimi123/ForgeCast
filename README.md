@@ -39,12 +39,14 @@ forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/�
 forgecast lead <id> --wechat=<..> [--intent=<..>]           # 登记询单（归因到素材）
 forgecast calendar                                          # 今日排期建议 + 库存/冷却
 forgecast report [--since=YYYY-MM-DD]                       # 各钩子转化周报
-forgecast knowledge sync [--source=<dir>]                   # 摄取知识目录 markdown → 原子入库（喂文案生成）
+forgecast knowledge sync [--source=<dir>] [--repo=<url>]     # 拉取 dbskill 上游 → atoms.jsonl 入库（喂文案生成）
 forgecast knowledge list                                    # 列出已入库知识原子
 ```
 
-### 知识层（knowledge sync）
-`templates/knowledge/*.md` 的要点会被 `knowledge sync` 拆成「原子」入 `knowledge_atoms`，文案生成时按钩子关键词 + 目标买家检索注入（已 sync 用检索、大语料可扩展；未 sync 回落整包 md）。把你的方法论 markdown 放进该目录（或 `--source` 指向别处）后重跑 sync 即生效——无需改代码。检索当前用 LIKE（中文短词 FTS 召回差），FTS5/embedding 属后续。
+### 知识层（knowledge sync，§5.6）
+`knowledge sync` 默认克隆/更新 [dbskill](https://github.com/dontbesilent2025/dbskill) 上游到 `.cache/dbskill`，导入 `知识库/原子库/atoms.jsonl`（约 4176 条原子：`knowledge`→content、`topics[0]`→topic、整行→meta）入 `knowledge_atoms`，并复制 `知识库/Skill知识包/*.md` 到 `templates/knowledge/dbskill/`。文案生成时按钩子关键词 + 目标买家检索 top-8 原子注入（已 sync 用检索、未 sync 回落本地整包 md）。检索当前用 LIKE（中文短词 FTS 召回差），FTS5/embedding 属后续。
+
+`--source=<本地 dbskill checkout 或普通 md 目录>` 可跳过克隆（普通 md 目录走 parseAtoms 回退）。**合规**：dbskill 为 CC BY-NC 4.0，仅内部创作提效；`.cache/` 与 `templates/knowledge/dbskill/` 已 gitignore，其内容不提交进本仓、不打包进对外产品（§5.6 边界）。
 
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（Remotion）；`packages/server` 本地 API

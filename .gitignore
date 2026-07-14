@@ -8,3 +8,7 @@ db/
 workspace/*/copy/
 workspace/*/covers/
 workspace/*/raw/
+
+# dbskill 上游缓存与拉取的知识包（CC BY-NC 4.0，不提交进公开仓库、不打包进对外产品）
+.cache/
+templates/knowledge/dbskill/
