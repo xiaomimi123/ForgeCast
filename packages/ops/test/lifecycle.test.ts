@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addLead, approveAsset, listLeads, publishAsset, recordPerf } from '../src/lifecycle'
+import { addLead, approveAsset, listLeads, publishAsset, recordPerf, registerClip } from '../src/lifecycle'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -25,6 +25,20 @@ describe('publishAsset', () => {
   })
   it('素材不存在抛错', () => {
     expect(() => publishAsset(ctx, 999, { platform: 'xhs' })).toThrow(/素材不存在/)
+  })
+})
+
+describe('registerClip', () => {
+  it('登记 process video 素材(draft)', () => {
+    const { id } = registerClip(ctx, { slug: 'demo', file: 'demo/raw/clip.mp4' })
+    const a: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(id)
+    expect(a.type).toBe('video')
+    expect(a.hook).toBe('process')
+    expect(a.status).toBe('draft')
+    expect(a.file_path).toBe('demo/raw/clip.mp4')
+  })
+  it('项目不存在抛错', () => {
+    expect(() => registerClip(ctx, { slug: 'nope', file: 'x' })).toThrow(/项目不存在/)
   })
 })
 

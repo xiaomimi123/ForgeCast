@@ -23,6 +23,12 @@ export default function CalendarPage() {
         <div className="mt-1 text-sm text-neutral-600">今日已发 {v.publishedToday}，还可发 <span className="font-medium text-blue-600">{v.remainingToday}</span></div>
         <div className="mt-2 text-xs text-neutral-500">库存: {Object.entries(v.inventory).map(([h, n]) => `${h}:${n}`).join('  ') || '（空）'}</div>
         <div className="text-xs text-neutral-500">冷却中: {Object.entries(v.cooldown).map(([h, d]) => `${h}(${d}天)`).join('  ') || '（无）'}</div>
+        <div className="mt-1 text-xs text-neutral-500">配比(近7天): 演示 {v.mix.demo}／收入 {v.mix.income}／过程 {v.mix.process}（目标 60/20/20）</div>
+        {v.gaps.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {v.gaps.map((g, i) => <li key={i} className="text-xs text-amber-700">⚠ {g}</li>)}
+          </ul>
+        )}
       </div>
       <div className="rounded-lg border bg-white p-4">
         <div className="mb-2 font-semibold">今日建议发布</div>

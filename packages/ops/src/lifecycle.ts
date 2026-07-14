@@ -17,6 +17,16 @@ function assertAsset(ctx: CoreCtx, assetId: number): void {
   }
 }
 
+/** 登记开发过程碎片（人工 Claude Code 录屏）为 process 视频素材，走 draft→approve→publish 生命周期（§5.2 第三内容类别） */
+export function registerClip(ctx: CoreCtx, input: { slug: string; file: string }): { id: number } {
+  const proj = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(input.slug) as { id: number } | undefined
+  if (!proj) throw new Error(`项目不存在: ${input.slug}`)
+  const info = ctx.db.prepare(
+    "INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (?, 'video', 'process', ?, 'draft')",
+  ).run(proj.id, input.file)
+  return { id: Number(info.lastInsertRowid) }
+}
+
 /** 审核通过：draft/approved → approved（发布前的确认门）；已 published 的不回退 */
 export function approveAsset(ctx: CoreCtx, assetId: number): void {
   assertAsset(ctx, assetId)

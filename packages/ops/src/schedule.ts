@@ -1,9 +1,17 @@
 import type { CoreCtx } from '@forgecast/core'
 
-const HOOK_CATEGORY: Record<string, 'demo' | 'income'> = {
-  pain: 'demo', infogap: 'demo', story: 'income', sideline: 'income',
+type Category = 'demo' | 'income' | 'process'
+// 内容配比三类（开发文档 §5.2）：产品演示 60% / 收入接单 20% / 开发过程碎片 20%
+const HOOK_CATEGORY: Record<string, Category> = {
+  pain: 'demo', infogap: 'demo', story: 'income', sideline: 'income', process: 'process',
 }
+const TARGET: Record<Category, number> = { demo: 0.6, income: 0.2, process: 0.2 }
+const CATEGORY_LABEL: Record<Category, string> = { demo: '产品演示', income: '收入/接单', process: '开发过程碎片' }
 const DAY = 864e5
+
+function category(hook: string | null): Category | null {
+  return hook ? (HOOK_CATEGORY[hook] ?? null) : null
+}
 
 export interface CalendarView {
   date: string
@@ -11,8 +19,9 @@ export interface CalendarView {
   remainingToday: number
   inventory: Record<string, number>
   cooldown: Record<string, number> // 钩子 → 还需冷却几天
-  mix: { demo: number; income: number; targetDemo: number; targetIncome: number }
+  mix: { demo: number; income: number; process: number; targetDemo: number; targetIncome: number; targetProcess: number }
   suggestions: Array<{ hook: string; assetId: number; reason: string }>
+  gaps: string[] // 配比缺口提示：低于目标且无库存的类别（"缺哪类提示补哪类"）
 }
 
 // sqlite datetime('now') 形如 'YYYY-MM-DD HH:MM:SS'（UTC）→ 毫秒
@@ -47,28 +56,26 @@ export function calendarSuggestions(ctx: CoreCtx, now: Date = new Date()): Calen
     if (days < 3) cooldown[hook] = Math.ceil(3 - days)
   }
 
-  // 近 7 天已发按类别
+  // 近 7 天已发按三类计数
   const since = now.getTime() - 7 * DAY
-  let demo = 0
-  let income = 0
+  const recent: Record<Category, number> = { demo: 0, income: 0, process: 0 }
   for (const a of published) {
     if (toMs(a.published_at) >= since) {
-      const c = HOOK_CATEGORY[a.hook]
-      if (c === 'demo') demo++
-      else if (c === 'income') income++
+      const c = category(a.hook)
+      if (c) recent[c]++
     }
   }
-  const recentTotal = demo + income
-  const demoUnder = recentTotal === 0 ? true : demo / recentTotal < 0.6
+  const recentTotal = recent.demo + recent.income + recent.process
+  const share = (c: Category) => (recentTotal === 0 ? 0 : recent[c] / recentTotal)
+  const deficit = (c: Category) => TARGET[c] - share(c) // >0 = 低于目标
 
   const eligibleHooks = Object.keys(inventory).filter((h) => inventory[h] > 0 && !(h in cooldown))
   eligibleHooks.sort((x, y) => {
-    // 欠缺类别优先（0 排前）
-    const pref = (h: string) => {
-      const isDemo = HOOK_CATEGORY[h] === 'demo'
-      return (demoUnder ? isDemo : !isDemo) ? 0 : 1
-    }
-    if (pref(x) !== pref(y)) return pref(x) - pref(y)
+    const cx = category(x)
+    const cy = category(y)
+    const dx = cx ? deficit(cx) : -1
+    const dy = cy ? deficit(cy) : -1
+    if (dx !== dy) return dy - dx // 缺口大的类别优先
     return (lastPub[x] ?? 0) - (lastPub[y] ?? 0) // 最久未发优先
   })
 
@@ -78,8 +85,23 @@ export function calendarSuggestions(ctx: CoreCtx, now: Date = new Date()): Calen
     ).get(h) as { id: number }
     const last = lastPub[h]
     const when = last ? `上次发布 ${Math.floor((now.getTime() - last) / DAY)} 天前` : '从未发布'
-    return { hook: h, assetId: asset.id, reason: `${h} 库存 ${inventory[h]} 条、${when}、${HOOK_CATEGORY[h] ?? '其它'} 类` }
+    const c = category(h)
+    return { hook: h, assetId: asset.id, reason: `${h} 库存 ${inventory[h]} 条、${when}、${c ? CATEGORY_LABEL[c] : '其它'} 类` }
   })
+
+  // 配比缺口：低于目标且该类别无审核通过库存 → 提示补哪类（process 需人工录屏 + clip add 登记）
+  const invByCat: Record<Category, number> = { demo: 0, income: 0, process: 0 }
+  for (const [h, n] of Object.entries(inventory)) {
+    const c = category(h)
+    if (c) invByCat[c] += n
+  }
+  const gaps: string[] = []
+  for (const c of ['demo', 'income', 'process'] as Category[]) {
+    if (deficit(c) > 0 && invByCat[c] === 0) {
+      const tail = c === 'process' ? '：去录一条 Claude Code 过程碎片并 forgecast clip add 登记' : '，去补该类素材'
+      gaps.push(`${CATEGORY_LABEL[c]} 占比 ${Math.round(share(c) * 100)}% < 目标 ${Math.round(TARGET[c] * 100)}%、无库存${tail}`)
+    }
+  }
 
   return {
     date: dayStr,
@@ -87,8 +109,12 @@ export function calendarSuggestions(ctx: CoreCtx, now: Date = new Date()): Calen
     remainingToday,
     inventory,
     cooldown,
-    mix: { demo, income, targetDemo: 0.6, targetIncome: 0.2 },
+    mix: {
+      demo: recent.demo, income: recent.income, process: recent.process,
+      targetDemo: 0.6, targetIncome: 0.2, targetProcess: 0.2,
+    },
     suggestions,
+    gaps,
   }
 }
 

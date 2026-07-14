@@ -56,6 +56,15 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
   const results: GeneratedAsset[] = []
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 
+  // 封面截图源解析一次（raw 图片 → raw 视频抽帧 → demo_url 截图），供 annotate 模板；失败则 null → 回落纯文字 bigtext
+  let coverShot: string | null = null
+  if (renderCovers) {
+    try {
+      const { resolveCoverShot } = await import('./cover')
+      coverShot = await resolveCoverShot({ rawDir: path.join(wsDir, 'raw'), demoUrl: project.demo_url })
+    } catch { coverShot = null }
+  }
+
   for (let i = 1; i <= n; i++) {
     onProgress(`生成第 ${i}/${n} 篇（${ctx.config.llm.mode} 模式）…`)
     const raw = await ctx.llm.complete({ model: ctx.config.llm.models.copy, system, prompt })
@@ -83,7 +92,9 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
         const { renderCover } = await import('./cover')
         await renderCover({
           templatesDir: ctx.config.paths.templates,
+          template: coverShot ? 'annotate' : 'bigtext', // 有产品截图用截图+标注型，无则大字报
           main: doc.cover.main, sub: doc.cover.sub,
+          shotDataUri: coverShot ?? undefined,
           outPath: path.join(ctx.config.paths.workspace, coverRel),
         })
         const cInfo = ctx.db.prepare(

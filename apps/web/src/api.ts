@@ -42,8 +42,9 @@ export interface Candidate {
 export interface CalendarView {
   date: string; publishedToday: number; remainingToday: number
   inventory: Record<string, number>; cooldown: Record<string, number>
-  mix: { demo: number; income: number; targetDemo: number; targetIncome: number }
+  mix: { demo: number; income: number; process: number; targetDemo: number; targetIncome: number; targetProcess: number }
   suggestions: Array<{ hook: string; assetId: number; reason: string }>
+  gaps: string[]
 }
 export interface WeeklyReport {
   since: string; perHook: Record<string, { published: number; leads: number }>

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy, syncKnowledge } from '@forgecast/copywriter'
-import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
+import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, registerClip, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
@@ -154,12 +154,29 @@ async function main() {
       console.log(`${v.date}｜今日已发 ${v.publishedToday}，还可发 ${v.remainingToday}`)
       console.log(`库存: ${JSON.stringify(v.inventory)}`)
       console.log(`冷却中: ${JSON.stringify(v.cooldown)}`)
+      console.log(`配比(近7天) 演示 ${v.mix.demo}／收入 ${v.mix.income}／过程 ${v.mix.process}（目标 60/20/20）`)
       if (v.suggestions.length) {
         console.log('建议发布:')
         for (const s of v.suggestions) console.log(`  [${s.hook}] 素材 ${s.assetId} — ${s.reason}`)
       } else {
         console.log('（今日无建议：额度用尽或无可发库存）')
       }
+      if (v.gaps.length) {
+        console.log('配比缺口:')
+        for (const g of v.gaps) console.log(`  ⚠ ${g}`)
+      }
+      break
+    }
+    case 'clip': {
+      const nonFlags = rest.filter((a) => !a.startsWith('--'))
+      const file = arg('file')
+      if (nonFlags[0] !== 'add' || !nonFlags[1] || !file) {
+        console.error('用法: forgecast clip add <slug> --file=<workspace相对路径>'); process.exit(1)
+      }
+      const ctx = createCtx()
+      syncWorkspaceProjects(ctx)
+      const { id } = registerClip(ctx, { slug: nonFlags[1], file })
+      console.log(`已登记开发过程碎片 #${id}（${file}），forgecast approve ${id} 后进入排期`)
       break
     }
     case 'knowledge': {
@@ -198,7 +215,8 @@ async function main() {
   publish <id> --platform=<xhs|douyin>  回填发布（平台/链接）
   perf <id> --views=N --likes=N --leads=N  回填曝光/赞/询单
   lead <id> --wechat=<..>               登记询单（归因到素材）
-  calendar                              今日排期建议 + 库存
+  calendar                              今日排期建议 + 库存 + 配比缺口(60/20/20)
+  clip add <slug> --file=<相对路径>     登记开发过程碎片(录屏)为 process 素材
   report [--since=YYYY-MM-DD]           各钩子转化周报
   knowledge sync [--source=<dir>]       摄取知识目录 markdown → 原子入库（喂文案生成）
   knowledge list                        列出已入库知识原子`)

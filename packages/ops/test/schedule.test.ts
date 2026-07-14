@@ -50,6 +50,23 @@ describe('calendarSuggestions', () => {
   })
 })
 
+describe('内容配比三类（§5.2）', () => {
+  it('mix 含 process；process 占比 0 且无库存 → gaps 提示补', () => {
+    ins('pain', 'published', '2026-07-14 08:00:00')   // demo
+    ins('story', 'published', '2026-07-13 08:00:00')  // income
+    const v = calendarSuggestions(ctx, NOW)
+    expect(v.mix).toMatchObject({ demo: 1, income: 1, process: 0, targetProcess: 0.2 })
+    expect(v.gaps.some((g) => g.includes('开发过程碎片'))).toBe(true)
+  })
+  it('有 process 审核库存 → 该类不进 gaps', () => {
+    ins('pain', 'published', '2026-07-14 08:00:00')
+    ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (1, 'video', 'process', 'demo/raw/clip.mp4', 'approved')").run()
+    const v = calendarSuggestions(ctx, NOW)
+    expect(v.inventory.process).toBe(1)
+    expect(v.gaps.some((g) => g.includes('开发过程碎片'))).toBe(false)
+  })
+})
+
 describe('weeklyReport', () => {
   it('按钩子统计发布数与询单数', () => {
     ins('pain', 'published', '2026-07-12 08:00:00')

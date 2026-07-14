@@ -5,13 +5,12 @@ body { width:1242px; height:1660px; background:var(--bg); padding:70px;
   display:flex; flex-direction:column; gap:50px;
   font-family:"PingFang SC","Noto Sans CJK SC",sans-serif; }
 .main { font-size:96px; font-weight:900; color:var(--ink); line-height:1.3; }
-.shot { flex:1; border:6px dashed #bbb; border-radius:24px; display:flex;
-  align-items:center; justify-content:center; color:#999; font-size:40px;
-  background:#ffffff; }
+.shot { flex:1; border-radius:24px; background:#ffffff no-repeat center/cover;
+  background-image:url('{{shot}}'); border:2px solid #e0ddd6; }
 .sub { align-self:flex-start; font-size:52px; color:#fff; background:var(--accent);
   padding:20px 44px; border-radius:16px; transform:rotate(-2deg); }
 </style></head><body>
 <div class="main">{{main}}</div>
-<div class="shot">（demo 截图位）</div>
+<div class="shot"></div>
 <div class="sub">{{sub}}</div>
 </body></html>
