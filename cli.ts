@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
-import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
+import { addLead, calendarSuggestions, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 
