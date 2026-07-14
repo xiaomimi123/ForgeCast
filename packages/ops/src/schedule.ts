@@ -25,13 +25,13 @@ function toMs(s: string | null): number {
 export function calendarSuggestions(ctx: CoreCtx, now: Date = new Date()): CalendarView {
   const dayStr = now.toISOString().slice(0, 10)
   const published = ctx.db.prepare(
-    "SELECT id, hook, published_at FROM assets WHERE status = 'published' AND published_at IS NOT NULL",
+    "SELECT id, hook, published_at FROM assets WHERE status = 'published' AND published_at IS NOT NULL AND type IN ('copy','video')",
   ).all() as Array<{ id: number; hook: string; published_at: string }>
   const publishedToday = published.filter((a) => (a.published_at ?? '').slice(0, 10) === dayStr).length
   const remainingToday = Math.max(0, 2 - publishedToday)
 
   const approved = ctx.db.prepare(
-    "SELECT id, hook FROM assets WHERE status = 'approved'",
+    "SELECT id, hook FROM assets WHERE status = 'approved' AND type IN ('copy','video')",
   ).all() as Array<{ id: number; hook: string }>
   const inventory: Record<string, number> = {}
   for (const a of approved) inventory[a.hook ?? 'unknown'] = (inventory[a.hook ?? 'unknown'] ?? 0) + 1
@@ -74,7 +74,7 @@ export function calendarSuggestions(ctx: CoreCtx, now: Date = new Date()): Calen
 
   const suggestions = eligibleHooks.slice(0, remainingToday).map((h) => {
     const asset = ctx.db.prepare(
-      "SELECT id FROM assets WHERE status = 'approved' AND hook = ? ORDER BY id LIMIT 1",
+      "SELECT id FROM assets WHERE status = 'approved' AND hook = ? AND type IN ('copy','video') ORDER BY id LIMIT 1",
     ).get(h) as { id: number }
     const last = lastPub[h]
     const when = last ? `上次发布 ${Math.floor((now.getTime() - last) / DAY)} 天前` : '从未发布'
@@ -108,7 +108,7 @@ export function weeklyReport(ctx: CoreCtx, since?: string): WeeklyReport {
     perHook[key][k]++
   }
   const pub = ctx.db.prepare(
-    "SELECT hook FROM assets WHERE status = 'published' AND date(published_at) >= date(?)",
+    "SELECT hook FROM assets WHERE status = 'published' AND date(published_at) >= date(?) AND type IN ('copy','video')",
   ).all(sinceStr) as Array<{ hook: string }>
   for (const a of pub) bump(a.hook, 'published')
   const leadRows = ctx.db.prepare(`

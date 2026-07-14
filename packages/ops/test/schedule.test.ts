@@ -41,6 +41,13 @@ describe('calendarSuggestions', () => {
     const hooks = v.suggestions.map((s) => s.hook)
     expect(new Set(hooks).size).toBe(hooks.length)
   })
+
+  it('approved 的 cover 不计入可发库存（cover 是附件非独立帖）', () => {
+    ins('pain', 'approved')                          // 1 个 pain 图文帖
+    ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (1, 'cover', 'pain', 'demo/covers/x.png', 'approved')").run()
+    const v = calendarSuggestions(ctx, NOW)
+    expect(v.inventory.pain).toBe(1)  // cover 不计入，仍是 1
+  })
 })
 
 describe('weeklyReport', () => {
