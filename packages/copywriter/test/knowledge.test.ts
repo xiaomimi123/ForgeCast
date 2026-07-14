@@ -124,6 +124,7 @@ describe('parseAtomsJsonl', () => {
       JSON.stringify({ id: 'a', knowledge: '洞见一', topics: ['选题'], type: 'insight' }),
       '',
       '{bad',
+      'null', // 合法 JSON 但非对象 → 跳过，不崩
       JSON.stringify({ id: 'b', knowledge: '', topics: ['x'] }),
       JSON.stringify({ id: 'c', knowledge: '洞见二', skills: ['dbs-hook'] }), // 无 topics → 用 skills[0]
     ].join('\n')

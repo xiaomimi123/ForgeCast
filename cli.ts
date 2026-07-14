@@ -183,7 +183,7 @@ async function main() {
       const sub = rest.find((a) => !a.startsWith('--'))
       const ctx = createCtx()
       if (sub === 'sync') {
-        console.log('同步知识库中（首次会克隆 dbskill 上游到 .cache/，稍候）…')
+        if (!arg('source')) console.log('同步知识库中（首次会克隆 dbskill 上游到 .cache/，稍候）…')
         const { count, version, mdFiles, source } = await syncKnowledge(ctx, { source: arg('source'), repo: arg('repo') })
         const tag = source === 'dbskill' ? `dbskill${version ? ` v${version}` : ''}（+${mdFiles} 个知识包 md）` : `本地 ${mdFiles} 个 md`
         console.log(`知识同步完成（${tag}）：${count} 条原子入库`)
@@ -220,7 +220,7 @@ async function main() {
   calendar                              今日排期建议 + 库存 + 配比缺口(60/20/20)
   clip add <slug> --file=<相对路径>     登记开发过程碎片(录屏)为 process 素材
   report [--since=YYYY-MM-DD]           各钩子转化周报
-  knowledge sync [--source=<dir>]       摄取知识目录 markdown → 原子入库（喂文案生成）
+  knowledge sync [--source=<dir>] [--repo=<url>]  拉取 dbskill 上游→atoms.jsonl 入库（--source 指本地checkout/md目录跳过克隆）
   knowledge list                        列出已入库知识原子`)
   }
 }

@@ -46,6 +46,7 @@ export function parseAtomsJsonl(text: string): RawAtom[] {
     if (!s) continue
     let a: { knowledge?: unknown; topics?: unknown; skills?: unknown }
     try { a = JSON.parse(s) } catch { continue }
+    if (typeof a !== 'object' || a === null) continue // 跳过 null / 非对象行
     const content = typeof a.knowledge === 'string' ? a.knowledge.trim() : ''
     if (!content) continue
     const topics = Array.isArray(a.topics) ? a.topics : []
