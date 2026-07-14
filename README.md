@@ -32,6 +32,7 @@ forgecast scout [--topics=..] [--limit=N]   # 发现开源项目、协议过滤+
 forgecast scout --add=<repo-url>            # 手动投喂一个 repo
 forgecast pick <owner/repo>                 # 立项：建 workspace + 落源 README/目录树到 source/
 forgecast analyze <slug>                    # 生成商业化分析 analysis.md（读 source/README）
+forgecast rebrand <slug>                    # 生成换皮改造清单 rebrand-plan.md（读 analysis.md）
 forgecast video <slug> --tpl=flash [--asset=<id>]  # 渲染 copy 素材为 15s 竖屏 flash 视频
 forgecast publish <id> --platform=<xhs|douyin> [--url=<link>]  # 回填发布（平台/链接）
 forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/询单

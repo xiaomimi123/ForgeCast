@@ -4,6 +4,7 @@ import { analyzeProject } from '@forgecast/analyst'
 import { HOOKS, type CoreCtx } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
+import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 import { Hono } from 'hono'
@@ -232,6 +233,14 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   app.get('/api/leads', (c) => c.json(listLeads(ctx)))
   app.get('/api/calendar', (c) => c.json(calendarSuggestions(ctx)))
   app.get('/api/report', (c) => c.json(weeklyReport(ctx, c.req.query('since') || undefined)))
+
+  // —— M3 换皮清单 ——
+  app.post('/api/projects/:slug/rebrand', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const taskId = queue.enqueue((log) => rebrandPlan(ctx, slug, { onProgress: log }))
+    return c.json({ taskId })
+  })
 
   return app
 }

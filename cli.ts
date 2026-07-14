@@ -4,6 +4,7 @@ import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
+import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 
@@ -87,6 +88,13 @@ async function main() {
       console.log(`分析完成: workspace/${rel}`)
       break
     }
+    case 'rebrand': {
+      const slug = rest.find((a) => !a.startsWith('--'))
+      if (!slug) { console.error('用法: forgecast rebrand <slug>'); process.exit(1) }
+      const { path: rel } = await rebrandPlan(createCtx(), slug, { onProgress: (m) => console.log(`  ${m}`) })
+      console.log(`换皮清单完成: workspace/${rel}`)
+      break
+    }
     case 'video': {
       const slug = rest.find((a) => !a.startsWith('--'))
       if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash [--asset=<id>]'); process.exit(1) }
@@ -153,13 +161,14 @@ async function main() {
   scout --add <repo-url>           手动投喂一个 repo
   pick <owner/repo>                立项：建 workspace + 落源 README/目录树
   analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
+  rebrand <slug>                   生成换皮改造清单 rebrand-plan.md（读 analysis）
   video <slug> --tpl=flash         生成 flash 视频（渲染 copy 素材为 15s 竖屏）
   publish <id> --platform=<xhs|douyin>  回填发布（平台/链接）
   perf <id> --views=N --likes=N --leads=N  回填曝光/赞/询单
   lead <id> --wechat=<..>               登记询单（归因到素材）
   calendar                              今日排期建议 + 库存
   report [--since=YYYY-MM-DD]           各钩子转化周报
-（rebrand/knowledge 属后续里程碑项，未实现）`)
+（knowledge 属后续里程碑项，未实现）`)
   }
 }
 main()

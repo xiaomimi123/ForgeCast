@@ -20,6 +20,9 @@ importers:
       '@forgecast/ops':
         specifier: workspace:*
         version: link:packages/ops
+      '@forgecast/rebrand':
+        specifier: workspace:*
+        version: link:packages/rebrand
       '@forgecast/scout':
         specifier: workspace:*
         version: link:packages/scout
@@ -190,6 +193,9 @@ importers:
       '@forgecast/ops':
         specifier: workspace:*
         version: link:../ops
+      '@forgecast/rebrand':
+        specifier: workspace:*
+        version: link:../rebrand
       '@forgecast/scout':
         specifier: workspace:*
         version: link:../scout
