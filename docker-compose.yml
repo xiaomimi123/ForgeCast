@@ -1,14 +1,16 @@
 name: forgecast           # 固定 project name（仓库路径含中文，否则派生的 project name 为空会报错）
 
 services:
-  app:                      # Hono API + CLI 入口
+  app:                      # Hono API + Web 静态托管 + CLI 入口
     build: .
-    ports: ["127.0.0.1:4321:4321"]
+    ports: ["127.0.0.1:4321:4321"]   # host 侧只绑 localhost（容器内 server 绑 0.0.0.0）
     volumes:
       - ./workspace:/app/workspace
       - ./db:/app/db
       - ./templates:/app/templates
-    env_file: .env
+    env_file:
+      - path: .env          # 可选：key 也可在 Web 设置页填（存 db volume）
+        required: false
 
   # renderer：渲染 worker 镜像（Chromium+ffmpeg+中文字体）。默认不起，按需：
   #   DOCKER_BUILDKIT=0 docker compose --profile render build renderer
@@ -21,4 +23,6 @@ services:
       - ./workspace:/app/workspace
       - ./db:/app/db
       - ./templates:/app/templates
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false

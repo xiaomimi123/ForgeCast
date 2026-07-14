@@ -4,3 +4,10 @@ db
 workspace
 .env
 .git
+apps/web/dist
+**/dist
+.cache
+templates/knowledge/dbskill
+docs
+.superpowers
+*.log
