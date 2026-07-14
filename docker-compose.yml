@@ -10,8 +10,15 @@ services:
       - ./templates:/app/templates
     env_file: .env
 
-  # renderer: Remotion 渲染 worker —— P1 item 4 实装（Chromium+ffmpeg+中文字体封镜像）
-  # renderer:
-  #   build: { context: ., dockerfile: Dockerfile.renderer }
-  #   volumes:
-  #     - ./workspace:/app/workspace
+  # renderer：渲染 worker 镜像（Chromium+ffmpeg+中文字体）。默认不起，按需：
+  #   DOCKER_BUILDKIT=0 docker compose --profile render build renderer
+  renderer:
+    profiles: ["render"]
+    build:
+      context: .
+      dockerfile: Dockerfile.renderer
+    volumes:
+      - ./workspace:/app/workspace
+      - ./db:/app/db
+      - ./templates:/app/templates
+    env_file: .env

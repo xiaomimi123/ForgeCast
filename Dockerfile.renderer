@@ -1,0 +1,17 @@
+FROM node:20-slim
+WORKDIR /app
+# Remotion/Chromium 运行依赖 + ffmpeg + 中文字体（fonts-noto-cjk 解决豆腐块）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg fonts-noto-cjk fonts-noto-color-emoji \
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages ./packages
+COPY apps ./apps
+COPY templates ./templates
+COPY cli.ts tsconfig.base.json ./
+RUN pnpm install --frozen-lockfile
+# 渲染宿主：进容器手动 `pnpm exec tsx cli.ts video <slug> --tpl=demo`（真渲染需 FORGECAST_VIDEO_MODE=render）
+CMD ["sleep", "infinity"]
