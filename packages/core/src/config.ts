@@ -3,6 +3,7 @@ import path from 'node:path'
 export type LlmMode = 'mock' | 'live'
 export type GithubMode = 'mock' | 'live'
 export type VideoMode = 'render' | 'stub'
+export type TtsMode = 'stub' | 'live'
 
 export interface ForgecastConfig {
   root: string
@@ -14,6 +15,7 @@ export interface ForgecastConfig {
   }
   github: { mode: GithubMode; token: string }
   video: { mode: VideoMode }
+  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string }
   paths: { workspace: string; db: string; templates: string }
 }
 
@@ -40,6 +42,12 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
     },
     github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
     video: { mode: videoMode },
+    tts: {
+      mode: env.FORGECAST_TTS_MODE === 'live' ? 'live' : 'stub',
+      baseURL: env.FORGECAST_TTS_BASE_URL ?? 'https://aitoken.homes/v1',
+      apiKey: env.FORGECAST_TTS_KEY ?? '',
+      model: env.FORGECAST_TTS_MODEL ?? '',
+    },
     paths: {
       workspace: path.join(resolvedRoot, 'workspace'),
       db: path.join(resolvedRoot, 'db', 'forgecast.db'),

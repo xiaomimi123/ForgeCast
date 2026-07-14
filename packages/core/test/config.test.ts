@@ -35,4 +35,9 @@ describe('loadConfig', () => {
     expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render' })
     expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub' })
   })
+  it('tts 默认 stub，可设 live', () => {
+    expect(loadConfig('/tmp/x', {}).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '' })
+    const cfg = loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'live', FORGECAST_TTS_KEY: 'k', FORGECAST_TTS_MODEL: 'm' })
+    expect(cfg.tts).toEqual({ mode: 'live', baseURL: 'https://aitoken.homes/v1', apiKey: 'k', model: 'm' })
+  })
 })
