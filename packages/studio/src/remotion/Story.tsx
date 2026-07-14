@@ -1,7 +1,9 @@
 import type { FC } from 'react'
-import { AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { StoryProps } from '../props'
 import { Subtitles } from './Subtitles'
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
 const FONT = '"PingFang SC","Noto Sans CJK SC",sans-serif'
 
@@ -18,18 +20,25 @@ const Bubble: FC<{ who: 'them' | 'me'; text: string; delay: number }> = ({ who, 
 
 // 模板B 接单故事型：聊天气泡 → 卖点 → CTA，挂 TTS 音频 + 硬字幕
 export const Story: FC<StoryProps> = ({ bubbles, sellingPoint, cta, brandName, audioSrc, cues }) => {
+  // 三段按实际总时长分配，让分镜铺满整支（总时长由 calcMetadataFromCues 依旁白拉长）。
+  // 默认 600 帧(无 cues)时退回原 360/120/120，默认行为不变；旁白拉长时气泡段吸收增量、无空尾。
+  const { durationInFrames } = useVideoConfig()
+  const ctaFrames = clamp(Math.round(durationInFrames * 0.1), 120, 180)
+  const spFrames = clamp(Math.round(durationInFrames * 0.09), 120, 180)
+  const bubblesFrames = Math.max(180, durationInFrames - spFrames - ctaFrames)
   return (
     <AbsoluteFill style={{ background: '#ded6cc', fontFamily: FONT, padding: 60 }}>
       {audioSrc ? <Audio src={staticFile(audioSrc)} /> : null}
-      <Sequence from={0} durationInFrames={360}>
+      <Sequence from={0} durationInFrames={bubblesFrames}>
+        {/* 气泡早揭示（delay=i*30）后聊天场景持续可见，作为叙述背景填满中段 */}
         <div style={{ paddingTop: 80 }}>{bubbles.map((b, i) => <Bubble key={i} who={b.who} text={b.text} delay={i * 30} />)}</div>
       </Sequence>
-      <Sequence from={360} durationInFrames={120}>
+      <Sequence from={bubblesFrames} durationInFrames={spFrames}>
         <AbsoluteFill style={{ background: 'linear-gradient(160deg,#16213e,#0f3460)', justifyContent: 'center', alignItems: 'center', padding: 80 }}>
           <div style={{ color: '#ffd54f', fontSize: 80, fontWeight: 800, textAlign: 'center', lineHeight: 1.3 }}>{sellingPoint}</div>
         </AbsoluteFill>
       </Sequence>
-      <Sequence from={480} durationInFrames={120}>
+      <Sequence from={bubblesFrames + spFrames} durationInFrames={ctaFrames}>
         <AbsoluteFill style={{ background: '#1a1a2e', justifyContent: 'center', alignItems: 'center', padding: 80, textAlign: 'center' }}>
           <div><div style={{ color: '#fff', fontSize: 72, fontWeight: 800, marginBottom: 40 }}>{cta}</div><div style={{ color: '#8888aa', fontSize: 40 }}>@{brandName}</div></div>
         </AbsoluteFill>
