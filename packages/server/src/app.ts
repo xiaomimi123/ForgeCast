@@ -296,7 +296,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   })
 
   // —— 静态托管构建好的 Web（Docker 单容器部署）。本地 dev 用 Vite，无 dist 则不注册，不影响 ——
-  const webDist = process.env.FORGECAST_WEB_DIST ?? path.join(ctx.config.root, 'apps/web/dist')
+  const webDist = path.resolve(process.env.FORGECAST_WEB_DIST ?? path.join(ctx.config.root, 'apps/web/dist'))
   if (fs.existsSync(webDist)) {
     const MIME: Record<string, string> = {
       '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css',
@@ -305,10 +305,12 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     }
     const indexRes = () => new Response(fs.readFileSync(path.join(webDist, 'index.html')), { headers: { 'content-type': 'text/html; charset=utf-8' } })
     app.get('/*', (c) => {
-      const pathname = decodeURIComponent(new URL(c.req.url).pathname)
+      let pathname: string
+      try { pathname = decodeURIComponent(new URL(c.req.url).pathname) } catch { return c.json({ error: 'bad path' }, 400) }
       if (pathname.startsWith('/api')) return c.json({ error: 'not found' }, 404) // 未匹配的 /api 返 JSON 404
       const file = path.resolve(webDist, pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, ''))
-      if (file.startsWith(webDist) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      // 路径边界须严格在 webDist 内（加 path.sep 防 dist-evil 之类同名前缀兄弟目录绕过）
+      if ((file === webDist || file.startsWith(webDist + path.sep)) && fs.existsSync(file) && fs.statSync(file).isFile()) {
         return new Response(fs.readFileSync(file), { headers: { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream' } })
       }
       return indexRes() // SPA 回落
