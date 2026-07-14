@@ -26,3 +26,22 @@ export function subscribeTask(taskId: string, onEvent: (e: TaskEvent) => void): 
   es.onerror = () => es.close()
   return () => es.close()
 }
+
+export interface Candidate {
+  id: number; repo: string; url: string; license: string | null; license_ok: number
+  stars: number; tech_stack: string | null; score: number | null; score_detail: string | null; status: string
+}
+export interface CalendarView {
+  date: string; publishedToday: number; remainingToday: number
+  inventory: Record<string, number>; cooldown: Record<string, number>
+  mix: { demo: number; income: number; targetDemo: number; targetIncome: number }
+  suggestions: Array<{ hook: string; assetId: number; reason: string }>
+}
+export interface WeeklyReport {
+  since: string; perHook: Record<string, { published: number; leads: number }>
+  totals: { published: number; leads: number }
+}
+export interface Lead {
+  id: number; asset_id: number; wechat: string | null; intent: string | null
+  status: string; created_at: string; hook: string | null; slug: string | null
+}
