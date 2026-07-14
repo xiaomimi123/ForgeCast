@@ -11,6 +11,7 @@
     "@forgecast/analyst": "workspace:*",
     "@forgecast/copywriter": "workspace:*",
     "@forgecast/core": "workspace:*",
+    "@forgecast/ops": "workspace:*",
     "@forgecast/scout": "workspace:*",
     "@forgecast/studio": "workspace:*"
   },

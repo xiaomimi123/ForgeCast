@@ -17,6 +17,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:packages/core
+      '@forgecast/ops':
+        specifier: workspace:*
+        version: link:packages/ops
       '@forgecast/scout':
         specifier: workspace:*
         version: link:packages/scout
@@ -168,6 +171,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
+      '@forgecast/ops':
+        specifier: workspace:*
+        version: link:../ops
       '@forgecast/scout':
         specifier: workspace:*
         version: link:../scout

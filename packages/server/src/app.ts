@@ -3,6 +3,7 @@ import path from 'node:path'
 import { analyzeProject } from '@forgecast/analyst'
 import { HOOKS, type CoreCtx } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
+import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 import { Hono } from 'hono'
@@ -201,6 +202,36 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     }))
     return c.json({ taskId })
   })
+
+  // —— M6 运营辅助 ——
+  const assetExists = (id: string) => !!ctx.db.prepare('SELECT id FROM assets WHERE id = ?').get(id)
+
+  app.post('/api/assets/:id/publish', async (c) => {
+    const id = c.req.param('id')
+    if (!assetExists(id)) return c.json({ error: '素材不存在' }, 404)
+    const { platform, url } = await c.req.json().catch(() => ({}))
+    publishAsset(ctx, Number(id), { platform: platform ?? '', url })
+    return c.json({ ok: true })
+  })
+
+  app.post('/api/assets/:id/perf', async (c) => {
+    const id = c.req.param('id')
+    if (!assetExists(id)) return c.json({ error: '素材不存在' }, 404)
+    const body = await c.req.json().catch(() => ({}))
+    recordPerf(ctx, Number(id), { views: body.views, likes: body.likes, leads: body.leads })
+    return c.json({ ok: true })
+  })
+
+  app.post('/api/leads', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    if (typeof body.assetId !== 'number') return c.json({ error: '缺少 assetId' }, 400)
+    if (!assetExists(String(body.assetId))) return c.json({ error: '素材不存在' }, 404)
+    return c.json(addLead(ctx, { assetId: body.assetId, wechat: body.wechat, intent: body.intent }))
+  })
+
+  app.get('/api/leads', (c) => c.json(listLeads(ctx)))
+  app.get('/api/calendar', (c) => c.json(calendarSuggestions(ctx)))
+  app.get('/api/report', (c) => c.json(weeklyReport(ctx, c.req.query('since') || undefined)))
 
   return app
 }

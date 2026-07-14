@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
+import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 
@@ -98,6 +99,52 @@ async function main() {
       console.log(`视频完成: workspace/${filePath}`)
       break
     }
+    case 'publish': {
+      const id = rest.find((a) => !a.startsWith('--'))
+      const platform = arg('platform')
+      if (!id || !platform) { console.error('用法: forgecast publish <assetId> --platform=<xhs|douyin> [--url=<link>]'); process.exit(1) }
+      publishAsset(createCtx(), Number(id), { platform, url: arg('url') })
+      console.log(`已回填发布: 素材 ${id} @ ${platform}`)
+      break
+    }
+    case 'perf': {
+      const id = rest.find((a) => !a.startsWith('--'))
+      if (!id) { console.error('用法: forgecast perf <assetId> --views=N --likes=N --leads=N'); process.exit(1) }
+      recordPerf(createCtx(), Number(id), {
+        views: arg('views') ? Number(arg('views')) : undefined,
+        likes: arg('likes') ? Number(arg('likes')) : undefined,
+        leads: arg('leads') ? Number(arg('leads')) : undefined,
+      })
+      console.log(`已回填数据: 素材 ${id}`)
+      break
+    }
+    case 'lead': {
+      const id = rest.find((a) => !a.startsWith('--'))
+      if (!id) { console.error('用法: forgecast lead <assetId> --wechat=<..> [--intent=<..>]'); process.exit(1) }
+      const { id: leadId } = addLead(createCtx(), { assetId: Number(id), wechat: arg('wechat'), intent: arg('intent') })
+      console.log(`已登记询单 #${leadId}（来源素材 ${id}）`)
+      break
+    }
+    case 'calendar': {
+      const v = calendarSuggestions(createCtx())
+      console.log(`${v.date}｜今日已发 ${v.publishedToday}，还可发 ${v.remainingToday}`)
+      console.log(`库存: ${JSON.stringify(v.inventory)}`)
+      console.log(`冷却中: ${JSON.stringify(v.cooldown)}`)
+      if (v.suggestions.length) {
+        console.log('建议发布:')
+        for (const s of v.suggestions) console.log(`  [${s.hook}] 素材 ${s.assetId} — ${s.reason}`)
+      } else {
+        console.log('（今日无建议：额度用尽或无可发库存）')
+      }
+      break
+    }
+    case 'report': {
+      const r = weeklyReport(createCtx(), arg('since'))
+      console.log(`周报（自 ${r.since}）  钩子 | 发布 | 询单`)
+      for (const [hook, s] of Object.entries(r.perHook)) console.log(`  ${hook.padEnd(10)} ${String(s.published).padStart(4)} ${String(s.leads).padStart(6)}`)
+      console.log(`  合计: 发布 ${r.totals.published}，询单 ${r.totals.leads}`)
+      break
+    }
     default:
       console.log(`forgecast <command>
   dev                              启动 API(:4321) + Web(:5173)
@@ -107,7 +154,12 @@ async function main() {
   pick <owner/repo>                立项：建 workspace + 落源 README/目录树
   analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
   video <slug> --tpl=flash         生成 flash 视频（渲染 copy 素材为 15s 竖屏）
-（rebrand/knowledge/calendar 属后续里程碑项，未实现）`)
+  publish <id> --platform=<xhs|douyin>  回填发布（平台/链接）
+  perf <id> --views=N --likes=N --leads=N  回填曝光/赞/询单
+  lead <id> --wechat=<..>               登记询单（归因到素材）
+  calendar                              今日排期建议 + 库存
+  report [--since=YYYY-MM-DD]           各钩子转化周报
+（rebrand/knowledge 属后续里程碑项，未实现）`)
   }
 }
 main()
