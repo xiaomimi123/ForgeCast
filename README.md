@@ -53,3 +53,4 @@ docker compose up -d
 
 ## 路线图
 见 `开源变现内容工厂-开发文档.md` §10：M1 抓取已交付引擎（CLI+API），Web 看板页待做；接下来是 M5 视频（Remotion）、M2 分析、M6 日历复盘。
+# videocut 剪辑(④)、Docker renderer(⑤) 见 docs/，均为脚手架未实装/未构建验证

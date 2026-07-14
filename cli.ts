@@ -102,6 +102,9 @@ async function main() {
       const assetArg = arg('asset')
       // tpl 白名单：story/demo 显式放行，其余（含未传）回落 flash
       const tpl = (['story', 'demo'] as const).includes(arg('tpl') as any) ? (arg('tpl') as 'story' | 'demo') : 'flash'
+      if (rest.includes('--cut') || arg('cut') !== undefined) {
+        console.log('  ⚠ --cut：videocut 预处理占位，本版未实装（需装 videocut-skills + 火山 ASR key），继续常规渲染')
+      }
       const { filePath } = await generateVideo(ctx, {
         slug, tpl, assetId: assetArg ? Number(assetArg) : undefined,
         onProgress: (m) => console.log(`  ${m}`),
