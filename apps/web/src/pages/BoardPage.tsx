@@ -71,7 +71,8 @@ export default function BoardPage() {
                   <td className="p-2">
                     {!ok ? <span className="text-xs">协议不可商用</span>
                       : c.status === 'picked' ? <span className="text-xs text-green-600">已立项</span>
-                      : <button className="rounded border px-2 py-1 text-xs" disabled={pick.isPending} onClick={() => pick.mutate(c.repo)}>立项</button>}
+                      : c.status === 'candidate' ? <button className="rounded border px-2 py-1 text-xs" disabled={pick.isPending} onClick={() => pick.mutate(c.repo)}>立项</button>
+                      : <span className="text-xs text-neutral-400">{c.status}</span>}
                   </td>
                 </tr>
               )

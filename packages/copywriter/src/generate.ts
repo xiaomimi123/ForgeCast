@@ -58,7 +58,7 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
   for (let i = 1; i <= n; i++) {
     onProgress(`生成第 ${i}/${n} 篇（${ctx.config.llm.mode} 模式）…`)
     const raw = await ctx.llm.complete({ model: ctx.config.llm.models.copy, system, prompt })
-    parseCopyOutput(raw) // 结构校验：解析失败即任务失败，不落盘半成品
+    const doc = parseCopyOutput(raw) // 结构校验：解析失败即任务失败，不落盘半成品；同时供下方封面复用
 
     onProgress(`敏感词校验第 ${i}/${n} 篇…`)
     const warnings = checkBannedWords(raw).map((w) => `含敏感词: ${w}`)
@@ -76,7 +76,6 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
     // —— Task 8 追加：封面渲染（失败降级为 warning，不阻断文案产出）——
     if (renderCovers) {
       onProgress(`渲染封面第 ${i}/${n} 篇…`)
-      const doc = parseCopyOutput(raw)
       const coverName = `${hook}-${stamp}-${i}-${rand}.png`
       const coverRel = path.join(slug, 'covers', coverName)
       try {

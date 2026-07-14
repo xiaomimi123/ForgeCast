@@ -17,6 +17,12 @@ function assertAsset(ctx: CoreCtx, assetId: number): void {
   }
 }
 
+/** 审核通过：draft/approved → approved（发布前的确认门）；已 published 的不回退 */
+export function approveAsset(ctx: CoreCtx, assetId: number): void {
+  assertAsset(ctx, assetId)
+  ctx.db.prepare("UPDATE assets SET status = 'approved' WHERE id = ? AND status != 'published'").run(assetId)
+}
+
 /** 回填发布：状态置 published，记发布时间/平台/链接 */
 export function publishAsset(ctx: CoreCtx, assetId: number, opts: { platform: string; url?: string }): void {
   assertAsset(ctx, assetId)

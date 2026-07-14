@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addLead, listLeads, publishAsset, recordPerf } from '../src/lifecycle'
+import { addLead, approveAsset, listLeads, publishAsset, recordPerf } from '../src/lifecycle'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -25,6 +25,24 @@ describe('publishAsset', () => {
   })
   it('素材不存在抛错', () => {
     expect(() => publishAsset(ctx, 999, { platform: 'xhs' })).toThrow(/素材不存在/)
+  })
+})
+
+describe('approveAsset', () => {
+  it('draft → approved', () => {
+    ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (1, 'copy', 'pain', 'demo/copy/b.md', 'draft')").run()
+    approveAsset(ctx, 2)
+    const a: any = ctx.db.prepare('SELECT status FROM assets WHERE id = 2').get()
+    expect(a.status).toBe('approved')
+  })
+  it('不回退已发布', () => {
+    publishAsset(ctx, 1, { platform: 'xhs' })
+    approveAsset(ctx, 1)
+    const a: any = ctx.db.prepare('SELECT status FROM assets WHERE id = 1').get()
+    expect(a.status).toBe('published')
+  })
+  it('素材不存在抛错', () => {
+    expect(() => approveAsset(ctx, 999)).toThrow(/素材不存在/)
   })
 })
 

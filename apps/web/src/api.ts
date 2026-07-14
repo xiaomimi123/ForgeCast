@@ -10,7 +10,8 @@ export interface Asset {
 export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...init })
+  // 默认 content-type，但允许调用方经 init.headers 覆盖（原写法 ...init 会整体丢掉默认头）
+  const res = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...init?.headers } })
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
@@ -18,13 +19,20 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 /** 订阅任务 SSE；done/error 后自动关闭。返回手动关闭函数。 */
 export function subscribeTask(taskId: string, onEvent: (e: TaskEvent) => void): () => void {
   const es = new EventSource(`/api/tasks/${taskId}/events`)
+  let closed = false
+  const close = () => { closed = true; es.close() }
   es.onmessage = (m) => {
     const e = JSON.parse(m.data) as TaskEvent
     onEvent(e)
-    if (e.type === 'done' || e.type === 'error') es.close()
+    if (e.type === 'done' || e.type === 'error') close()
   }
-  es.onerror = () => es.close()
-  return () => es.close()
+  // 连接中断：补发一个终止 error 事件，让调用方复位按钮（否则会卡在"生成中"）；closed 守卫避免 done 后重复触发
+  es.onerror = () => {
+    if (closed) return
+    onEvent({ ts: Date.now(), type: 'error', message: '连接中断' })
+    close()
+  }
+  return close
 }
 
 export interface Candidate {

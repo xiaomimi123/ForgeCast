@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
-import { addLead, calendarSuggestions, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
+import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
@@ -26,7 +26,11 @@ async function main() {
       for (const { name, p } of procs) {
         p.stdout.on('data', (d) => process.stdout.write(`[${name}] ${d}`))
         p.stderr.on('data', (d) => process.stderr.write(`[${name}] ${d}`))
-        p.on('exit', (code) => { console.log(`[${name}] 退出 ${code}`); process.exit(code ?? 1) })
+        p.on('exit', (code) => {
+          console.log(`[${name}] 退出 ${code}`)
+          for (const o of procs) if (o.p !== p) o.p.kill() // 杀掉兄弟进程，避免另一个 server 变孤儿占端口
+          process.exit(code ?? 1)
+        })
       }
       break
     }
@@ -112,6 +116,13 @@ async function main() {
       console.log(`视频完成: workspace/${filePath}`)
       break
     }
+    case 'approve': {
+      const id = rest.find((a) => !a.startsWith('--'))
+      if (!id) { console.error('用法: forgecast approve <assetId>'); process.exit(1) }
+      approveAsset(createCtx(), Number(id))
+      console.log(`已审核通过: 素材 ${id}`)
+      break
+    }
     case 'publish': {
       const id = rest.find((a) => !a.startsWith('--'))
       const platform = arg('platform')
@@ -168,6 +179,7 @@ async function main() {
   analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
   rebrand <slug>                   生成换皮改造清单 rebrand-plan.md（读 analysis）
   video <slug> --tpl=flash         生成 flash 视频（渲染 copy 素材为 15s 竖屏）
+  approve <id>                          审核通过素材（draft → approved）
   publish <id> --platform=<xhs|douyin>  回填发布（平台/链接）
   perf <id> --views=N --likes=N --leads=N  回填曝光/赞/询单
   lead <id> --wechat=<..>               登记询单（归因到素材）
