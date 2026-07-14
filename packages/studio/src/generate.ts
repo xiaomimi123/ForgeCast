@@ -4,14 +4,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { buildFlashProps, buildStoryProps } from './props'
+import { buildDemoProps, buildFlashProps, buildStoryProps } from './props'
 import { renderVideo } from './render'
 import { synthesizeVoice } from './tts'
 
 export interface GenerateVideoInput {
   slug: string
   assetId?: number
-  tpl?: 'flash' | 'story'
+  tpl?: 'flash' | 'story' | 'demo'
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
@@ -42,7 +42,23 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
 
   let compositionId: string
   let props: Record<string, unknown>
-  if (tpl === 'story') {
+  if (tpl === 'demo') {
+    // demo：痛点列表 + 报价锚点 + 录屏演示底 + TTS 配音（wav）+ 估算字幕（cues）
+    const dp = buildDemoProps(doc, brandName)
+    // 找 raw/ 下第一个录屏作演示底（无则占位）
+    const rawDir = path.join(ctx.config.paths.workspace, slug, 'raw')
+    if (fs.existsSync(rawDir)) {
+      const vid = fs.readdirSync(rawDir).find((f) => /\.(mp4|mov)$/i.test(f))
+      if (vid) dp.demoVideoSrc = path.join(slug, 'raw', vid)
+    }
+    onProgress('TTS 配音…')
+    const wavAbs = path.join(videoDir, `${base}.wav`)
+    const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    dp.audioSrc = voice.audioRel ?? undefined
+    dp.cues = voice.cues
+    props = dp as unknown as Record<string, unknown>
+    compositionId = 'Demo'
+  } else if (tpl === 'story') {
     // story：气泡文案 + TTS 配音（wav）+ 估算字幕（cues）
     const sp = buildStoryProps(doc, brandName)
     onProgress('TTS 配音…')
