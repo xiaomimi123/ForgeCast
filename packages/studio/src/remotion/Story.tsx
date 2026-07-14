@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { AbsoluteFill, Audio, Sequence, interpolate, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame } from 'remotion'
 import type { StoryProps } from '../props'
 import { Subtitles } from './Subtitles'
 
@@ -20,7 +20,7 @@ const Bubble: FC<{ who: 'them' | 'me'; text: string; delay: number }> = ({ who, 
 export const Story: FC<StoryProps> = ({ bubbles, sellingPoint, cta, brandName, audioSrc, cues }) => {
   return (
     <AbsoluteFill style={{ background: '#ded6cc', fontFamily: FONT, padding: 60 }}>
-      {audioSrc ? <Audio src={audioSrc} /> : null}
+      {audioSrc ? <Audio src={staticFile(audioSrc)} /> : null}
       <Sequence from={0} durationInFrames={360}>
         <div style={{ paddingTop: 80 }}>{bubbles.map((b, i) => <Bubble key={i} who={b.who} text={b.text} delay={i * 30} />)}</div>
       </Sequence>

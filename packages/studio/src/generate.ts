@@ -76,7 +76,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
 
   onProgress(`渲染视频（${ctx.config.video.mode} 模式，${tpl}）…`)
   const relPath = path.join(slug, 'videos', `${base}.mp4`)
-  await renderVideo(ENTRY, compositionId, props, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode, { onProgress })
+  await renderVideo(ENTRY, compositionId, props, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode, { onProgress, publicDir: ctx.config.paths.workspace })
 
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',

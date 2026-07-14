@@ -1,5 +1,5 @@
 import type { FC, ReactNode } from 'react'
-import { AbsoluteFill, Audio, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
+import { AbsoluteFill, Audio, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { DemoProps } from '../props'
 import { Subtitles } from './Subtitles'
 
@@ -33,7 +33,7 @@ const PainPoints: FC<{ points: string[] }> = ({ points }) => {
 export const Demo: FC<DemoProps> = ({ painTitle, painPoints, demoVideoSrc, priceAnchor, cta, brandName, audioSrc, cues }) => {
   return (
     <AbsoluteFill style={{ background: '#0f0f1a', fontFamily: FONT }}>
-      {audioSrc ? <Audio src={audioSrc} /> : null}
+      {audioSrc ? <Audio src={staticFile(audioSrc)} /> : null}
       <Sequence from={0} durationInFrames={90}>
         <Center bg="linear-gradient(160deg,#1a1a2e,#16213e)"><div style={{ color: '#fff', fontSize: 96, fontWeight: 900, lineHeight: 1.3 }}>{painTitle}</div></Center>
       </Sequence>
@@ -43,7 +43,7 @@ export const Demo: FC<DemoProps> = ({ painTitle, painPoints, demoVideoSrc, price
       <Sequence from={240} durationInFrames={1110}>
         <AbsoluteFill style={{ background: '#000' }}>
           {demoVideoSrc
-            ? <OffthreadVideo src={demoVideoSrc} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ? <OffthreadVideo src={staticFile(demoVideoSrc)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             : <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', border: '6px dashed #555', color: '#888', fontSize: 48, fontFamily: FONT }}>（演示录屏位）</AbsoluteFill>}
           <div style={{ position: 'absolute', top: 60, left: 60, background: 'rgba(0,0,0,.6)', color: '#ffd54f', fontSize: 40, fontWeight: 700, padding: '8px 20px', borderRadius: 10 }}>{painTitle}</div>
         </AbsoluteFill>
