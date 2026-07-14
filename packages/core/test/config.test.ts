@@ -14,6 +14,12 @@ describe('loadConfig', () => {
     expect(cfg.llm.mode).toBe('live')
     expect(cfg.llm.apiKey).toBe('')
   })
+  it('空串模型名/baseURL（.env 留空）回落默认，不被空覆盖', () => {
+    const cfg = loadConfig('/tmp/x', { FORGECAST_MODEL_ANALYSIS: '', FORGECAST_MODEL_COPY: '', FORGECAST_LLM_BASE_URL: '' })
+    expect(cfg.llm.models.analysis).toBe('claude-sonnet-5')
+    expect(cfg.llm.models.copy).toBe('claude-sonnet-5')
+    expect(cfg.llm.baseURL).toBe('https://aitoken.homes/v1')
+  })
   it('live 模式读取 key 与模型名', () => {
     const cfg = loadConfig('/tmp/x', {
       FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'sk-1', FORGECAST_MODEL_COPY: 'm-copy',

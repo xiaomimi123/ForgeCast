@@ -28,21 +28,22 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
   const videoMode: VideoMode = env.FORGECAST_VIDEO_MODE === 'stub' ? 'stub' : 'render'
   return {
     root: resolvedRoot,
+    // baseURL/模型名用 || 回落：空串（.env 里留空的变量）也走默认，而非把默认覆盖成空
     llm: {
       mode,
-      baseURL: env.FORGECAST_LLM_BASE_URL ?? 'https://aitoken.homes/v1',
+      baseURL: env.FORGECAST_LLM_BASE_URL || 'https://aitoken.homes/v1',
       apiKey: env.FORGECAST_LLM_KEY ?? '',
       models: {
-        analysis: env.FORGECAST_MODEL_ANALYSIS ?? 'claude-sonnet-5',
-        copy: env.FORGECAST_MODEL_COPY ?? 'claude-sonnet-5',
-        scoring: env.FORGECAST_MODEL_SCORING ?? 'claude-haiku-4-5',
+        analysis: env.FORGECAST_MODEL_ANALYSIS || 'claude-sonnet-5',
+        copy: env.FORGECAST_MODEL_COPY || 'claude-sonnet-5',
+        scoring: env.FORGECAST_MODEL_SCORING || 'claude-haiku-4-5',
       },
     },
     github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
     video: { mode: videoMode },
     tts: {
       mode: env.FORGECAST_TTS_MODE === 'live' ? 'live' : 'stub',
-      baseURL: env.FORGECAST_TTS_BASE_URL ?? 'https://aitoken.homes/v1',
+      baseURL: env.FORGECAST_TTS_BASE_URL || 'https://aitoken.homes/v1',
       apiKey: env.FORGECAST_TTS_KEY ?? '',
       model: env.FORGECAST_TTS_MODEL ?? '',
     },
