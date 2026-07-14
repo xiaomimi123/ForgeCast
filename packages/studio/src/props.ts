@@ -43,3 +43,29 @@ export function buildStoryProps(doc: CopyDoc, brandName = 'forgecast'): StoryPro
     brandName,
   }
 }
+
+export interface DemoProps {
+  painTitle: string
+  painPoints: string[]
+  demoVideoSrc?: string
+  priceAnchor: string
+  cta: string
+  brandName: string
+  audioSrc?: string
+  cues?: Cue[]
+}
+
+/** 从文案生成演示模板参数（痛点从正文切句，报价从口播锚点段抽取，均兜底） */
+export function buildDemoProps(doc: CopyDoc, brandName = 'forgecast'): DemoProps {
+  const flash = buildFlashProps(doc, brandName)
+  const painPoints = doc.xhsBody.split(/[。！？\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 3)
+  const anchorMatch = doc.douyinScript.match(/【[^】]*报价[^】]*】\s*(.+)/)
+  const priceAnchor = (anchorMatch?.[1] ?? '外面做要几万，我这套成本一顿火锅钱').trim()
+  return {
+    painTitle: flash.painTitle,
+    painPoints: painPoints.length ? painPoints : [flash.painTitle],
+    priceAnchor,
+    cta: flash.cta,
+    brandName,
+  }
+}
