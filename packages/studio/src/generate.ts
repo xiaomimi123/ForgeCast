@@ -4,13 +4,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { buildFlashProps } from './props'
-import { renderFlash } from './render'
+import { buildFlashProps, buildStoryProps } from './props'
+import { renderVideo } from './render'
+import { synthesizeVoice } from './tts'
 
 export interface GenerateVideoInput {
   slug: string
   assetId?: number
-  tpl?: 'flash'
+  tpl?: 'flash' | 'story'
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
@@ -18,9 +19,10 @@ export interface GeneratedVideo { assetId: number; filePath: string }
 // Remotion 打包入口（相对本文件定位到 src/remotion/entry.ts）
 const ENTRY = fileURLToPath(new URL('./remotion/entry.ts', import.meta.url))
 
-/** 取 copy 素材 → 解析 → buildFlashProps → 写 props.json → 渲染 mp4 → 登记 video 素材 */
+/** 取 copy 素材 → 解析 → 按 tpl 组装参数（flash 三段文字 / story 气泡+TTS配音字幕）→ 写 props.json → 渲染 mp4 → 登记 video 素材 */
 export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Promise<GeneratedVideo> {
   const { slug, onProgress = () => {} } = input
+  const tpl = input.tpl ?? 'flash'
   const project: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug)
   if (!project) throw new Error(`项目不存在: ${slug}`)
 
@@ -30,25 +32,35 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   if (!copy) throw new Error(`没有可用的文案素材（先在素材工坊生成文案）: ${slug}`)
 
   onProgress('解析文案、组装视频参数…')
-  const copyAbs = path.join(ctx.config.paths.workspace, copy.file_path)
-  const doc = parseCopyOutput(fs.readFileSync(copyAbs, 'utf8'))
-  const props = buildFlashProps(doc, project.brand_name ?? slug)
+  const doc = parseCopyOutput(fs.readFileSync(path.join(ctx.config.paths.workspace, copy.file_path), 'utf8'))
+  const brandName = project.brand_name ?? slug
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const base = `${copy.hook ?? 'flash'}-${stamp}-${randomUUID().slice(0, 6)}`
+  const base = `${tpl}-${copy.hook ?? tpl}-${stamp}-${randomUUID().slice(0, 6)}`
   const videoDir = path.join(ctx.config.paths.workspace, slug, 'videos')
   fs.mkdirSync(videoDir, { recursive: true })
+
+  let compositionId: string
+  let props: Record<string, unknown>
+  if (tpl === 'story') {
+    // story：气泡文案 + TTS 配音（wav）+ 估算字幕（cues）
+    const sp = buildStoryProps(doc, brandName)
+    onProgress('TTS 配音…')
+    const wavAbs = path.join(videoDir, `${base}.wav`)
+    const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    sp.audioSrc = voice.audioRel ?? undefined
+    sp.cues = voice.cues
+    props = sp as unknown as Record<string, unknown>
+    compositionId = 'Story'
+  } else {
+    props = buildFlashProps(doc, brandName) as unknown as Record<string, unknown>
+    compositionId = 'Flash'
+  }
   fs.writeFileSync(path.join(videoDir, `${base}.props.json`), JSON.stringify(props, null, 2), 'utf8')
 
-  onProgress(`渲染视频（${ctx.config.video.mode} 模式）…`)
+  onProgress(`渲染视频（${ctx.config.video.mode} 模式，${tpl}）…`)
   const relPath = path.join(slug, 'videos', `${base}.mp4`)
-  await renderFlash(
-    ENTRY,
-    props as unknown as Record<string, unknown>,
-    path.join(ctx.config.paths.workspace, relPath),
-    ctx.config.video.mode,
-    { onProgress },
-  )
+  await renderVideo(ENTRY, compositionId, props, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode, { onProgress })
 
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
