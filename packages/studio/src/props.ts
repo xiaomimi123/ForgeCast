@@ -1,4 +1,5 @@
 import type { CopyDoc } from '@forgecast/copywriter'
+import type { Cue } from './tts'
 
 export interface FlashProps {
   painTitle: string
@@ -15,6 +16,30 @@ export function buildFlashProps(doc: CopyDoc, brandName = 'forgecast'): FlashPro
     painTitle: doc.cover.main || doc.titles[0] || '',
     sellingPoint: doc.cover.sub || doc.titles[1] || '',
     cta,
+    brandName,
+  }
+}
+
+export interface StoryProps {
+  bubbles: Array<{ who: 'them' | 'me'; text: string }>
+  sellingPoint: string
+  cta: string
+  brandName: string
+  audioSrc?: string
+  cues?: Cue[]
+}
+
+/** 从文案生成故事模板参数（气泡为模板化对话，卖点/CTA 复用 flash 抽取） */
+export function buildStoryProps(doc: CopyDoc, brandName = 'forgecast'): StoryProps {
+  const flash = buildFlashProps(doc, brandName)
+  return {
+    bubbles: [
+      { who: 'them', text: doc.titles[0] || '能做个这个吗？' },
+      { who: 'me', text: '可以，等我一天' },
+      { who: 'them', text: '太好了，等你消息' },
+    ],
+    sellingPoint: flash.sellingPoint,
+    cta: flash.cta,
     brandName,
   }
 }
