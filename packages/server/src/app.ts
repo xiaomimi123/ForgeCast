@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { analyzeProject } from '@forgecast/analyst'
-import { HOOKS, type CoreCtx } from '@forgecast/core'
+import { getAllSettings, HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
@@ -41,6 +41,62 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
         .run(...keys.map((k) => body[k]), slug)
     }
     return c.json({ ok: true })
+  })
+
+  // —— 设置页：key/模型/模式（key 打码回显，绝不回明文）——
+  function settingsView() {
+    const s = getAllSettings(ctx.db)
+    const cfg = ctx.config
+    return {
+      llm: {
+        mode: s.llm_mode === 'live' ? 'live' : 'mock',
+        key_set: !!cfg.llm.apiKey, key_masked: maskKey(cfg.llm.apiKey),
+        base_url: s.llm_base_url || cfg.llm.baseURL,
+        models: {
+          analysis: s.model_analysis || cfg.llm.models.analysis,
+          copy: s.model_copy || cfg.llm.models.copy,
+          scoring: s.model_scoring || cfg.llm.models.scoring,
+        },
+      },
+      tts: {
+        mode: s.tts_mode === 'live' ? 'live' : 'stub',
+        key_set: !!cfg.tts.apiKey, key_masked: maskKey(cfg.tts.apiKey),
+        base_url: s.tts_base_url || cfg.tts.baseURL,
+        model: s.tts_model || cfg.tts.model,
+      },
+      github: {
+        mode: s.github_mode === 'live' ? 'live' : 'mock',
+        token_set: !!cfg.github.token, token_masked: maskKey(cfg.github.token),
+      },
+    }
+  }
+
+  app.get('/api/settings', (c) => c.json(settingsView()))
+
+  app.put('/api/settings', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const kv: Partial<Record<SettingKey, string>> = {}
+    for (const k of SETTING_KEYS) {
+      if (!(k in body) || typeof body[k] !== 'string') continue
+      // key/token 字段留空 = 保持原值（不写空覆盖）；非空才更新
+      if ((k === 'llm_key' || k === 'tts_key' || k === 'github_token') && body[k] === '') continue
+      kv[k] = body[k]
+    }
+    setSettings(ctx.db, kv)
+    refreshCtx(ctx) // 就地生效：重算 config + 重建 ctx.llm
+    return c.json(settingsView())
+  })
+
+  app.post('/api/settings/test-llm', async (c) => {
+    if (ctx.config.llm.mode !== 'live') {
+      return c.json({ ok: false, message: '当前为 mock 模式（未配置 live key），未发起真实请求' })
+    }
+    try {
+      const out = await ctx.llm.complete({ model: ctx.config.llm.models.copy, prompt: 'ping，请只回复 ok' })
+      return c.json({ ok: true, message: `连接成功，模型返回：${out.slice(0, 40)}` })
+    } catch (e) {
+      return c.json({ ok: false, message: e instanceof Error ? e.message : String(e) })
+    }
   })
 
   app.get('/api/tasks/:id/events', (c) => {

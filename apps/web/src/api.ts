@@ -54,3 +54,8 @@ export interface Lead {
   id: number; asset_id: number; wechat: string | null; intent: string | null
   status: string; created_at: string; hook: string | null; slug: string | null
 }
+export interface SettingsView {
+  llm: { mode: 'live' | 'mock'; key_set: boolean; key_masked: string; base_url: string; models: { analysis: string; copy: string; scoring: string } }
+  tts: { mode: 'live' | 'stub'; key_set: boolean; key_masked: string; base_url: string; model: string }
+  github: { mode: 'live' | 'mock'; token_set: boolean; token_masked: string }
+}

@@ -22,10 +22,8 @@ export interface ForgecastConfig {
 export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env): ForgecastConfig {
   // 未传 root 时用 INIT_CWD 兜底（pnpm --filter 会把子进程 cwd 切到包目录）
   const resolvedRoot = root ?? env.INIT_CWD ?? process.cwd()
+  // live 但缺 key 不再直接 throw——key 可由设置页(settings 表)提供，createCtx 中 normalizeModes 会对仍缺 key 的 live 降级
   const mode: LlmMode = env.FORGECAST_LLM_MODE === 'live' ? 'live' : 'mock'
-  if (mode === 'live' && !env.FORGECAST_LLM_KEY) {
-    throw new Error('FORGECAST_LLM_MODE=live 时必须设置 FORGECAST_LLM_KEY（.env）')
-  }
   const githubMode: GithubMode = env.FORGECAST_GITHUB_MODE === 'live' ? 'live' : 'mock'
   const videoMode: VideoMode = env.FORGECAST_VIDEO_MODE === 'stub' ? 'stub' : 'render'
   return {

@@ -9,8 +9,10 @@ describe('loadConfig', () => {
     expect(cfg.paths.db).toBe('/tmp/x/db/forgecast.db')
     expect(cfg.paths.templates).toBe('/tmp/x/templates')
   })
-  it('live 模式无 key 抛错', () => {
-    expect(() => loadConfig('/tmp/x', { FORGECAST_LLM_MODE: 'live' })).toThrow(/FORGECAST_LLM_KEY/)
+  it('live 模式无 key 不抛错（改由 createCtx 的 normalizeModes 降级；key 可来自设置页）', () => {
+    const cfg = loadConfig('/tmp/x', { FORGECAST_LLM_MODE: 'live' })
+    expect(cfg.llm.mode).toBe('live')
+    expect(cfg.llm.apiKey).toBe('')
   })
   it('live 模式读取 key 与模型名', () => {
     const cfg = loadConfig('/tmp/x', {
