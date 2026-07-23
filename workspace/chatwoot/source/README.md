@@ -1,0 +1,1 @@
+Chatwoot 是开源的多渠道在线客服平台。React 前端 + Node，自带 Docker 部署。含 dashboard 界面，README 附 screenshot 与 demo 链接，支持 CRM 场景与 chat 收件箱。
