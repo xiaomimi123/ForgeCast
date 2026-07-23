@@ -55,7 +55,13 @@ DOCKER_BUILDKIT=0 docker build -f Dockerfile.renderer -t forgecast-renderer:late
 DOCKER_BUILDKIT=0 docker compose --profile render build renderer
 ```
 
-镜像约 ~2GB（含 Chromium + Kokoro onnx 模型）。国内服务器构建需配 apt/pip/npm 国内镜像源，否则依赖下载会卡（见仓库部署备忘）。
+镜像约 ~2GB（含 Chromium + Kokoro onnx 模型）。
+
+**构建网络要求（重要）**：构建过程要从 Debian/PyPI 拉包。若在开启了透明代理/VPN 的机器上构建，可能遇到：
+- apt 报 `Unable to connect to deb.debian.org:80: [IP: 198.18.x.x]`（HTTP 被沉洞）；
+- 或 `Certificate verification failed ... [IP: 198.18.x.x 443]`（HTTPS 被 MITM）。
+
+这是**宿主机 VPN 拦截了所有镜像流量**，与 Dockerfile 无关，换任何镜像源都绕不过。解决：关掉透明代理，或直接在**部署目标服务器**（配好国内 apt/pip 源、无 MITM）上构建。Dockerfile 已加 apt 重试与 `ca-certificates`，pip 用清华源；apt 默认 deb.debian.org，CN 服务器可自行 sed 成阿里云/清华等可达源。
 
 进容器渲染：
 ```bash

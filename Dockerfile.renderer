@@ -1,16 +1,20 @@
 FROM node:22-bookworm-slim
 WORKDIR /app
+# 构建须在能访问 Debian/pip 包源的网络下进行。若 apt 报 198.18.x 沉洞或证书 MITM，
+# 说明本机 VPN/代理拦截了镜像流量——换到部署目标（配好国内源的服务器）构建。见 docs/hyperframes-deploy.md
+RUN printf 'Acquire::Retries "8";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80retries
 # ffmpeg + 中文字体 + Chromium 运行依赖 + espeak-ng(Kokoro 中文音素) + python venv + Bun 前置
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg fonts-noto-cjk fonts-noto-color-emoji espeak-ng \
+    ca-certificates ffmpeg fonts-noto-cjk fonts-noto-color-emoji espeak-ng \
     python3 python3-venv python3-pip curl unzip \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     && rm -rf /var/lib/apt/lists/*
 # Bun（HyperFrames 工具链）
 RUN curl -fsSL https://bun.sh/install | bash && ln -s /root/.bun/bin/bun /usr/local/bin/bun
-# Kokoro TTS venv（离线中文配音）
-RUN python3 -m venv /opt/kokoro && /opt/kokoro/bin/pip install --no-cache-dir kokoro-onnx soundfile "misaki[zh]"
+# Kokoro TTS venv（离线中文配音）；清华 pypi 镜像（CN 网络）
+RUN python3 -m venv /opt/kokoro && /opt/kokoro/bin/pip install --no-cache-dir \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple kokoro-onnx soundfile "misaki[zh]"
 # espeak-ng 数据路径随架构而异（arm64/amd64），探测后建稳定软链
 RUN ln -s "$(dirname "$(find /usr/lib -name phontab | head -1)")" /opt/espeak-data
 ENV HYPERFRAMES_PYTHON=/opt/kokoro/bin/python \
