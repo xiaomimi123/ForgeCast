@@ -6,7 +6,7 @@ function ctxWith(env: Record<string, string> = {}): CoreCtx {
   const config = loadConfig('/tmp/fc-score', env)
   return { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
 }
-const meta = { repo: 'a/b', url: 'u', license: 'MIT', stars: 100, lastCommit: null, topics: ['crm'] }
+const meta = { repo: 'a/b', url: 'u', license: 'MIT', stars: 100, lastCommit: null, topics: ['crm'], description: null }
 
 describe('scoreCandidate mock', () => {
   it('确定性启发式：三维在各自上限内、合成可加、techStack 有值', async () => {

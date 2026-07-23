@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS candidates (
   license_ok INTEGER,
   stars INTEGER, last_commit TEXT,
   tech_stack TEXT,
+  description TEXT,
   score REAL,
   score_detail TEXT,
   status TEXT DEFAULT 'candidate',
@@ -73,6 +74,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）
   ensureColumn(db, 'assets', 'published_url', 'TEXT')
+  // 迁移：给候选表补 GitHub 仓库简介列（新库已含，此为兼容旧库）
   ensureColumn(db, 'candidates', 'description', 'TEXT')
   return db
 }
