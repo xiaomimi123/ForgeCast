@@ -7,6 +7,24 @@ import type { Cue } from './tts'
 const STUB_BYTES = Buffer.from('FORGECAST_STUB_MP4\n')
 // templates/hf 相对本文件：packages/studio/src → 仓库根/templates/hf
 const HF_TEMPLATES = fileURLToPath(new URL('../../../templates/hf', import.meta.url))
+// pin HyperFrames 版本：npx 默认拉最新，破坏性升级会让渲染无预警变化
+const HF_VERSION = '0.7.68'
+// render/tts 单进程超时（Chrome/kokoro 卡死不能把进程内任务队列永久挂住）
+const RENDER_TIMEOUT_MS = 600_000
+const TTS_SPAWN_TIMEOUT_MS = 180_000
+
+/** 带超时的 spawn：超时 kill 并 reject。stdin ignore；用 npx --yes 避免交互询问挂起。 */
+function spawnWithTimeout(args: string[], opts: { cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn('npx', ['--yes', ...args], { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    let err = ''
+    const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error(`${opts.label} 超时（${opts.timeoutMs}ms）已终止`)) }, opts.timeoutMs)
+    p.stdout.on('data', (d) => opts.onStdout?.(d.toString().trim().slice(0, 120)))
+    p.stderr.on('data', (d) => { err += d.toString() })
+    p.on('error', (e) => { clearTimeout(timer); reject(e) })
+    p.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`${opts.label} 退出码 ${code}: ${err.slice(0, 400)}`)) })
+  })
+}
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -35,7 +53,8 @@ export function injectAudioCaptions(html: string, audioRel: string | null, cues:
     const dur = Math.max(0.5, c.end - c.start)
     return `<div class="cap clip" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
   }).join('\n')
-  return html.replace('<!--HF_AUDIO-->', audioTag).replace('<!--HF_CAPTIONS-->', capClips)
+  // 用函数 replacer：替换值含用户文案，直接传字符串会让 $& / $` 等被当替换模式解释
+  return html.replace('<!--HF_AUDIO-->', () => audioTag).replace('<!--HF_CAPTIONS-->', () => capClips)
 }
 
 /** 读 templates/hf/<name>.html */
@@ -47,6 +66,8 @@ export function readTemplate(name: string): string {
 export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Record<string, Buffer> = {}): void {
   fs.mkdirSync(path.join(destDir, 'assets'), { recursive: true })
   fs.copyFileSync(path.join(HF_TEMPLATES, 'hyperframes.json'), path.join(destDir, 'hyperframes.json'))
+  // GSAP 本地化（模板引用 gsap.min.js）：离线/部署目标渲染不依赖 CDN
+  fs.copyFileSync(path.join(HF_TEMPLATES, 'gsap.min.js'), path.join(destDir, 'gsap.min.js'))
   // fonts 目录软链（相对 index.html 的 assets/fonts 引用统一）
   const fontsSrc = path.join(HF_TEMPLATES, 'fonts')
   const fontsDst = path.join(destDir, 'assets', 'fonts')
@@ -106,7 +127,8 @@ export function buildDemoSections(opts: {
   const per = shots.length ? (carEnd - carStart) / shots.length : 0
   const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
   const shotHtml = shots.map((s, i) => {
-    const src = `assets/${s.rel}`
+    // 文件名由操作者放入，转义 + encodeURI 防属性/CSS url 破坏
+    const src = escapeHtml(`assets/${encodeURI(s.rel)}`)
     const body = s.orientation === 'portrait'
       ? `<div class="phoneWrap"><div class="phone"><img src="${src}"/></div></div>`
       : `<div class="wideWrap"><div class="wideBg" style="background-image:url('${src}')"></div><div class="wideFg"><img src="${src}"/></div></div>`
@@ -141,19 +163,21 @@ export function buildStorySections(opts: {
   ].join('\n')
 }
 
-/** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。 */
+/** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。带超时 + --yes。 */
 export async function renderHyperframes(
   projectDir: string, outPath: string, mode: 'render' | 'stub',
   opts: { onProgress?: (m: string) => void } = {},
 ): Promise<void> {
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
   if (mode === 'stub') { fs.writeFileSync(outPath, STUB_BYTES); return }
-  await new Promise<void>((resolve, reject) => {
-    const p = spawn('npx', ['hyperframes', 'render', '--output', outPath], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] })
-    let err = ''
-    p.stdout.on('data', (d) => opts.onProgress?.(d.toString().trim().slice(0, 120)))
-    p.stderr.on('data', (d) => { err += d.toString() })
-    p.on('error', reject)
-    p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`hyperframes render 退出码 ${code}: ${err.slice(0, 400)}`)))
+  await spawnWithTimeout([`hyperframes@${HF_VERSION}`, 'render', '--output', outPath], {
+    cwd: projectDir, timeoutMs: RENDER_TIMEOUT_MS, label: 'hyperframes render', onStdout: opts.onProgress,
+  })
+}
+
+/** Kokoro 配音：spawn `hyperframes tts`（带超时 + --yes + pin 版本）。供 tts.ts 复用。 */
+export function runKokoroTts(text: string, outWavAbs: string, voice: string, lang = 'zh'): Promise<void> {
+  return spawnWithTimeout([`hyperframes@${HF_VERSION}`, 'tts', text, '--voice', voice, '--lang', lang, '--output', outWavAbs], {
+    timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'hyperframes tts',
   })
 }

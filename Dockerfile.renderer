@@ -31,6 +31,6 @@ COPY templates ./templates
 COPY cli.ts tsconfig.base.json ./
 RUN pnpm install --frozen-lockfile
 # 预拉 chrome-headless-shell（HyperFrames 渲染用）——失败不阻断构建，首次渲染时会补拉
-RUN npx --yes hyperframes browser ensure || true
+RUN npx --yes hyperframes@0.7.68 browser ensure || true
 # 渲染宿主：进容器手动 `pnpm exec tsx cli.ts video <slug> --tpl=demo`
 CMD ["sleep", "infinity"]

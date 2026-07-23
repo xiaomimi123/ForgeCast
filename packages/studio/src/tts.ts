@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
+import { runKokoroTts } from './hyperframes'
 
 export interface Cue { start: number; end: number; text: string }
 /** degraded：live/kokoro 模式失败回落占位音轨时的原因（stub 模式下为 undefined，不算降级） */
@@ -52,16 +52,9 @@ function minimalWav(): Buffer {
 /** live 单次请求超时（配音文本可能较长，给足余量） */
 const TTS_TIMEOUT_MS = 120_000
 
-/** 默认 Kokoro 运行器：spawn `hyperframes tts`。需环境已装 kokoro-onnx + espeak-ng（见部署文档）。 */
+/** 默认 Kokoro 运行器：复用 hyperframes.ts 的 runKokoroTts（带超时 + --yes + pin 版本）。 */
 function defaultRunKokoro(voice: string): (text: string, outWavAbs: string) => Promise<void> {
-  return (text, outWavAbs) => new Promise((resolve, reject) => {
-    const args = ['hyperframes', 'tts', text, '--voice', voice, '--lang', 'zh', '--output', outWavAbs]
-    const p = spawn('npx', args, { stdio: ['ignore', 'ignore', 'pipe'] })
-    let err = ''
-    p.stderr.on('data', (d) => { err += d.toString() })
-    p.on('error', reject)
-    p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`hyperframes tts 退出码 ${code}: ${err.slice(0, 300)}`)))
-  })
+  return (text, outWavAbs) => runKokoroTts(text, outWavAbs, voice)
 }
 
 /**
