@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0f0f1a; font-family: "NotoSC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      .painT { font-size: 100px; font-weight: 900; line-height: 1.28; color: #fff; }
+      .sell { font-size: 72px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+      .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+      .brand { font-size: 40px; color: #8888aa; }
+      .cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); z-index: 5; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="47" data-width="1080" data-height="1920">
+      <div id="s1" class="clip fill pad center" data-start="0" data-duration="4" data-track-index="1" style="background:linear-gradient(160deg,#1a1a2e,#16213e)">
+        <div class="painT">网店客服还在手动回？</div>
+      </div>
+      <div id="s2" class="clip fill pad center" data-start="4" data-duration="4" data-track-index="1">
+        <div class="sell">一套系统扛住3个人的活</div>
+      </div>
+      <div id="s3" class="clip fill pad center" data-start="8" data-duration="4" data-track-index="1" style="background:#1a1a2e">
+        <div class="cta">想要同款的，评论区扣1，部署文档发你。</div><div class="brand">@demo-project</div>
+      </div>
+      <div class="cap clip" data-start="0" data-duration="4.2" data-track-index="9">开网店的，谁还没为回消息熬过夜</div>
+<div class="cap clip" data-start="4.2" data-duration="11.200000000000003" data-track-index="9">微信一堆未读、旺旺提示音响个不停、抖店后台还挂着三个咨询——漏回一条，差评就来了</div>
+<div class="cap clip" data-start="15.400000000000002" data-duration="19.040000000000003" data-track-index="9">看我这套后台：所有渠道的消息进一个列表，点开直接回；这里设置自动回复，发货时间、退换规则，机器人先答；客户买过什么、聊过什么，侧边栏全有</div>
+<div class="cap clip" data-start="34.440000000000005" data-duration="6.719999999999999" data-track-index="9">外面开发一套要几万，我这套部署下来成本一顿火锅钱</div>
+<div class="cap clip" data-start="41.160000000000004" data-duration="5.039999999999999" data-track-index="9">想要同款的，评论区扣1，部署文档发你</div>
+      <audio id="narration" class="clip" data-start="0" data-duration="47" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.from("#s1 .painT", { opacity: 0, y: 40, duration: .6 }, 0.2);
+      tl.from("#s2 .sell", { opacity: 0, scale: .9, duration: .6 }, 4.2);
+      tl.from("#s3 .cta", { opacity: 0, y: 30, duration: .5 }, 8.2);
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: 47, ease: "none" }, 0);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

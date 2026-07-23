@@ -52,6 +52,12 @@ describe('video API (stub)', () => {
     expect(assets.some((a) => a.type === 'video')).toBe(true)
   })
   it('POST video {tpl:demo} → 任务完成 → video 素材', async () => {
+    // demo 模板需要 shots/：放一张最小竖图 PNG（IHDR 写 1080x1920）
+    const shotsDir = path.join(ctx.config.paths.workspace, 'demo', 'shots')
+    fs.mkdirSync(shotsDir, { recursive: true })
+    const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    const ihdr = Buffer.alloc(25); ihdr.writeUInt32BE(13, 0); ihdr.write('IHDR', 4); ihdr.writeUInt32BE(1080, 8); ihdr.writeUInt32BE(1920, 12)
+    fs.writeFileSync(path.join(shotsDir, '01.png'), Buffer.concat([sig, ihdr]))
     const { taskId } = await (await app.request('/api/projects/demo/video', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tpl: 'demo' }),
     })).json() as any
