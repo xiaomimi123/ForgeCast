@@ -54,6 +54,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     onProgress('TTS 配音…')
     const wavAbs = path.join(videoDir, `${base}.wav`)
     const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    if (voice.degraded) onProgress(`⚠ TTS 降级为占位音轨：${voice.degraded}`)
     dp.audioSrc = voice.audioRel ?? undefined
     dp.cues = voice.cues
     props = dp as unknown as Record<string, unknown>
@@ -64,6 +65,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     onProgress('TTS 配音…')
     const wavAbs = path.join(videoDir, `${base}.wav`)
     const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    if (voice.degraded) onProgress(`⚠ TTS 降级为占位音轨：${voice.degraded}`)
     sp.audioSrc = voice.audioRel ?? undefined
     sp.cues = voice.cues
     props = sp as unknown as Record<string, unknown>

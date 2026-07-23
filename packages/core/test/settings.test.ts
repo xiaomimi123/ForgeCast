@@ -53,14 +53,18 @@ describe('normalizeModes', () => {
     const config = loadConfig(root, {})
     config.llm.mode = 'live'; config.llm.apiKey = ''
     config.tts.mode = 'live'; config.tts.apiKey = ''
-    normalizeModes(config)
+    const notes = normalizeModes(config)
     expect(config.llm.mode).toBe('mock')
     expect(config.tts.mode).toBe('stub')
+    // 降级必须可见：只改模式不出声，会让 live 跑成 fixture 而无人察觉
+    expect(notes).toHaveLength(2)
+    expect(notes.join()).toContain('LLM')
+    expect(notes.join()).toContain('TTS')
   })
   it('live 有 key 不动', () => {
     const config = loadConfig(root, {})
     config.llm.mode = 'live'; config.llm.apiKey = 'k'
-    normalizeModes(config)
+    expect(normalizeModes(config)).toEqual([])
     expect(config.llm.mode).toBe('live')
   })
 })

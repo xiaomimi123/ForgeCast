@@ -5,6 +5,9 @@ import { HOOKS, type HookType } from './types'
 export interface CompleteOptions { model: string; system?: string; prompt: string }
 export interface LlmClient { complete(opts: CompleteOptions): Promise<string> }
 
+/** live 单次请求超时：中转站卡住时不能让整条流水线无限等 */
+const LLM_TIMEOUT_MS = 120_000
+
 /** mock：从提示词首行【钩子类型】xxx 取 fixture；live：OpenAI 兼容调用，失败重试2次 */
 export function createLlmClient(cfg: ForgecastConfig['llm'], fetchImpl: typeof fetch = fetch): LlmClient {
   if (cfg.mode === 'mock') {
@@ -31,6 +34,7 @@ export function createLlmClient(cfg: ForgecastConfig['llm'], fetchImpl: typeof f
                 { role: 'user', content: opts.prompt },
               ],
             }),
+            signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
           })
           if (!res.ok) throw new Error(`LLM HTTP ${res.status}: ${await res.text()}`)
           const data: any = await res.json()

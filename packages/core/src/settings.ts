@@ -48,10 +48,21 @@ export function applyStoredSettings(config: ForgecastConfig, db: Database.Databa
   put(s.github_token, (v) => { config.github.token = v })
 }
 
-/** live 缺 key 优雅降级为 mock/stub，避免真调用崩 */
-export function normalizeModes(config: ForgecastConfig): void {
-  if (config.llm.mode === 'live' && !config.llm.apiKey) config.llm.mode = 'mock'
-  if (config.tts.mode === 'live' && !config.tts.apiKey) config.tts.mode = 'stub'
+/**
+ * live 缺 key 优雅降级为 mock/stub，避免真调用崩。
+ * 返回降级说明——静默降级会让人以为在跑 live，实际拿到的是 fixture 文案。
+ */
+export function normalizeModes(config: ForgecastConfig): string[] {
+  const notes: string[] = []
+  if (config.llm.mode === 'live' && !config.llm.apiKey) {
+    config.llm.mode = 'mock'
+    notes.push('LLM 设为 live 但缺 key，已降级 mock（文案来自 fixture，不是真生成）')
+  }
+  if (config.tts.mode === 'live' && !config.tts.apiKey) {
+    config.tts.mode = 'stub'
+    notes.push('TTS 设为 live 但缺 key，已降级 stub（占位静音音轨）')
+  }
+  return notes
 }
 
 /** key 打码：空→''；否则 '••••'+后4位 */

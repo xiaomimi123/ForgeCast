@@ -15,6 +15,13 @@ function arg(name: string): string | undefined {
   return hit?.split('=')[1]
 }
 
+/** createCtx + 把模式降级（live 缺 key 等）打出来，避免以为在跑 live 实际拿的是 fixture */
+function ctxWithNotes(): ReturnType<typeof createCtx> {
+  const ctx = createCtx()
+  for (const n of ctx.modeNotes ?? []) console.log(`  ⚠ ${n}`)
+  return ctx
+}
+
 async function main() {
   switch (cmd) {
     case 'dev': {
@@ -38,7 +45,7 @@ async function main() {
       const slug = rest.find((a) => !a.startsWith('--'))
       const hook = arg('hook') as any
       if (!slug || !hook) { console.error('用法: forgecast copy <slug> --hook=pain [--n=1]'); process.exit(1) }
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       // 与 server 同款 workspace 同步（保证 CLI 单独可用），逻辑来自 core，避免内联重复 SQL
       syncWorkspaceProjects(ctx)
       const out = await generateCopy(ctx, {
@@ -50,7 +57,7 @@ async function main() {
       break
     }
     case 'scout': {
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       // 兼容 --add=<url> 与 --add <url> 两种写法
       const addFlagIdx = rest.indexOf('--add')
       const addUrl = arg('add') ?? (addFlagIdx >= 0 ? rest[addFlagIdx + 1] : undefined)
@@ -79,7 +86,7 @@ async function main() {
     case 'pick': {
       const repo = rest.find((a) => !a.startsWith('--'))
       if (!repo) { console.error('用法: forgecast pick <owner/repo>'); process.exit(1) }
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       const { slug } = await pickCandidate(ctx, repo)
       console.log(`已立项: ${slug} → workspace/${slug}/source/（可接着 forgecast analyze ${slug}）`)
       break
@@ -87,7 +94,7 @@ async function main() {
     case 'analyze': {
       const slug = rest.find((a) => !a.startsWith('--'))
       if (!slug) { console.error('用法: forgecast analyze <slug>'); process.exit(1) }
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       const { path: rel } = await analyzeProject(ctx, slug, { onProgress: (m) => console.log(`  ${m}`) })
       console.log(`分析完成: workspace/${rel}`)
       break
@@ -95,14 +102,14 @@ async function main() {
     case 'rebrand': {
       const slug = rest.find((a) => !a.startsWith('--'))
       if (!slug) { console.error('用法: forgecast rebrand <slug>'); process.exit(1) }
-      const { path: rel } = await rebrandPlan(createCtx(), slug, { onProgress: (m) => console.log(`  ${m}`) })
+      const { path: rel } = await rebrandPlan(ctxWithNotes(), slug, { onProgress: (m) => console.log(`  ${m}`) })
       console.log(`换皮清单完成: workspace/${rel}`)
       break
     }
     case 'video': {
       const slug = rest.find((a) => !a.startsWith('--'))
       if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo [--asset=<id>]'); process.exit(1) }
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       const assetArg = arg('asset')
       // tpl 白名单：story/demo 显式放行，其余（含未传）回落 flash
       const tpl = (['story', 'demo'] as const).includes(arg('tpl') as any) ? (arg('tpl') as 'story' | 'demo') : 'flash'
@@ -119,7 +126,7 @@ async function main() {
     case 'approve': {
       const id = rest.find((a) => !a.startsWith('--'))
       if (!id) { console.error('用法: forgecast approve <assetId>'); process.exit(1) }
-      approveAsset(createCtx(), Number(id))
+      approveAsset(ctxWithNotes(), Number(id))
       console.log(`已审核通过: 素材 ${id}`)
       break
     }
@@ -127,14 +134,14 @@ async function main() {
       const id = rest.find((a) => !a.startsWith('--'))
       const platform = arg('platform')
       if (!id || !platform) { console.error('用法: forgecast publish <assetId> --platform=<xhs|douyin> [--url=<link>]'); process.exit(1) }
-      publishAsset(createCtx(), Number(id), { platform, url: arg('url') })
+      publishAsset(ctxWithNotes(), Number(id), { platform, url: arg('url') })
       console.log(`已回填发布: 素材 ${id} @ ${platform}`)
       break
     }
     case 'perf': {
       const id = rest.find((a) => !a.startsWith('--'))
       if (!id) { console.error('用法: forgecast perf <assetId> --views=N --likes=N --leads=N'); process.exit(1) }
-      recordPerf(createCtx(), Number(id), {
+      recordPerf(ctxWithNotes(), Number(id), {
         views: arg('views') ? Number(arg('views')) : undefined,
         likes: arg('likes') ? Number(arg('likes')) : undefined,
         leads: arg('leads') ? Number(arg('leads')) : undefined,
@@ -145,12 +152,12 @@ async function main() {
     case 'lead': {
       const id = rest.find((a) => !a.startsWith('--'))
       if (!id) { console.error('用法: forgecast lead <assetId> --wechat=<..> [--intent=<..>]'); process.exit(1) }
-      const { id: leadId } = addLead(createCtx(), { assetId: Number(id), wechat: arg('wechat'), intent: arg('intent') })
+      const { id: leadId } = addLead(ctxWithNotes(), { assetId: Number(id), wechat: arg('wechat'), intent: arg('intent') })
       console.log(`已登记询单 #${leadId}（来源素材 ${id}）`)
       break
     }
     case 'calendar': {
-      const v = calendarSuggestions(createCtx())
+      const v = calendarSuggestions(ctxWithNotes())
       console.log(`${v.date}｜今日已发 ${v.publishedToday}，还可发 ${v.remainingToday}`)
       console.log(`库存: ${JSON.stringify(v.inventory)}`)
       console.log(`冷却中: ${JSON.stringify(v.cooldown)}`)
@@ -173,7 +180,7 @@ async function main() {
       if (nonFlags[0] !== 'add' || !nonFlags[1] || !file) {
         console.error('用法: forgecast clip add <slug> --file=<workspace相对路径>'); process.exit(1)
       }
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       syncWorkspaceProjects(ctx)
       const { id } = registerClip(ctx, { slug: nonFlags[1], file })
       console.log(`已登记开发过程碎片 #${id}（${file}），forgecast approve ${id} 后进入排期`)
@@ -181,7 +188,7 @@ async function main() {
     }
     case 'knowledge': {
       const sub = rest.find((a) => !a.startsWith('--'))
-      const ctx = createCtx()
+      const ctx = ctxWithNotes()
       if (sub === 'sync') {
         if (!arg('source')) console.log('同步知识库中（首次会克隆 dbskill 上游到 .cache/，稍候）…')
         const { count, version, mdFiles, source } = await syncKnowledge(ctx, { source: arg('source'), repo: arg('repo') })
@@ -197,7 +204,7 @@ async function main() {
       break
     }
     case 'report': {
-      const r = weeklyReport(createCtx(), arg('since'))
+      const r = weeklyReport(ctxWithNotes(), arg('since'))
       console.log(`周报（自 ${r.since}）  钩子 | 发布 | 询单`)
       for (const [hook, s] of Object.entries(r.perHook)) console.log(`  ${hook.padEnd(10)} ${String(s.published).padStart(4)} ${String(s.leads).padStart(6)}`)
       console.log(`  合计: 发布 ${r.totals.published}，询单 ${r.totals.leads}`)

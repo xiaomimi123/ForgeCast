@@ -24,6 +24,12 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_MODEL_ANALYSIS / COPY / SCORING | 各环节模型 id |
 | FORGECAST_GITHUB_MODE | `mock`（默认，无 token 用 fixture）/ `live`（走真实 GitHub API） |
 | FORGECAST_GITHUB_TOKEN | live 模式可选，提升 GitHub API 限流额度 |
+| FORGECAST_VIDEO_MODE | `render`（默认，真渲 mp4）/ `stub`（写占位，测试用） |
+| FORGECAST_TTS_MODE | `stub`（默认，占位静音+估算字幕）/ `live`（OpenAI 兼容 /audio/speech） |
+| FORGECAST_TTS_KEY / TTS_MODEL / TTS_BASE_URL | TTS live 模式必填（模型名缺失会降级并提示） |
+
+> 模式设为 `live` 但缺 key 时会自动降级（LLM→mock、TTS→stub），并在命令输出里打印 `⚠` 说明——
+> 看到该提示说明拿到的是 fixture 文案 / 占位音轨，不是真实生成结果。
 
 ## CLI
 ```bash
