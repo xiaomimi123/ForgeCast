@@ -81,3 +81,11 @@ export function buildChangelogProps(doc: CopyDoc, brandName = 'forgecast'): Reco
     brandName,
   }
 }
+
+/** demo 模板文本片段（HyperFrames 版）：钩子/痛点/报价/CTA，均兜底。截图段由 generate 组装。 */
+export function buildDemoSlots(doc: CopyDoc, brandName = 'forgecast'): {
+  hookTitle: string; painPoints: string[]; priceAnchor: string; cta: string; brandName: string
+} {
+  const dp = buildDemoProps(doc, brandName)
+  return { hookTitle: dp.painTitle, painPoints: dp.painPoints, priceAnchor: dp.priceAnchor, cta: dp.cta, brandName }
+}

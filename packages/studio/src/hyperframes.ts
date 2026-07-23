@@ -90,6 +90,37 @@ export function readShots(shotsDir: string): Shot[] {
   })
 }
 
+/**
+ * 组装 demo 模板的分镜段 HTML（填进 <!--HF_SECTIONS-->）。五段：钩子→痛点→截图轮播→报价→CTA。
+ * 时长自适应：碰头/痛点/报价/CTA 固定 3s，截图轮播吸收中段剩余、按图数均分。
+ * 竖图套手机外框（.phone），横图居中缩放 + 同图虚化背景（.wide*）。文本全 escapeHtml。
+ */
+export function buildDemoSections(opts: {
+  hookTitle: string; painPoints: string[]; priceAnchor: string; cta: string; brandName: string
+  shots: Shot[]; durationSec: number
+}): string {
+  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec } = opts
+  const clip = (start: number, dur: number, track: number, inner: string) =>
+    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+  const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
+  const per = shots.length ? (carEnd - carStart) / shots.length : 0
+  const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
+  const shotHtml = shots.map((s, i) => {
+    const src = `assets/${s.rel}`
+    const body = s.orientation === 'portrait'
+      ? `<div class="phoneWrap"><div class="phone"><img src="${src}"/></div></div>`
+      : `<div class="wideWrap"><div class="wideBg" style="background-image:url('${src}')"></div><div class="wideFg"><img src="${src}"/></div></div>`
+    return clip(carStart + i * per, per, 2, body)
+  }).join('\n')
+  return [
+    clip(0, 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
+    clip(3, 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
+    shotHtml,
+    clip(durationSec - 6, 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
+    clip(durationSec - 3, 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+  ].join('\n')
+}
+
 /** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。 */
 export async function renderHyperframes(
   projectDir: string, outPath: string, mode: 'render' | 'stub',

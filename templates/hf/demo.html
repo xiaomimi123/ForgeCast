@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0d1117; font-family: "NotoSC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      .hookT { font-size: 96px; font-weight: 900; line-height: 1.28; color: #fff; }
+      .pain { font-size: 60px; font-weight: 700; color: #fff; margin: 22px 0; opacity: .95; }
+      .painWrap { display: flex; flex-direction: column; justify-content: center; }
+      .price { font-size: 76px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+      .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+      .brand { font-size: 40px; color: #8888aa; }
+      /* 手机外框：竖图铺满机身 */
+      .phoneWrap { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; background: #0d1117; }
+      .phone { width: 620px; height: 1340px; border: 14px solid #21262d; border-radius: 64px; overflow: hidden; position: relative; background: #000; }
+      .phone::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 180px; height: 36px; background: #21262d; border-radius: 0 0 22px 22px; z-index: 2; }
+      .phone img { width: 100%; height: 100%; object-fit: cover; }
+      /* 横图：居中缩放 + 同图虚化背景 */
+      .wideWrap { position: absolute; inset: 0; overflow: hidden; }
+      .wideBg { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(40px) brightness(.45); }
+      .wideFg { position: absolute; inset: 0; display: flex; align-items: center; }
+      .wideFg img { width: 100%; }
+      .cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); z-index: 5; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
+      <!--HF_SECTIONS-->
+      <!--HF_CAPTIONS-->
+      <!--HF_AUDIO-->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      // 轻微运镜（整体缓慢放大），具体分镜显隐交给 HyperFrames clip 时间轴
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

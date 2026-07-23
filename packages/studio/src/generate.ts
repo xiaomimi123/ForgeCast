@@ -4,8 +4,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { fillTemplate, injectAudioCaptions, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
-import { buildChangelogProps, buildDemoProps, buildFlashProps, buildStoryProps } from './props'
+import { buildDemoSections, fillTemplate, injectAudioCaptions, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { buildChangelogProps, buildDemoSlots, buildFlashProps, buildStoryProps } from './props'
 import { renderVideo } from './render'
 import { synthesizeVoice } from './tts'
 
@@ -60,6 +60,38 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     return { assetId: Number(info.lastInsertRowid), filePath: relPath }
   }
 
+  // demo：产品截图轮播（HyperFrames）。读 shots/，无图报错退出（本模板无图即无意义）
+  if (tpl === 'demo') {
+    const shots = readShots(path.join(ctx.config.paths.workspace, slug, 'shots'))
+    if (!shots.length) throw new Error(`demo 模板需要产品截图，请放入 workspace/${slug}/shots/（png/jpg/webp）`)
+    const s = buildDemoSlots(doc, brandName)
+    const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
+    onProgress('TTS 配音…')
+    const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
+    const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+    // 时长自适应：跟旁白末尾对齐（下限 14s），避免旁白被截断
+    const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
+    const duration = Math.max(14, Math.ceil(lastEnd))
+    const sections = buildDemoSections({ ...s, shots, durationSec: duration })
+    let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
+    html = html.replace('<!--HF_SECTIONS-->', sections)
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+    // 截图拷进 hf/assets
+    const shotAssets: Record<string, Buffer> = {}
+    for (const sh of shots) shotAssets[sh.rel] = fs.readFileSync(path.join(ctx.config.paths.workspace, slug, 'shots', sh.rel))
+    scaffoldHfProject(hfDir, html, shotAssets)
+    const stamp2 = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const relPath = path.join(slug, 'videos', `demo-${copy.hook ?? 'demo'}-${stamp2}-${randomUUID().slice(0, 6)}.mp4`)
+    onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
+    await renderHyperframes(hfDir, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
+    const info2 = ctx.db.prepare(
+      'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
+    ).run(project.id, 'video', copy.hook, relPath, '[]')
+    onProgress(`视频完成: ${relPath}`)
+    return { assetId: Number(info2.lastInsertRowid), filePath: relPath }
+  }
+
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const base = `${tpl}-${copy.hook ?? tpl}-${stamp}-${randomUUID().slice(0, 6)}`
   const videoDir = path.join(ctx.config.paths.workspace, slug, 'videos')
@@ -67,24 +99,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
 
   let compositionId: string
   let props: Record<string, unknown>
-  if (tpl === 'demo') {
-    // demo：痛点列表 + 报价锚点 + 录屏演示底 + TTS 配音（wav）+ 估算字幕（cues）
-    const dp = buildDemoProps(doc, brandName)
-    // 找 raw/ 下第一个录屏作演示底（无则占位）
-    const rawDir = path.join(ctx.config.paths.workspace, slug, 'raw')
-    if (fs.existsSync(rawDir)) {
-      const vid = fs.readdirSync(rawDir).find((f) => /\.(mp4|mov)$/i.test(f))
-      if (vid) dp.demoVideoSrc = path.join(slug, 'raw', vid)
-    }
-    onProgress('TTS 配音…')
-    const wavAbs = path.join(videoDir, `${base}.wav`)
-    const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
-    if (voice.degraded) onProgress(`⚠ TTS 降级为占位音轨：${voice.degraded}`)
-    dp.audioSrc = voice.audioRel ?? undefined
-    dp.cues = voice.cues
-    props = dp as unknown as Record<string, unknown>
-    compositionId = 'Demo'
-  } else if (tpl === 'story') {
+  if (tpl === 'story') {
     // story：气泡文案 + TTS 配音（wav）+ 估算字幕（cues）
     const sp = buildStoryProps(doc, brandName)
     onProgress('TTS 配音…')

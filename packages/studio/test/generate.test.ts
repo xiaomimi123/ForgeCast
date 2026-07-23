@@ -59,3 +59,35 @@ describe('generateVideo (stub)', () => {
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
   })
 })
+
+describe('generateVideo demo (HyperFrames stub)', () => {
+  function pngOf(w: number, h: number): Buffer {
+    const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    const ihdr = Buffer.alloc(25)
+    ihdr.writeUInt32BE(13, 0); ihdr.write('IHDR', 4)
+    ihdr.writeUInt32BE(w, 8); ihdr.writeUInt32BE(h, 12)
+    return Buffer.concat([sig, ihdr])
+  }
+  it('无 shots/ 目录时报错', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await expect(generateVideo(dctx, { slug: 'demo', tpl: 'demo' })).rejects.toThrow(/产品截图/)
+  })
+  it('有竖图时产出手机外框 + asset，横图走 wide 回落', async () => {
+    const shotsDir = path.join(root, 'workspace/demo/shots')
+    fs.mkdirSync(shotsDir, { recursive: true })
+    fs.writeFileSync(path.join(shotsDir, '01.png'), pngOf(1080, 1920)) // 竖
+    fs.writeFileSync(path.join(shotsDir, '02.png'), pngOf(1920, 1080)) // 横
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(dctx, { slug: 'demo', tpl: 'demo', onProgress: () => {} })
+    expect(r.filePath).toContain('demo-')
+    const html = fs.readFileSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('class="phone"')       // 竖图手机外框
+    expect(html).toContain('class="wideBg"')       // 横图虚化背景
+    expect(html).toContain('<audio id="narration"')
+    expect(html).not.toContain('<!--HF_SECTIONS-->')
+    // 截图拷进 assets
+    expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
+  })
+})
