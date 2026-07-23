@@ -13,6 +13,21 @@ export interface TtsDeps {
   fetchImpl?: typeof fetch
 }
 
+/**
+ * 清理口播脚本：去掉舞台提示，只留要念/要显示的话。
+ * 抖音脚本形如「【0-3s 钩子】（大字弹出）正文…」——【…】是段落节奏标记、（…）是画面指示，
+ * 都不该被 TTS 念出来、也不该进字幕。全角/半角括号都处理。
+ */
+export function cleanNarrationText(text: string): string {
+  return text
+    .replace(/【[^】]*】/g, '')
+    .replace(/（[^）]*）/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
 /** 文本切句 */
 function splitSentences(text: string): string[] {
   return text.split(/[。！？\n]+/).map((s) => s.trim()).filter(Boolean)
@@ -59,7 +74,9 @@ export async function synthesizeVoice(
   ctx: CoreCtx, text: string, outWavAbs: string, deps: TtsDeps = {},
 ): Promise<VoiceResult> {
   const rel = path.relative(ctx.config.paths.workspace, outWavAbs)
-  const cues = cuesFrom(splitSentences(text))
+  // 去舞台提示后再念/切句：TTS 不念【节奏标记】（画面指示），字幕也用干净文本
+  const clean = cleanNarrationText(text)
+  const cues = cuesFrom(splitSentences(clean))
   const writeStub = () => { fs.mkdirSync(path.dirname(outWavAbs), { recursive: true }); fs.writeFileSync(outWavAbs, minimalWav()) }
   const degrade = (reason: string): VoiceResult => { writeStub(); return { audioRel: rel, cues, degraded: reason } }
 
@@ -71,7 +88,7 @@ export async function synthesizeVoice(
   if (ctx.config.tts.mode === 'kokoro') {
     const run = deps.runKokoro ?? defaultRunKokoro('zf_xiaobei')
     try {
-      await run(text, outWavAbs)
+      await run(clean, outWavAbs)
       if (!fs.existsSync(outWavAbs) || fs.statSync(outWavAbs).size === 0) return degrade('Kokoro 未产出音频')
       return { audioRel: rel, cues }
     } catch (err) {
@@ -87,7 +104,7 @@ export async function synthesizeVoice(
     const res = await fetchImpl(`${ctx.config.tts.baseURL}/audio/speech`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ctx.config.tts.apiKey}` },
-      body: JSON.stringify({ model: ctx.config.tts.model, input: text, voice: 'default', response_format: 'wav' }),
+      body: JSON.stringify({ model: ctx.config.tts.model, input: clean, voice: 'default', response_format: 'wav' }),
       signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
     })
     if (!res.ok) return degrade(`TTS HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)

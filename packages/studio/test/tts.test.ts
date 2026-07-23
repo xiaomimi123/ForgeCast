@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { synthesizeVoice } from '../src/tts'
+import { cleanNarrationText, synthesizeVoice } from '../src/tts'
 
 let ctx: CoreCtx
 let root: string
@@ -109,5 +109,19 @@ describe('synthesizeVoice kokoro', () => {
     const r = await synthesizeVoice(kctx, '一句话。', out, { runKokoro })
     expect(r.degraded).toContain('kokoro-onnx 未安装')
     expect(fs.existsSync(out)).toBe(true) // 占位 wav
+  })
+})
+
+describe('cleanNarrationText', () => {
+  it('去掉【节奏标记】与（画面指示）括号，保留正文', () => {
+    const raw = '【0-3s 钩子】（大字弹出）开网店的谁没熬过夜。【3-8s 痛点】漏回一条差评就来'
+    const out = cleanNarrationText(raw)
+    expect(out).not.toContain('【')
+    expect(out).not.toContain('（')
+    expect(out).toContain('开网店的谁没熬过夜')
+    expect(out).toContain('漏回一条差评就来')
+  })
+  it('半角括号也去掉', () => {
+    expect(cleanNarrationText('正文(旁白)结尾')).toBe('正文结尾')
   })
 })

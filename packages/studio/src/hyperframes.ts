@@ -19,21 +19,23 @@ export function fillTemplate(tplHtml: string, slots: Record<string, string>): st
 }
 
 /**
- * 注入配音音轨 + 字幕脚本。用 HTML 注释标记 <!--HF_AUDIO--> / <!--HF_CAPTIONS-->，
+ * 注入配音音轨 + 字幕。用 HTML 注释标记 <!--HF_AUDIO--> / <!--HF_CAPTIONS-->，
  * 避开 fillTemplate 的 {{}} 正则（否则会被当未知 slot 提前吃成空串）——故本函数须在 fillTemplate 之后调。
- * cue 文本经 JSON.stringify 后把 < 转成 <，防止字面 </script> 截断脚本标签。
- * 四套模板共用此注入逻辑（DRY）。
+ *
+ * 字幕按每条 cue 生成一个 .cap.clip 元素，data-start/data-duration 交给 HyperFrames 原生
+ * 时间轴显隐——而非用 gsap .set(textContent)，后者在逐帧 seek 渲染下不生效（试跑验证过）。
+ * cue 文本经 escapeHtml 防注入。两个标记都在 body 内。四套模板共用此逻辑（DRY），
+ * 模板须提供 .cap 定位样式（bottom 字幕条）。
  */
 export function injectAudioCaptions(html: string, audioRel: string | null, cues: Cue[], durationSec: number): string {
   const audioTag = audioRel
     ? `<audio id="narration" class="clip" data-start="0" data-duration="${durationSec}" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>`
     : ''
-  const capScript = cues.length
-    ? 'const __cap = document.getElementById("cap");\n' + cues.map((c) =>
-        `if (__cap) tl.set(__cap, { textContent: ${JSON.stringify(c.text).replace(/</g, '\\u003c')} }, ${c.start});`,
-      ).join('\n')
-    : ''
-  return html.replace('<!--HF_AUDIO-->', audioTag).replace('<!--HF_CAPTIONS-->', capScript)
+  const capClips = cues.map((c) => {
+    const dur = Math.max(0.5, c.end - c.start)
+    return `<div class="cap clip" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
+  }).join('\n')
+  return html.replace('<!--HF_AUDIO-->', audioTag).replace('<!--HF_CAPTIONS-->', capClips)
 }
 
 /** 读 templates/hf/<name>.html */

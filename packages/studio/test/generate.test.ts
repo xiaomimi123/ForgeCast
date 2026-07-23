@@ -53,7 +53,7 @@ describe('generateVideo (stub)', () => {
     expect(html).toContain('data-composition-id="main"')
     // 音轨与字幕必须真注入产物（防 fillTemplate 把注释标记以外的 {{}} 吃掉的回归）
     expect(html).toContain('<audio id="narration"')
-    expect(html).toContain('__cap')
+    expect(html).toContain('class="cap clip"')
     // 注释标记应已被替换掉，不残留
     expect(html).not.toContain('<!--HF_AUDIO-->')
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
