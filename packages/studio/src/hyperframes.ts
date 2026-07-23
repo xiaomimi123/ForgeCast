@@ -121,6 +121,26 @@ export function buildDemoSections(opts: {
   ].join('\n')
 }
 
+/**
+ * 组装 story 模板分镜段（填 <!--HF_SECTIONS-->）。三段：聊天场→卖点→CTA。
+ * 聊天场吸收前段（0..dur-6），卖点/CTA 固定各 3s。气泡文本 escapeHtml。
+ */
+export function buildStorySections(opts: {
+  bubbles: Array<{ who: 'them' | 'me'; text: string }>; sellingPoint: string; cta: string; brandName: string
+  durationSec: number
+}): string {
+  const { bubbles, sellingPoint, cta, brandName, durationSec } = opts
+  const clip = (start: number, dur: number, track: number, inner: string) =>
+    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+  const bubbleHtml = bubbles.map((b) => `<div class="bubble ${b.who}">${escapeHtml(b.text)}</div>`).join('')
+  const chatDur = Math.max(1, durationSec - 6)
+  return [
+    clip(0, chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
+    clip(durationSec - 6, 3, 1, `<div class="fill pad center sellFill"><div class="sell">${escapeHtml(sellingPoint)}</div></div>`),
+    clip(durationSec - 3, 3, 1, `<div class="fill pad center sellFill"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+  ].join('\n')
+}
+
 /** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。 */
 export async function renderHyperframes(
   projectDir: string, outPath: string, mode: 'render' | 'stub',

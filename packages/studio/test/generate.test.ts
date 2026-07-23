@@ -19,19 +19,29 @@ beforeEach(() => {
 })
 
 describe('generateVideo (stub)', () => {
-  it('产出 props.json + 占位 mp4 + 登记 video 素材', async () => {
-    const out = await generateVideo(ctx, { slug: 'demo', tpl: 'flash' })
-    expect(out.filePath).toMatch(/demo\/videos\/.*\.mp4$/)
-    const abs = path.join(ctx.config.paths.workspace, out.filePath)
+  it('tpl=flash 走 HyperFrames，产出 hf 项目 + 占位 mp4 + 登记 video 素材', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    expect(out.filePath).toMatch(/demo\/videos\/flash-.*\.mp4$/)
+    const abs = path.join(fctx.config.paths.workspace, out.filePath)
     expect(fs.existsSync(abs)).toBe(true)
-    const propsFile = abs.replace(/\.mp4$/, '.props.json')
-    expect(fs.existsSync(propsFile)).toBe(true)
-    const props = JSON.parse(fs.readFileSync(propsFile, 'utf8'))
-    expect(props.painTitle.length).toBeGreaterThan(0)
-    expect(props.brandName).toBe('快客通')
+    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-composition-id="main"')
+    expect(html).toContain('快客通') // brandName 填入
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
     expect(row.type).toBe('video')
     expect(row.file_path).toBe(out.filePath)
+  })
+  it('tpl=story 走 HyperFrames，产出气泡对话 + asset', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const sctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(sctx, { slug: 'demo', tpl: 'story', onProgress: () => {} })
+    expect(out.filePath).toContain('story-')
+    const html = fs.readFileSync(path.join(sctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('class="bubble') // 气泡
+    expect(html).toContain('<audio id="narration"')
+    expect(html).not.toContain('<!--HF_SECTIONS-->')
   })
   it('无 copy 素材 → 抛错', async () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('empty')").run()

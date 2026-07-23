@@ -1,12 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { buildDemoSections, fillTemplate, injectAudioCaptions, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
-import { buildChangelogProps, buildDemoSlots, buildFlashProps, buildStoryProps } from './props'
-import { renderVideo } from './render'
+import { buildDemoSections, buildStorySections, fillTemplate, injectAudioCaptions, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
 
 export interface GenerateVideoInput {
@@ -16,9 +14,6 @@ export interface GenerateVideoInput {
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
-
-// Remotion 打包入口（相对本文件定位到 src/remotion/entry.ts）
-const ENTRY = fileURLToPath(new URL('./remotion/entry.ts', import.meta.url))
 
 /** 取 copy 素材 → 解析 → 按 tpl 组装参数（flash 三段文字 / story 气泡+TTS配音字幕）→ 写 props.json → 渲染 mp4 → 登记 video 素材 */
 export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Promise<GeneratedVideo> {
@@ -92,37 +87,51 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     return { assetId: Number(info2.lastInsertRowid), filePath: relPath }
   }
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const base = `${tpl}-${copy.hook ?? tpl}-${stamp}-${randomUUID().slice(0, 6)}`
-  const videoDir = path.join(ctx.config.paths.workspace, slug, 'videos')
-  fs.mkdirSync(videoDir, { recursive: true })
-
-  let compositionId: string
-  let props: Record<string, unknown>
+  // story：气泡对话（HyperFrames）
   if (tpl === 'story') {
-    // story：气泡文案 + TTS 配音（wav）+ 估算字幕（cues）
-    const sp = buildStoryProps(doc, brandName)
+    const s = buildStorySlots(doc, brandName)
+    const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
     onProgress('TTS 配音…')
-    const wavAbs = path.join(videoDir, `${base}.wav`)
+    const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
     const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
-    if (voice.degraded) onProgress(`⚠ TTS 降级为占位音轨：${voice.degraded}`)
-    sp.audioSrc = voice.audioRel ?? undefined
-    sp.cues = voice.cues
-    props = sp as unknown as Record<string, unknown>
-    compositionId = 'Story'
-  } else {
-    props = buildFlashProps(doc, brandName) as unknown as Record<string, unknown>
-    compositionId = 'Flash'
+    if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+    const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
+    const duration = Math.max(14, Math.ceil(lastEnd))
+    const sections = buildStorySections({ ...s, durationSec: duration })
+    let html = fillTemplate(readTemplate('story'), { duration: String(duration) })
+    html = html.replace('<!--HF_SECTIONS-->', sections)
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+    scaffoldHfProject(hfDir, html)
+    return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress)
   }
-  fs.writeFileSync(path.join(videoDir, `${base}.props.json`), JSON.stringify(props, null, 2), 'utf8')
 
-  onProgress(`渲染视频（${ctx.config.video.mode} 模式，${tpl}）…`)
-  const relPath = path.join(slug, 'videos', `${base}.mp4`)
-  await renderVideo(ENTRY, compositionId, props, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode, { onProgress, publicDir: ctx.config.paths.workspace })
+  // flash：纯文字快闪（HyperFrames）
+  const s = buildFlashSlots(doc, brandName)
+  const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
+  onProgress('TTS 配音…')
+  const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
+  const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+  if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+  const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
+  const duration = Math.max(12, Math.ceil(lastEnd))
+  let html = fillTemplate(readTemplate('flash'), { ...s, duration: String(duration) })
+  html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+  scaffoldHfProject(hfDir, html)
+  return renderAndRegister(ctx, hfDir, slug, 'flash', copy.hook, project.id, onProgress)
+}
 
+/** 渲染 hf 项目并登记 video 素材（各 HyperFrames 分支收尾共用） */
+async function renderAndRegister(
+  ctx: CoreCtx, hfDir: string, slug: string, tpl: string, hook: string | null,
+  projectId: number, onProgress: (m: string) => void,
+): Promise<GeneratedVideo> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const relPath = path.join(slug, 'videos', `${tpl}-${hook ?? tpl}-${stamp}-${randomUUID().slice(0, 6)}.mp4`)
+  onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
+  await renderHyperframes(hfDir, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
-  ).run(project.id, 'video', copy.hook, relPath, '[]')
+  ).run(projectId, 'video', hook, relPath, '[]')
   onProgress(`视频完成: ${relPath}`)
   return { assetId: Number(info.lastInsertRowid), filePath: relPath }
 }

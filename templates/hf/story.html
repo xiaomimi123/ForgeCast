@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #e9e4dc; font-family: "NotoSC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      /* 聊天场景 */
+      .chat { position: absolute; inset: 0; background: #e9e4dc; padding: 120px 70px; display: flex; flex-direction: column; gap: 40px; }
+      .bubble { max-width: 720px; font-size: 52px; line-height: 1.4; padding: 34px 44px; border-radius: 32px; }
+      .them { align-self: flex-start; background: #fff; color: #1a1a1a; border-top-left-radius: 8px; }
+      .me { align-self: flex-end; background: #95ec69; color: #0a2a0a; border-top-right-radius: 8px; }
+      /* 卖点 / CTA（深色场） */
+      .sellFill { background: linear-gradient(160deg,#1a1a2e,#16213e); }
+      .sell { font-size: 76px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+      .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+      .brand { font-size: 40px; color: #8888aa; }
+      .cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); z-index: 5; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
+      <!--HF_SECTIONS-->
+      <!--HF_CAPTIONS-->
+      <!--HF_AUDIO-->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      // 气泡逐条淡入（聊天场在前 60%）
+      gsap.utils.toArray(".bubble").forEach((b, i) => { tl.from(b, { opacity: 0, y: 40, duration: .5 }, 0.4 + i * 0.9); });
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

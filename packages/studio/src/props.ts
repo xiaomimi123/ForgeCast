@@ -89,3 +89,17 @@ export function buildDemoSlots(doc: CopyDoc, brandName = 'forgecast'): {
   const dp = buildDemoProps(doc, brandName)
   return { hookTitle: dp.painTitle, painPoints: dp.painPoints, priceAnchor: dp.priceAnchor, cta: dp.cta, brandName }
 }
+
+/** story 模板数据（HyperFrames 版）：气泡对话 + 卖点 + CTA。复用 buildStoryProps 的气泡。 */
+export function buildStorySlots(doc: CopyDoc, brandName = 'forgecast'): {
+  bubbles: Array<{ who: 'them' | 'me'; text: string }>; sellingPoint: string; cta: string; brandName: string
+} {
+  const sp = buildStoryProps(doc, brandName)
+  return { bubbles: sp.bubbles, sellingPoint: sp.sellingPoint, cta: sp.cta, brandName }
+}
+
+/** flash 模板 slot（HyperFrames 版）：纯文字三段，全 string。 */
+export function buildFlashSlots(doc: CopyDoc, brandName = 'forgecast'): Record<string, string> {
+  const f = buildFlashProps(doc, brandName)
+  return { painTitle: f.painTitle, sellingPoint: f.sellingPoint, cta: f.cta, brandName }
+}
