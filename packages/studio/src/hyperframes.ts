@@ -1,0 +1,54 @@
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const STUB_BYTES = Buffer.from('FORGECAST_STUB_MP4\n')
+// templates/hf 相对本文件：packages/studio/src → 仓库根/templates/hf
+const HF_TEMPLATES = fileURLToPath(new URL('../../../templates/hf', import.meta.url))
+
+export function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+/** 具名 slot 替换：{{key}} → escapeHtml(slots[key])；未提供的 slot 替空。 */
+export function fillTemplate(tplHtml: string, slots: Record<string, string>): string {
+  return tplHtml.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in slots ? escapeHtml(slots[k]) : ''))
+}
+
+/** 读 templates/hf/<name>.html */
+export function readTemplate(name: string): string {
+  return fs.readFileSync(path.join(HF_TEMPLATES, `${name}.html`), 'utf8')
+}
+
+/** 脚手架：写 hyperframes.json + index.html + assets/*，软链 fonts。 */
+export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Record<string, Buffer> = {}): void {
+  fs.mkdirSync(path.join(destDir, 'assets'), { recursive: true })
+  fs.copyFileSync(path.join(HF_TEMPLATES, 'hyperframes.json'), path.join(destDir, 'hyperframes.json'))
+  // fonts 目录软链（相对 index.html 的 assets/fonts 引用统一）
+  const fontsSrc = path.join(HF_TEMPLATES, 'fonts')
+  const fontsDst = path.join(destDir, 'assets', 'fonts')
+  if (fs.existsSync(fontsSrc) && !fs.existsSync(fontsDst)) {
+    try { fs.symlinkSync(fontsSrc, fontsDst, 'dir') } catch { fs.cpSync(fontsSrc, fontsDst, { recursive: true }) }
+  }
+  fs.writeFileSync(path.join(destDir, 'index.html'), indexHtml, 'utf8')
+  for (const [name, buf] of Object.entries(assets)) fs.writeFileSync(path.join(destDir, 'assets', name), buf)
+}
+
+/** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。 */
+export async function renderHyperframes(
+  projectDir: string, outPath: string, mode: 'render' | 'stub',
+  opts: { onProgress?: (m: string) => void } = {},
+): Promise<void> {
+  fs.mkdirSync(path.dirname(outPath), { recursive: true })
+  if (mode === 'stub') { fs.writeFileSync(outPath, STUB_BYTES); return }
+  await new Promise<void>((resolve, reject) => {
+    const p = spawn('npx', ['hyperframes', 'render', '--output', outPath], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] })
+    let err = ''
+    p.stdout.on('data', (d) => opts.onProgress?.(d.toString().trim().slice(0, 120)))
+    p.stderr.on('data', (d) => { err += d.toString() })
+    p.on('error', reject)
+    p.on('close', (code) => code === 0 ? resolve() : reject(new Error(`hyperframes render 退出码 ${code}: ${err.slice(0, 400)}`)))
+  })
+}
