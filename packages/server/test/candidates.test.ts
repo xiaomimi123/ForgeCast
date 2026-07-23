@@ -2,9 +2,17 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { rescoreCandidate } from '@forgecast/scout'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../src/app'
 import { createTaskQueue } from '../src/tasks'
+
+// 只包一层 spy，行为不变：验证「候选不存在」时路由层是否真的调用了 rescoreCandidate，
+// 而不是靠它抛出的错误文案反推状态码（app.ts 现在应在调用前就先查存在性并短路）。
+vi.mock('@forgecast/scout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@forgecast/scout')>()
+  return { ...actual, rescoreCandidate: vi.fn(actual.rescoreCandidate) }
+})
 
 let ctx: CoreCtx
 let app: ReturnType<typeof createApp>
@@ -90,5 +98,19 @@ describe('rescore', () => {
   it('候选不存在返回 404', async () => {
     const r = await app.request('/api/candidates/9999/rescore', { method: 'POST' })
     expect(r.status).toBe(404)
+  })
+
+  it('候选不存在 → 404 由路由层存在性检查给出，不经过 rescoreCandidate（不依赖其抛错文案）', async () => {
+    const callsBefore = vi.mocked(rescoreCandidate).mock.calls.length
+    const countBefore = (ctx.db.prepare('SELECT COUNT(*) as n FROM candidates').get() as any).n
+
+    const r = await app.request('/api/candidates/9999/rescore', { method: 'POST' })
+
+    expect(r.status).toBe(404)
+    // 核心断言：rescoreCandidate 根本没被调用 —— 404 是路由层短路给出的，
+    // 与 rescoreCandidate 内部错误消息的具体措辞无关（改措辞不会让这个 404 失效）
+    expect(vi.mocked(rescoreCandidate).mock.calls.length).toBe(callsBefore)
+    const countAfter = (ctx.db.prepare('SELECT COUNT(*) as n FROM candidates').get() as any).n
+    expect(countAfter).toBe(countBefore) // 没有产生任何 candidates 行变化
   })
 })

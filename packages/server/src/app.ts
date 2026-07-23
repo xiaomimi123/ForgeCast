@@ -257,13 +257,16 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   app.post('/api/candidates/:id/rescore', async (c) => {
     const id = Number(c.req.param('id'))
     if (!Number.isInteger(id)) return c.json({ error: '非法 id' }, 400)
+    // 与本文件其余路由一致：先在路由层做存在性检查，404 不再依赖下游错误消息文本
+    if (!ctx.db.prepare('SELECT id FROM candidates WHERE id = ?').get(id)) {
+      return c.json({ error: '候选不存在' }, 404)
+    }
     try {
       await rescoreCandidate(ctx, id)
       // 带上模式：mock 下不会产生痛点/目标群体，前端据此提示
       return c.json({ ok: true, mode: ctx.config.llm.mode })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return c.json({ error: msg }, msg.startsWith('候选不存在') ? 404 : 400)
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
     }
   })
 
