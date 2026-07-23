@@ -2,3 +2,4 @@
 export * from './validate'
 export * from './fixtures/analysis-fixture'
 export * from './analyze'
+export * from './summary'

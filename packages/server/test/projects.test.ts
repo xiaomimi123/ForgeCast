@@ -44,4 +44,20 @@ describe('projects API', () => {
     const app = createApp(ctx, createTaskQueue())
     expect((await app.request('/api/projects/nope')).status).toBe(404)
   })
+  it('项目列表附 analysis_summary；没有 analysis.md 时为空串', async () => {
+    ctx.db.prepare("INSERT INTO projects (slug, brand_name, stage) VALUES ('demo', '演示', 'analysis')").run()
+    const app = createApp(ctx, createTaskQueue())
+    const before = await (await app.request('/api/projects')).json() as any[]
+    expect(before.find((p) => p.slug === 'demo').analysis_summary).toEqual({ targetBuyer: '', painPoint: '' })
+
+    const dir = path.join(ctx.config.paths.workspace, 'demo')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'analysis.md'),
+      '## 目标买家画像\n- 主攻：中小商家\n\n## 痛点清单\n1. 效率低\n', 'utf8')
+
+    const after = await (await app.request('/api/projects')).json() as any[]
+    expect(after.find((p) => p.slug === 'demo').analysis_summary).toEqual({
+      targetBuyer: '主攻：中小商家', painPoint: '效率低',
+    })
+  })
 })

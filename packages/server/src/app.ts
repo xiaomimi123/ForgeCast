@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { analyzeProject } from '@forgecast/analyst'
+import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
 import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
@@ -20,7 +20,13 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   const app = new Hono()
 
   app.get('/api/projects', (c) => {
-    return c.json(ctx.db.prepare('SELECT * FROM projects ORDER BY id').all())
+    const rows = ctx.db.prepare('SELECT * FROM projects ORDER BY id').all() as any[]
+    // 附上 analysis.md 摘要给看板泳道卡片；没跑过分析的项目为空对象，不报错
+    return c.json(rows.map((r) => {
+      const p = path.join(ctx.config.paths.workspace, r.slug, 'analysis.md')
+      const md = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+      return { ...r, analysis_summary: parseAnalysisSummary(md) }
+    }))
   })
 
   app.get('/api/projects/:slug', (c) => {
