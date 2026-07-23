@@ -11,14 +11,22 @@ interface Detail {
   rebrandCost: number; buyerClarity: number; visualAppeal: number
   rationale: string; targetBuyer: string; painPoint: string
 }
+/** 数值字段兜底：非 number 或 NaN/Infinity 一律按 0 处理，避免脏数据渲染出 NaN% 的色条 */
+function num(x: unknown): number {
+  return typeof x === 'number' && Number.isFinite(x) ? x : 0
+}
+/** 字符串字段兜底：非 string 一律按空串处理 */
+function str(x: unknown): string {
+  return typeof x === 'string' ? x : ''
+}
 /** 旧行可能没有 targetBuyer/painPoint，一律按空串兜底 */
 function parseDetail(sd: string | null): Detail | null {
   if (!sd) return null
   try {
     const o = JSON.parse(sd)
     return {
-      rebrandCost: o.rebrandCost ?? 0, buyerClarity: o.buyerClarity ?? 0, visualAppeal: o.visualAppeal ?? 0,
-      rationale: o.rationale ?? '', targetBuyer: o.targetBuyer ?? '', painPoint: o.painPoint ?? '',
+      rebrandCost: num(o.rebrandCost), buyerClarity: num(o.buyerClarity), visualAppeal: num(o.visualAppeal),
+      rationale: str(o.rationale), targetBuyer: str(o.targetBuyer), painPoint: str(o.painPoint),
     }
   } catch { return null }
 }

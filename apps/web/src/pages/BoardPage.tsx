@@ -23,10 +23,15 @@ export default function BoardPage() {
   const [dragSlug, setDragSlug] = useState<string | null>(null)
   const candidates = useQuery({ queryKey: ['candidates'], queryFn: () => api<Candidate[]>('/api/candidates') })
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
+  // 并发跟踪：用集合记录"哪些 id/repo 正在请求中"，每次 mutate 只增删自己那一个，
+  // 避免共享单值 state 被先完成的请求提前清空、误伤仍在飞行中的其他卡片
+  const [pickingRepos, setPickingRepos] = useState<Set<string>>(new Set())
   const pick = useMutation({
     mutationFn: (repo: string) => api('/api/candidates/pick', { method: 'POST', body: JSON.stringify({ repo }) }),
+    onMutate: (repo) => setPickingRepos((prev) => new Set(prev).add(repo)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['candidates'] }),
     onError: (e) => alert(`立项失败: ${e instanceof Error ? e.message : String(e)}`),
+    onSettled: (_data, _error, repo) => setPickingRepos((prev) => { const next = new Set(prev); next.delete(repo); return next }),
   })
   const moveStage = useMutation({
     mutationFn: ({ slug, stage }: { slug: string; stage: string }) =>
@@ -34,15 +39,16 @@ export default function BoardPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
     onError: (e) => alert(`移动失败: ${e instanceof Error ? e.message : String(e)}`),
   })
-  const [rescoreId, setRescoreId] = useState<number | null>(null)
+  const [rescoringIds, setRescoringIds] = useState<Set<number>>(new Set())
   const rescore = useMutation({
-    mutationFn: (id: number) => { setRescoreId(id); return api<{ ok: boolean; mode: string }>(`/api/candidates/${id}/rescore`, { method: 'POST' }) },
+    mutationFn: (id: number) => api<{ ok: boolean; mode: string }>(`/api/candidates/${id}/rescore`, { method: 'POST' }),
+    onMutate: (id) => setRescoringIds((prev) => new Set(prev).add(id)),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['candidates'] })
       if (r.mode === 'mock') alert('当前是 mock 模式，评分不会产生目标群体/行业痛点。去「设置」把大模型切到 live 并填 key。')
     },
     onError: (e) => alert(`重新评分失败: ${e instanceof Error ? e.message : String(e)}`),
-    onSettled: () => setRescoreId(null),
+    onSettled: (_data, _error, id) => setRescoringIds((prev) => { const next = new Set(prev); next.delete(id); return next }),
   })
 
   async function scout() {
@@ -78,7 +84,7 @@ export default function BoardPage() {
         {ok.map((c, i) => (
           <CandidateCard key={c.id} c={c} rank={i + 1}
             onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
-            picking={pick.isPending} rescoring={rescore.isPending && rescoreId === c.id} />
+            picking={pickingRepos.has(c.repo)} rescoring={rescoringIds.has(c.id)} />
         ))}
       </div>
       {rows.length === 0 && <div className="rounded-lg border p-6 text-center text-neutral-400">暂无候选，点「抓取候选」</div>}
