@@ -40,19 +40,14 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
     const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
     if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+    // 自适应时长：跟旁白末尾对齐（下限 12s），s2 吸收标题段之后的剩余
+    const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
+    const duration = Math.max(12, Math.ceil(lastEnd))
     // 先 fillTemplate 填转义 slot，再注入音轨/字幕（注释标记，不被 {{}} 正则误吃）
-    const html = injectAudioCaptions(fillTemplate(readTemplate('changelog'), slots), voice.audioRel, voice.cues, 12)
+    const filled = fillTemplate(readTemplate('changelog'), { ...slots, duration: String(duration), s2dur: String(duration - 6) })
+    const html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration)
     scaffoldHfProject(hfDir, html)
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const relPath = path.join(slug, 'videos', `changelog-${copy.hook ?? 'dev'}-${stamp}-${randomUUID().slice(0, 6)}.mp4`)
-    const outAbs = path.join(ctx.config.paths.workspace, relPath)
-    onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
-    await renderHyperframes(hfDir, outAbs, ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
-    const info = ctx.db.prepare(
-      'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
-    ).run(project.id, 'video', copy.hook, relPath, '[]')
-    onProgress(`视频完成: ${relPath}`)
-    return { assetId: Number(info.lastInsertRowid), filePath: relPath }
+    return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress)
   }
 
   // demo：产品截图轮播（HyperFrames）。读 shots/，无图报错退出（本模板无图即无意义）

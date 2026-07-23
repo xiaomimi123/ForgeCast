@@ -18,13 +18,13 @@
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
       <div id="s1" class="clip fill pad" data-start="0" data-duration="6" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center">
         <div><span class="label">{{label}}</span></div>
         <div class="title">{{title}}</div>
         <div class="sub">{{subtitle}}</div>
       </div>
-      <div id="s2" class="clip fill pad" data-start="6" data-duration="6" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center;align-items:center">
+      <div id="s2" class="clip fill pad" data-start="6" data-duration="{{s2dur}}" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center;align-items:center">
         <div class="brand">{{brandName}}</div>
         <div class="tag">{{cta}}</div>
       </div>
@@ -39,7 +39,7 @@
         .from("#s1 .sub", { opacity: 0, duration: .5 }, 0.9);
       tl.from("#s2 .brand", { opacity: 0, scale: .85, duration: .7 }, 6.2)
         .from("#s2 .tag", { opacity: 0, y: 24, duration: .5 }, 6.9);
-      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: 12, ease: "none" }, 0);
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
       window.__timelines["main"] = tl;
     </script>
   </body>
