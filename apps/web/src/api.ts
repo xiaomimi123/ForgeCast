@@ -2,6 +2,7 @@ export interface Project {
   id: number; slug: string; brand_name: string | null; target_buyer: string | null
   demo_url: string | null; price_deploy: number | null; price_custom: number | null
   stage: string; analysisMd?: string
+  analysis_summary?: { targetBuyer: string; painPoint: string }
 }
 export interface Asset {
   id: number; project_id: number; type: 'copy' | 'cover' | 'video'; hook: string | null
@@ -36,7 +37,8 @@ export function subscribeTask(taskId: string, onEvent: (e: TaskEvent) => void): 
 }
 
 export interface Candidate {
-  id: number; repo: string; url: string; license: string | null; license_ok: number
+  id: number; repo: string; url: string; description: string | null
+  license: string | null; license_ok: number
   stars: number; tech_stack: string | null; score: number | null; score_detail: string | null; status: string
 }
 export interface CalendarView {

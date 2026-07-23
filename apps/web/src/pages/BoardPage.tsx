@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, subscribeTask, type Candidate, type Project } from '../api'
+import CandidateCard from './board/CandidateCard'
 
 // 立项项目阶段泳道（§8）：analysis→rebranding→producing→publishing→selling
 const STAGES: Array<{ key: string; label: string }> = [
@@ -11,15 +12,6 @@ const STAGES: Array<{ key: string; label: string }> = [
   { key: 'publishing', label: '发布' },
   { key: 'selling', label: '成交' },
 ]
-
-function dims(sd: string | null): { rebrandCost: number; buyerClarity: number; visualAppeal: number } | null {
-  if (!sd) return null
-  try { const o = JSON.parse(sd); return { rebrandCost: o.rebrandCost ?? 0, buyerClarity: o.buyerClarity ?? 0, visualAppeal: o.visualAppeal ?? 0 } } catch { return null }
-}
-function rationale(sd: string | null): string {
-  if (!sd) return ''
-  try { return JSON.parse(sd).rationale ?? '' } catch { return '' }
-}
 
 export default function BoardPage() {
   const qc = useQueryClient()
@@ -42,6 +34,16 @@ export default function BoardPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
     onError: (e) => alert(`移动失败: ${e instanceof Error ? e.message : String(e)}`),
   })
+  const [rescoreId, setRescoreId] = useState<number | null>(null)
+  const rescore = useMutation({
+    mutationFn: (id: number) => { setRescoreId(id); return api<{ ok: boolean; mode: string }>(`/api/candidates/${id}/rescore`, { method: 'POST' }) },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['candidates'] })
+      if (r.mode === 'mock') alert('当前是 mock 模式，评分不会产生目标群体/行业痛点。去「设置」把大模型切到 live 并填 key。')
+    },
+    onError: (e) => alert(`重新评分失败: ${e instanceof Error ? e.message : String(e)}`),
+    onSettled: () => setRescoreId(null),
+  })
 
   async function scout() {
     if (scanning) return
@@ -56,6 +58,8 @@ export default function BoardPage() {
   }
 
   const rows = candidates.data ?? []
+  const ok = rows.filter((c) => c.license_ok === 1)
+  const blocked = rows.filter((c) => c.license_ok !== 1)
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -69,37 +73,28 @@ export default function BoardPage() {
           {logs.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
-      <div className="overflow-x-auto rounded-lg border bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-neutral-50 text-left text-neutral-500">
-            <tr><th className="p-2">#</th><th className="p-2">项目</th><th className="p-2">stars</th><th className="p-2">协议</th><th className="p-2">score</th><th className="p-2">换皮/买家/可视</th><th className="p-2">一句话</th><th className="p-2">操作</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((c, i) => {
-              const d = dims(c.score_detail)
-              const ok = c.license_ok === 1
-              return (
-                <tr key={c.id} className={`border-b ${ok ? '' : 'bg-neutral-50 text-neutral-400'}`}>
-                  <td className="p-2">{i + 1}</td>
-                  <td className="p-2"><a className="text-blue-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a></td>
-                  <td className="p-2">{c.stars}</td>
-                  <td className="p-2">{c.license ?? '—'}</td>
-                  <td className="p-2 font-medium">{c.score ?? '—'}</td>
-                  <td className="p-2 text-xs">{d ? `${d.rebrandCost}/${d.buyerClarity}/${d.visualAppeal}` : '—'}</td>
-                  <td className="p-2 text-xs text-neutral-500 max-w-xs truncate">{rationale(c.score_detail)}</td>
-                  <td className="p-2">
-                    {!ok ? <span className="text-xs">协议不可商用</span>
-                      : c.status === 'picked' ? <span className="text-xs text-green-600">已立项</span>
-                      : c.status === 'candidate' ? <button className="rounded border px-2 py-1 text-xs" disabled={pick.isPending} onClick={() => pick.mutate(c.repo)}>立项</button>
-                      : <span className="text-xs text-neutral-400">{c.status}</span>}
-                  </td>
-                </tr>
-              )
-            })}
-            {rows.length === 0 && <tr><td colSpan={8} className="p-4 text-center text-neutral-400">暂无候选，点「抓取候选」</td></tr>}
-          </tbody>
-        </table>
+      {/* 候选卡片：协议可商用的排前面，不可商用的折叠到底部 */}
+      <div className="grid gap-3 md:grid-cols-2">
+        {ok.map((c, i) => (
+          <CandidateCard key={c.id} c={c} rank={i + 1}
+            onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
+            picking={pick.isPending} rescoring={rescore.isPending && rescoreId === c.id} />
+        ))}
       </div>
+      {rows.length === 0 && <div className="rounded-lg border p-6 text-center text-neutral-400">暂无候选，点「抓取候选」</div>}
+      {blocked.length > 0 && (
+        <details className="rounded-lg border bg-neutral-50 p-3 text-sm text-neutral-500">
+          <summary className="cursor-pointer">另有 {blocked.length} 个协议不可商用（GPL/AGPL 系），点开查看</summary>
+          <div className="mt-2 space-y-1">
+            {blocked.map((c) => (
+              <div key={c.id} className="flex gap-2 text-xs">
+                <a className="text-neutral-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
+                <span className="text-neutral-400">{c.license ?? '无协议'}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {/* 立项项目 stage 泳道：拖拽卡片在阶段间流转（§8） */}
       <div>
