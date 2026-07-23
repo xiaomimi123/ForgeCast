@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { escapeHtml, fillTemplate, renderHyperframes, scaffoldHfProject } from '../src/hyperframes'
+import { escapeHtml, fillTemplate, readShots, renderHyperframes, scaffoldHfProject } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -39,3 +39,25 @@ describe('renderHyperframes stub', () => {
     expect(fs.statSync(out).size).toBeGreaterThan(0)
   })
 })
+
+describe('readShots', () => {
+  it('按文件名排序、解析竖/横向；非图片忽略；空目录空数组', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shots-'))
+    // 1x2 png（竖）与 2x1 png（横）最小合法头
+    fs.writeFileSync(path.join(dir, '02.png'), pngOf(1, 2))
+    fs.writeFileSync(path.join(dir, '01.png'), pngOf(2, 1))
+    fs.writeFileSync(path.join(dir, 'note.txt'), 'x')
+    const shots = readShots(dir)
+    expect(shots.map((s) => s.rel)).toEqual(['01.png', '02.png'])
+    expect(shots[0].orientation).toBe('landscape')
+    expect(shots[1].orientation).toBe('portrait')
+  })
+})
+// 辅助：构造给定宽高的最小 PNG（IHDR 里写宽高即可，无需完整像素）
+function pngOf(w: number, h: number): Buffer {
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  const ihdr = Buffer.alloc(25)
+  ihdr.writeUInt32BE(13, 0); ihdr.write('IHDR', 4)
+  ihdr.writeUInt32BE(w, 8); ihdr.writeUInt32BE(h, 12)
+  return Buffer.concat([sig, ihdr])
+}

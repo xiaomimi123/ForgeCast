@@ -57,6 +57,39 @@ export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Re
   for (const [name, buf] of Object.entries(assets)) fs.writeFileSync(path.join(destDir, 'assets', name), buf)
 }
 
+export interface Shot { rel: string; orientation: 'portrait' | 'landscape' }
+
+/** 从图片文件头解析宽高（纯 Node，不引图像库）：支持 PNG / JPEG / WEBP(VP8X)。 */
+function imageSize(buf: Buffer): { w: number; h: number } | null {
+  // PNG: 8B 签名 + IHDR
+  if (buf.length >= 24 && buf[0] === 0x89 && buf[1] === 0x50) return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) }
+  // JPEG: 扫 SOF0/2 段
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let o = 2
+    while (o < buf.length) {
+      if (buf[o] !== 0xff) { o++; continue }
+      const m = buf[o + 1]
+      if (m === 0xc0 || m === 0xc2) return { h: buf.readUInt16BE(o + 5), w: buf.readUInt16BE(o + 7) }
+      o += 2 + buf.readUInt16BE(o + 2)
+    }
+  }
+  // WEBP (VP8X/VP8/VP8L 简化：VP8X 有 24bit 宽高-1)
+  if (buf.length >= 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+    const fmt = buf.toString('ascii', 12, 16)
+    if (fmt === 'VP8X') return { w: (buf.readUIntLE(24, 3) & 0xffffff) + 1, h: (buf.readUIntLE(27, 3) & 0xffffff) + 1 }
+  }
+  return null
+}
+
+/** 读截图目录：按文件名排序，解析竖/横向；非图片忽略；损坏/无法解析按 landscape 兜底。 */
+export function readShots(shotsDir: string): Shot[] {
+  if (!fs.existsSync(shotsDir)) return []
+  return fs.readdirSync(shotsDir).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).sort().map((f) => {
+    const size = imageSize(fs.readFileSync(path.join(shotsDir, f)))
+    return { rel: f, orientation: size && size.w < size.h ? 'portrait' : 'landscape' }
+  })
+}
+
 /** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。 */
 export async function renderHyperframes(
   projectDir: string, outPath: string, mode: 'render' | 'stub',
