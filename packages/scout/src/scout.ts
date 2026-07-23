@@ -76,3 +76,18 @@ function normalizeRepo(input: string): string {
   const m = input.match(/github\.com\/([^/]+\/[^/#?]+)/)
   return (m ? m[1] : input).replace(/\.git$/, '').replace(/\/$/, '')
 }
+
+/** 重新评分单个候选：按 id 取回元数据 → 重抓 README → 重跑评分 → upsert 回写 */
+export async function rescoreCandidate(ctx: CoreCtx, id: number): Promise<void> {
+  const row = ctx.db.prepare(
+    'SELECT repo, url, description, license, stars, last_commit FROM candidates WHERE id = ?',
+  ).get(id) as any
+  if (!row) throw new Error(`候选不存在: ${id}`)
+  const gh = createGithubClient(ctx.config.github)
+  // topics 不入库，重评分时按空处理。只影响 tech_stack 里来自 topic 的那部分，
+  // 三个维度分数与 targetBuyer/painPoint 都只依赖 README，不受影响。
+  await ingest(ctx, gh, {
+    repo: row.repo, url: row.url, description: row.description,
+    license: row.license, stars: row.stars, lastCommit: row.last_commit, topics: [],
+  }, true)
+}

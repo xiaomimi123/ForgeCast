@@ -6,7 +6,7 @@ import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, ty
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo, synthesizeVoice } from '@forgecast/studio'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -251,6 +251,19 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       return c.json({ slug })
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
+  app.post('/api/candidates/:id/rescore', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!Number.isInteger(id)) return c.json({ error: '非法 id' }, 400)
+    try {
+      await rescoreCandidate(ctx, id)
+      // 带上模式：mock 下不会产生痛点/目标群体，前端据此提示
+      return c.json({ ok: true, mode: ctx.config.llm.mode })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, msg.startsWith('候选不存在') ? 404 : 400)
     }
   })
 
