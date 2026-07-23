@@ -6,6 +6,7 @@
 Node 20 + TypeScript + pnpm monorepo；SQLite(better-sqlite3)；Hono；Vite + React + Tailwind；Playwright（封面截图）；vitest。
 
 ## 快速开始
+> 需要 Node 22+（视频渲染依赖 HyperFrames）。本地可 `nvm use`。
 ```bash
 corepack enable && corepack use pnpm@9.15.0
 pnpm install

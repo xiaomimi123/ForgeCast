@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=22" },
   "scripts": {
     "dev": "tsx cli.ts dev",
     "test": "pnpm -r test"
