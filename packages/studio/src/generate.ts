@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { fillTemplate, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { fillTemplate, injectAudioCaptions, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
 import { buildChangelogProps, buildDemoProps, buildFlashProps, buildStoryProps } from './props'
 import { renderVideo } from './render'
 import { synthesizeVoice } from './tts'
@@ -45,16 +45,8 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
     const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
     if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
-    // 音轨标签 + 字幕脚本（非用户数据，直接替换不转义）
-    const audioTag = voice.audioRel
-      ? '<audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>'
-      : ''
-    const capScript = voice.cues.map((c) =>
-      `tl.set(document.getElementById("cap"), { textContent: ${JSON.stringify(c.text)} }, ${c.start});`,
-    ).join('\n')
-    // 填模板 → 脚手架 → 渲染
-    const html = fillTemplate(readTemplate('changelog'), slots)
-      .replace('{{audioTag}}', audioTag).replace('{{captionScript}}', capScript)
+    // 先 fillTemplate 填转义 slot，再注入音轨/字幕（注释标记，不被 {{}} 正则误吃）
+    const html = injectAudioCaptions(fillTemplate(readTemplate('changelog'), slots), voice.audioRel, voice.cues, 12)
     scaffoldHfProject(hfDir, html)
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const relPath = path.join(slug, 'videos', `changelog-${copy.hook ?? 'dev'}-${stamp}-${randomUUID().slice(0, 6)}.mp4`)

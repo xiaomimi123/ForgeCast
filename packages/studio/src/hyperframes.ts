@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Cue } from './tts'
 
 const STUB_BYTES = Buffer.from('FORGECAST_STUB_MP4\n')
 // templates/hf 相对本文件：packages/studio/src → 仓库根/templates/hf
@@ -15,6 +16,24 @@ export function escapeHtml(s: string): string {
 /** 具名 slot 替换：{{key}} → escapeHtml(slots[key])；未提供的 slot 替空。 */
 export function fillTemplate(tplHtml: string, slots: Record<string, string>): string {
   return tplHtml.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in slots ? escapeHtml(slots[k]) : ''))
+}
+
+/**
+ * 注入配音音轨 + 字幕脚本。用 HTML 注释标记 <!--HF_AUDIO--> / <!--HF_CAPTIONS-->，
+ * 避开 fillTemplate 的 {{}} 正则（否则会被当未知 slot 提前吃成空串）——故本函数须在 fillTemplate 之后调。
+ * cue 文本经 JSON.stringify 后把 < 转成 <，防止字面 </script> 截断脚本标签。
+ * 四套模板共用此注入逻辑（DRY）。
+ */
+export function injectAudioCaptions(html: string, audioRel: string | null, cues: Cue[], durationSec: number): string {
+  const audioTag = audioRel
+    ? `<audio id="narration" class="clip" data-start="0" data-duration="${durationSec}" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>`
+    : ''
+  const capScript = cues.length
+    ? 'const __cap = document.getElementById("cap");\n' + cues.map((c) =>
+        `if (__cap) tl.set(__cap, { textContent: ${JSON.stringify(c.text).replace(/</g, '\\u003c')} }, ${c.start});`,
+      ).join('\n')
+    : ''
+  return html.replace('<!--HF_AUDIO-->', audioTag).replace('<!--HF_CAPTIONS-->', capScript)
 }
 
 /** 读 templates/hf/<name>.html */
