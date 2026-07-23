@@ -4,14 +4,15 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { buildDemoProps, buildFlashProps, buildStoryProps } from './props'
+import { fillTemplate, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { buildChangelogProps, buildDemoProps, buildFlashProps, buildStoryProps } from './props'
 import { renderVideo } from './render'
 import { synthesizeVoice } from './tts'
 
 export interface GenerateVideoInput {
   slug: string
   assetId?: number
-  tpl?: 'flash' | 'story' | 'demo'
+  tpl?: 'flash' | 'story' | 'demo' | 'changelog'
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
@@ -34,6 +35,38 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   onProgress('解析文案、组装视频参数…')
   const doc = parseCopyOutput(fs.readFileSync(path.join(ctx.config.paths.workspace, copy.file_path), 'utf8'))
   const brandName = project.brand_name ?? slug
+
+  // changelog：独立走 HyperFrames 路径，不碰下方 flash/story/demo 的旧 Remotion 逻辑（后续任务再迁移）
+  if (tpl === 'changelog') {
+    const slots = buildChangelogProps(doc, brandName)
+    const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
+    // 配音
+    onProgress('TTS 配音…')
+    const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
+    const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+    // 音轨标签 + 字幕脚本（非用户数据，直接替换不转义）
+    const audioTag = voice.audioRel
+      ? '<audio id="narration" class="clip" data-start="0" data-duration="12" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>'
+      : ''
+    const capScript = voice.cues.map((c) =>
+      `tl.set(document.getElementById("cap"), { textContent: ${JSON.stringify(c.text)} }, ${c.start});`,
+    ).join('\n')
+    // 填模板 → 脚手架 → 渲染
+    const html = fillTemplate(readTemplate('changelog'), slots)
+      .replace('{{audioTag}}', audioTag).replace('{{captionScript}}', capScript)
+    scaffoldHfProject(hfDir, html)
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const relPath = path.join(slug, 'videos', `changelog-${copy.hook ?? 'dev'}-${stamp}-${randomUUID().slice(0, 6)}.mp4`)
+    const outAbs = path.join(ctx.config.paths.workspace, relPath)
+    onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
+    await renderHyperframes(hfDir, outAbs, ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
+    const info = ctx.db.prepare(
+      'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
+    ).run(project.id, 'video', copy.hook, relPath, '[]')
+    onProgress(`视频完成: ${relPath}`)
+    return { assetId: Number(info.lastInsertRowid), filePath: relPath }
+  }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const base = `${tpl}-${copy.hook ?? tpl}-${stamp}-${randomUUID().slice(0, 6)}`

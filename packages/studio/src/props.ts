@@ -69,3 +69,15 @@ export function buildDemoProps(doc: CopyDoc, brandName = 'forgecast'): DemoProps
     brandName,
   }
 }
+
+/** changelog 模板 slot：全 string（HTML 填槽）。数据来自封面文案/标题，CTA 复用 flash 抽取。 */
+export function buildChangelogProps(doc: CopyDoc, brandName = 'forgecast'): Record<string, string> {
+  const flash = buildFlashProps(doc, brandName)
+  return {
+    label: '本周更新',
+    title: doc.cover.main || doc.titles[0] || '本周更新',
+    subtitle: doc.cover.sub || doc.titles[1] || '',
+    cta: flash.cta,
+    brandName,
+  }
+}

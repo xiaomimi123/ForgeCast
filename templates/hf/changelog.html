@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0d1117; font-family: "NotoSC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
+      .label { display: inline-block; font-size: 34px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 10px 26px; border-radius: 10px; }
+      .title { font-size: 82px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 44px; }
+      .sub { font-size: 40px; color: #8b949e; margin-top: 28px; }
+      .brand { font-size: 96px; font-weight: 900; color: #f0f6fc; text-align: center; }
+      .tag { font-size: 44px; color: #ffd54f; margin-top: 30px; font-weight: 700; text-align: center; }
+      #cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="12" data-width="1080" data-height="1920">
+      <div id="s1" class="clip fill pad" data-start="0" data-duration="6" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center">
+        <div><span class="label">{{label}}</span></div>
+        <div class="title">{{title}}</div>
+        <div class="sub">{{subtitle}}</div>
+      </div>
+      <div id="s2" class="clip fill pad" data-start="6" data-duration="6" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center;align-items:center">
+        <div class="brand">{{brandName}}</div>
+        <div class="tag">{{cta}}</div>
+      </div>
+      <div id="cap" class="clip" data-start="0" data-duration="12" data-track-index="9"></div>
+      {{audioTag}}
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.from("#s1 .label", { opacity: 0, y: -30, duration: .5 }, 0.1)
+        .from("#s1 .title", { opacity: 0, y: 40, duration: .7 }, 0.35)
+        .from("#s1 .sub", { opacity: 0, duration: .5 }, 0.9);
+      tl.from("#s2 .brand", { opacity: 0, scale: .85, duration: .7 }, 6.2)
+        .from("#s2 .tag", { opacity: 0, y: 24, duration: .5 }, 6.9);
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: 12, ease: "none" }, 0);
+      window.__timelines["main"] = tl;
+      {{captionScript}}
+    </script>
+  </body>
+</html>

@@ -42,4 +42,13 @@ describe('generateVideo (stub)', () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('other')").run() // id=2
     await expect(generateVideo(ctx, { slug: 'other', assetId: 1 })).rejects.toThrow(/文案/)
   })
+  it('tpl=changelog 走 HyperFrames stub，产出 asset 行与 hf 项目', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog', onProgress: () => {} })
+    expect(r.filePath).toContain('changelog-')
+    const hfIndex = path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html')
+    expect(fs.existsSync(hfIndex)).toBe(true)
+    expect(fs.readFileSync(hfIndex, 'utf8')).toContain('data-composition-id="main"')
+  })
 })

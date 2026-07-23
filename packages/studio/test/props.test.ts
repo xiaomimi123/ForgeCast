@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildFlashProps } from '../src/props'
+import { buildChangelogProps, buildFlashProps } from '../src/props'
 
 const doc = {
   titles: ['t1', 't2', 't3'],
@@ -21,5 +21,18 @@ describe('buildFlashProps', () => {
     const p = buildFlashProps({ ...doc, douyinScript: '没有那段' } as any)
     expect(p.cta.length).toBeGreaterThan(0)
     expect(p.brandName).toBe('forgecast')
+  })
+})
+
+describe('buildChangelogProps', () => {
+  it('产出 title/sellingPoint/cta/brandName 全为字符串', () => {
+    const doc = {
+      titles: ['看板改版'], xhsBody: '正文', douyinScript: '【52-60s CTA】评论区扣1',
+      cover: { main: '看板改版', sub: '候选卡片' }, comments: { questions: [], replies: [] },
+    } as any
+    const p = buildChangelogProps(doc, '内容工厂')
+    expect(typeof p.title).toBe('string')
+    expect(p.title.length).toBeGreaterThan(0)
+    expect(p.brandName).toBe('内容工厂')
   })
 })
