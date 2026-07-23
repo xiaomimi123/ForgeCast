@@ -15,7 +15,8 @@ export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: ty
     return {
       async searchRepos() {
         return candidateFixtures.map((f) => ({
-          repo: f.repo, url: f.url, license: f.license, stars: f.stars, lastCommit: f.lastCommit, topics: f.topics,
+          repo: f.repo, url: f.url, description: f.description, license: f.license,
+          stars: f.stars, lastCommit: f.lastCommit, topics: f.topics,
         }))
       },
       async fetchReadme(repo) { return byRepo.get(repo)?.readme ?? '' },
@@ -37,7 +38,8 @@ export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: ty
         const data: any = await res.json()
         for (const it of data.items ?? []) {
           seen.set(it.full_name, {
-            repo: it.full_name, url: it.html_url, license: it.license?.spdx_id ?? null,
+            repo: it.full_name, url: it.html_url, description: it.description ?? null,
+            license: it.license?.spdx_id ?? null,
             stars: it.stargazers_count ?? 0, lastCommit: it.pushed_at ?? null, topics: it.topics ?? [],
           })
         }

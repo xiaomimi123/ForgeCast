@@ -9,9 +9,9 @@ export const DEFAULT_TOPICS = [
   'dashboard', 'chatbot', 'link-in-bio', 'scheduling', 'pos', 'wiki', 'survey',
 ]
 
-const UPSERT = `INSERT INTO candidates (repo, url, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status)
-VALUES (@repo, @url, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'candidate')
-ON CONFLICT(repo) DO UPDATE SET url=excluded.url, license=excluded.license, license_ok=excluded.license_ok,
+const UPSERT = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status)
+VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'candidate')
+ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=excluded.license_ok,
   stars=excluded.stars, last_commit=excluded.last_commit, tech_stack=excluded.tech_stack,
   score=excluded.score, score_detail=excluded.score_detail`
 
@@ -29,7 +29,7 @@ async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: b
     scoreDetail = JSON.stringify({ rebrandCost: d.rebrandCost, buyerClarity: d.buyerClarity, visualAppeal: d.visualAppeal, rationale: d.rationale })
   }
   ctx.db.prepare(UPSERT).run({
-    repo: meta.repo, url: meta.url, license: meta.license, license_ok: ok ? 1 : 0,
+    repo: meta.repo, url: meta.url, description: meta.description, license: meta.license, license_ok: ok ? 1 : 0,
     stars: meta.stars, last_commit: meta.lastCommit, tech_stack: techStack, score, score_detail: scoreDetail,
   })
 }
@@ -65,7 +65,7 @@ export async function addRepo(ctx: CoreCtx, repoUrl: string): Promise<void> {
   // mock 下 searchRepos 即 fixtures，从中取该 repo；live 下用一次 search 兜底元数据
   const all = await gh.searchRepos([], { minStars: 0, pushedAfter: '1970-01-01', perTopic: 1 })
   const meta = all.find((m) => m.repo === repo)
-    ?? { repo, url: `https://github.com/${repo}`, license: null, stars: 0, lastCommit: null, topics: [] }
+    ?? { repo, url: `https://github.com/${repo}`, description: null, license: null, stars: 0, lastCommit: null, topics: [] }
   await ingest(ctx, gh, meta, true)
 }
 

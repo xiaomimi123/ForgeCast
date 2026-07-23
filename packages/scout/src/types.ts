@@ -1,6 +1,7 @@
 export interface RepoMeta {
   repo: string // owner/name
   url: string
+  description: string | null // GitHub 仓库简介，一句话
   license: string | null // SPDX id
   stars: number
   lastCommit: string | null

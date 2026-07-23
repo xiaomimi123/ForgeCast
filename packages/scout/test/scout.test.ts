@@ -44,3 +44,11 @@ describe('addRepo (mock)', () => {
     expect(JSON.parse(row.tech_stack)).toContain('react')
   })
 })
+
+describe('description 采集', () => {
+  it('fixture 的 description 落库（与 LLM 模式无关）', async () => {
+    await scoutCandidates(ctx)
+    const row: any = ctx.db.prepare('SELECT description FROM candidates WHERE repo = ?').get('chatwoot/chatwoot')
+    expect(row.description).toBe('开源多渠道在线客服平台')
+  })
+})

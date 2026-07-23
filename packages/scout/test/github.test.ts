@@ -32,14 +32,14 @@ describe('createGithubClient live', () => {
   it('searchRepos 拼对 URL 与鉴权头并解析', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       items: [{
-        full_name: 'acme/widget', html_url: 'https://github.com/acme/widget',
+        full_name: 'acme/widget', html_url: 'https://github.com/acme/widget', description: '一个示例仓库',
         license: { spdx_id: 'MIT' }, stargazers_count: 500, pushed_at: '2025-01-01T00:00:00Z', topics: ['crm'],
       }],
     })))
     const gh = createGithubClient(liveCfg, fetchImpl as any)
     const repos = await gh.searchRepos(['crm'], { minStars: 300, pushedAfter: '2024-01-01', perTopic: 20 })
     expect(repos[0]).toEqual({
-      repo: 'acme/widget', url: 'https://github.com/acme/widget',
+      repo: 'acme/widget', url: 'https://github.com/acme/widget', description: '一个示例仓库',
       license: 'MIT', stars: 500, lastCommit: '2025-01-01T00:00:00Z', topics: ['crm'],
     })
     const [url, init] = fetchImpl.mock.calls[0] as any
