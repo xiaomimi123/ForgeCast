@@ -2,8 +2,15 @@ import { REQUIRED_SECTIONS } from './validate'
 
 export interface AnalysisSummary { targetBuyer: string; painPoint: string }
 
-// 复用 validate.ts 的标题字面量，避免同一批标题在包内出现第二份硬编码
-const [, TARGET_BUYER_HEADING, PAIN_POINT_HEADING] = REQUIRED_SECTIONS
+// 复用 validate.ts 的标题字面量，避免同一批标题在包内出现第二份硬编码。
+// 按名查找而非按下标解构：REQUIRED_SECTIONS 将来若增删段落，下标会静默错位且无人察觉
+const pickHeading = (name: string): string => {
+  const hit = REQUIRED_SECTIONS.find((s) => s === name)
+  if (!hit) throw new Error(`REQUIRED_SECTIONS 缺少段落「${name}」，summary 解析与 validate 校验已不同步`)
+  return hit
+}
+const TARGET_BUYER_HEADING = pickHeading('目标买家画像')
+const PAIN_POINT_HEADING = pickHeading('痛点清单')
 
 /**
  * 取某个 ## 标题下的首个非空正文行，去掉列表符号（- / 1. ）。找不到返回空串。
