@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const [d, setD] = useState<Draft>(emptyDraft)
   const [saved, setSaved] = useState(false)
   const [test, setTest] = useState<string>('')
+  const [ttsTest, setTtsTest] = useState<string>('')
   const set = (patch: Partial<Draft>) => { setD((p) => ({ ...p, ...patch })); setSaved(false) }
 
   // 载入后回填非密字段（mode/baseURL/model）；key 保持空（占位显示打码）
@@ -46,13 +47,18 @@ export default function SettingsPage() {
 
   const save = useMutation({
     mutationFn: () => api<SettingsView>('/api/settings', { method: 'PUT', body: JSON.stringify(d) }),
-    onSuccess: () => { setSaved(true); setTest(''); qc.invalidateQueries({ queryKey: ['settings'] }) },
+    onSuccess: () => { setSaved(true); setTest(''); setTtsTest(''); qc.invalidateQueries({ queryKey: ['settings'] }) },
     onError: (e) => alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`),
   })
   const runTest = useMutation({
     mutationFn: () => api<{ ok: boolean; message: string }>('/api/settings/test-llm', { method: 'POST' }),
     onSuccess: (r) => setTest(`${r.ok ? '✅' : '⚠️'} ${r.message}`),
     onError: (e) => setTest(`⚠️ ${e instanceof Error ? e.message : String(e)}`),
+  })
+  const runTtsTest = useMutation({
+    mutationFn: () => api<{ ok: boolean; message: string }>('/api/settings/test-tts', { method: 'POST' }),
+    onSuccess: (r) => setTtsTest(`${r.ok ? '✅' : '⚠️'} ${r.message}`),
+    onError: (e) => setTtsTest(`⚠️ ${e instanceof Error ? e.message : String(e)}`),
   })
 
   const s = settings.data
@@ -65,6 +71,13 @@ export default function SettingsPage() {
         <h2 className="text-lg font-semibold">设置</h2>
         <span className="text-xs text-neutral-400">🔒 key 只存本地 db、随服务器绑 127.0.0.1，不上传、不进代码仓库</span>
       </div>
+
+      {/* 降级提示：否则选了 live 保存后模式莫名跳回 mock，无从判断为什么 */}
+      {s.mode_notes?.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          {s.mode_notes.map((n) => <div key={n}>⚠ {n}</div>)}
+        </div>
+      )}
 
       {/* LLM */}
       <section className="space-y-3 rounded-lg border bg-white p-4">
@@ -101,6 +114,10 @@ export default function SettingsPage() {
         <div className="grid grid-cols-2 gap-2">
           <Field label="Base URL"><input className={inputCls} value={d.tts_base_url} onChange={(e) => set({ tts_base_url: e.target.value })} /></Field>
           <Field label="语音模型 id"><input className={inputCls} value={d.tts_model} onChange={(e) => set({ tts_model: e.target.value })} /></Field>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={runTtsTest.isPending} onClick={() => runTtsTest.mutate()}>测试连接</button>
+          {ttsTest && <span className="text-xs text-neutral-600">{ttsTest}</span>}
         </div>
       </section>
 

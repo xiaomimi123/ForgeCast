@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { analyzeProject } from '@forgecast/analyst'
 import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
@@ -6,7 +7,7 @@ import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
-import { generateVideo } from '@forgecast/studio'
+import { generateVideo, synthesizeVoice } from '@forgecast/studio'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -63,6 +64,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
         mode: cfg.github.mode,
         token_set: !!cfg.github.token, token_masked: maskKey(cfg.github.token),
       },
+      // 选了 live 却缺 key 时会被降级——不说明白的话，页面上模式会莫名其妙跳回 mock
+      mode_notes: ctx.modeNotes ?? [],
     }
   }
 
@@ -91,6 +94,24 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       return c.json({ ok: true, message: `连接成功，模型返回：${out.slice(0, 40)}` })
     } catch (e) {
       return c.json({ ok: false, message: e instanceof Error ? e.message : String(e) })
+    }
+  })
+
+  app.post('/api/settings/test-tts', async (c) => {
+    if (ctx.config.tts.mode !== 'live') {
+      return c.json({ ok: false, message: '当前为 stub 模式（未配置 live key），未发起真实请求' })
+    }
+    // 合成一句极短文本到临时文件：既验 key 也验语音模型 id，比渲一整条视频快
+    const tmp = path.join(os.tmpdir(), `forgecast-tts-test-${process.pid}.wav`)
+    try {
+      const r = await synthesizeVoice(ctx, '连接测试', tmp)
+      if (r.degraded) return c.json({ ok: false, message: r.degraded })
+      const size = fs.statSync(tmp).size
+      return c.json({ ok: true, message: `连接成功，返回音频 ${(size / 1024).toFixed(1)} KB` })
+    } catch (e) {
+      return c.json({ ok: false, message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      fs.rmSync(tmp, { force: true })
     }
   })
 

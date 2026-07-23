@@ -71,4 +71,22 @@ describe('settings API', () => {
     expect(r.ok).toBe(false)
     expect(r.message).toContain('mock')
   })
+
+  it('test-tts：stub 模式返回未发起真实请求', async () => {
+    const r = await (await app.request('/api/settings/test-tts', { method: 'POST' })).json() as any
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('stub')
+  })
+
+  it('选 live 却没 key 时，回传降级说明而非静默改回 mock', async () => {
+    const r = await app.request('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ llm_mode: 'live', tts_mode: 'live' }),
+    })
+    const v = await r.json() as any
+    expect(v.llm.mode).toBe('mock')
+    expect(v.tts.mode).toBe('stub')
+    expect(v.mode_notes).toHaveLength(2)
+    expect(v.mode_notes.join()).toContain('key')
+  })
 })
