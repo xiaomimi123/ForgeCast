@@ -1,17 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api, subscribeTask, type Candidate, type Project } from '../api'
 import CandidateCard from './board/CandidateCard'
-
-// 立项项目阶段泳道（§8）：analysis→rebranding→producing→publishing→selling
-const STAGES: Array<{ key: string; label: string }> = [
-  { key: 'analysis', label: '分析' },
-  { key: 'rebranding', label: '换皮' },
-  { key: 'producing', label: '产素材' },
-  { key: 'publishing', label: '发布' },
-  { key: 'selling', label: '成交' },
-]
+import StageLanes from './board/StageLanes'
 
 export default function BoardPage() {
   const qc = useQueryClient()
@@ -19,8 +10,6 @@ export default function BoardPage() {
   const [scanning, setScanning] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
 
-  const navigate = useNavigate()
-  const [dragSlug, setDragSlug] = useState<string | null>(null)
   const candidates = useQuery({ queryKey: ['candidates'], queryFn: () => api<Candidate[]>('/api/candidates') })
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
   // 并发跟踪：用集合记录"哪些 id/repo 正在请求中"，每次 mutate 只增删自己那一个，
@@ -102,39 +91,7 @@ export default function BoardPage() {
         </details>
       )}
 
-      {/* 立项项目 stage 泳道：拖拽卡片在阶段间流转（§8） */}
-      <div>
-        <div className="mb-2 text-sm font-medium text-neutral-600">立项项目 · 拖拽卡片流转阶段</div>
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {STAGES.map((s) => {
-            const items = (projects.data ?? []).filter((p) => p.stage === s.key)
-            return (
-              <div key={s.key}
-                className="min-w-[180px] flex-1 rounded-lg border bg-neutral-50 p-2"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => { if (dragSlug) moveStage.mutate({ slug: dragSlug, stage: s.key }); setDragSlug(null) }}>
-                <div className="mb-2 flex items-center justify-between px-1 text-xs font-medium text-neutral-500">
-                  <span>{s.label}</span><span>{items.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {items.map((p) => (
-                    <div key={p.id} draggable
-                      onDragStart={() => setDragSlug(p.slug)}
-                      onDragEnd={() => setDragSlug(null)}
-                      onClick={() => navigate(`/projects/${p.slug}`)}
-                      className="cursor-grab rounded border bg-white p-2 text-sm shadow-sm hover:border-blue-400 active:cursor-grabbing">
-                      <div className="font-medium">{p.brand_name || p.slug}</div>
-                      <div className="text-xs text-neutral-400">{p.slug}</div>
-                    </div>
-                  ))}
-                  {items.length === 0 && <div className="rounded border border-dashed p-3 text-center text-xs text-neutral-300">拖到此</div>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        {projects.isSuccess && projects.data.length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先在候选表点「立项」</div>}
-      </div>
+      <StageLanes projects={projects.data ?? []} onMove={(slug, stage) => moveStage.mutate({ slug, stage })} />
     </div>
   )
 }
