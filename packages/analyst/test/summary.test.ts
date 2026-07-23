@@ -33,4 +33,17 @@ describe('parseAnalysisSummary', () => {
   it('空输入返回空串', () => {
     expect(parseAnalysisSummary('')).toEqual({ targetBuyer: '', painPoint: '' })
   })
+
+  it('精确匹配标题：不被"包含该子串但不以之开头"的无关二级标题误命中', () => {
+    const md = `# demo 商业化分析
+
+## 附录：痛点清单的补充说明
+这是无关段落的内容，不应被取到
+
+## 痛点清单（按付费意愿排序）
+1. 真正的痛点内容
+`
+    const s = parseAnalysisSummary(md)
+    expect(s.painPoint).toBe('真正的痛点内容')
+  })
 })

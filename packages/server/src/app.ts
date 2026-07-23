@@ -15,6 +15,18 @@ import type { TaskEvent, TaskQueue } from './tasks'
 // 可通过 PATCH 修改的项目字段白名单
 const PATCHABLE = ['brand_name', 'target_buyer', 'demo_url', 'price_deploy', 'price_custom', 'stage'] as const
 
+/**
+ * fail-soft 读文件：读不到（不存在 / 权限异常 / 被换成目录 / TOCTOU 等）一律返回空串，不抛错。
+ * 用于 analysis.md 这类"没有也正常"的可选文件——不该让整个项目列表接口因为单个项目的文件问题而 500。
+ */
+function readFileSafe(p: string): string {
+  try {
+    return fs.readFileSync(p, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
 /** 创建 Hono app：项目 REST API + 任务队列 SSE 进度流 */
 export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   const app = new Hono()
@@ -24,7 +36,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     // 附上 analysis.md 摘要给看板泳道卡片；没跑过分析的项目为空对象，不报错
     return c.json(rows.map((r) => {
       const p = path.join(ctx.config.paths.workspace, r.slug, 'analysis.md')
-      const md = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+      const md = readFileSafe(p)
       return { ...r, analysis_summary: parseAnalysisSummary(md) }
     }))
   })
@@ -33,7 +45,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const row: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(c.req.param('slug'))
     if (!row) return c.json({ error: '项目不存在' }, 404)
     const analysisPath = path.join(ctx.config.paths.workspace, row.slug, 'analysis.md')
-    const analysisMd = fs.existsSync(analysisPath) ? fs.readFileSync(analysisPath, 'utf8') : ''
+    const analysisMd = readFileSafe(analysisPath)
     return c.json({ ...row, analysisMd })
   })
 

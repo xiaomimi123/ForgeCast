@@ -91,7 +91,7 @@ export default function BoardPage() {
         </details>
       )}
 
-      <StageLanes projects={projects.data ?? []} onMove={(slug, stage) => moveStage.mutate({ slug, stage })} />
+      <StageLanes projects={projects.data ?? []} loaded={projects.isSuccess} onMove={(slug, stage) => moveStage.mutate({ slug, stage })} />
     </div>
   )
 }

@@ -1,9 +1,18 @@
+import { REQUIRED_SECTIONS } from './validate'
+
 export interface AnalysisSummary { targetBuyer: string; painPoint: string }
 
-/** 取某个 ## 标题下的首个非空正文行，去掉列表符号（- / 1. ）。找不到返回空串 */
+// 复用 validate.ts 的标题字面量，避免同一批标题在包内出现第二份硬编码
+const [, TARGET_BUYER_HEADING, PAIN_POINT_HEADING] = REQUIRED_SECTIONS
+
+/**
+ * 取某个 ## 标题下的首个非空正文行，去掉列表符号（- / 1. ）。找不到返回空串。
+ * 标题匹配口径与 validate.ts 保持一致：剥掉 "## " 前缀及首尾空白后 startsWith(heading)，
+ * 而非子串匹配——避免被"任何含该子串的二级标题"误命中。
+ */
 function firstItem(md: string, heading: string): string {
   const lines = md.split('\n')
-  const start = lines.findIndex((l) => l.startsWith('## ') && l.includes(heading))
+  const start = lines.findIndex((l) => l.startsWith('## ') && l.slice(3).trim().startsWith(heading))
   if (start < 0) return ''
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i]
@@ -22,7 +31,7 @@ function firstItem(md: string, heading: string): string {
 export function parseAnalysisSummary(md: string): AnalysisSummary {
   if (!md) return { targetBuyer: '', painPoint: '' }
   return {
-    targetBuyer: firstItem(md, '目标买家画像'),
-    painPoint: firstItem(md, '痛点清单'),
+    targetBuyer: firstItem(md, TARGET_BUYER_HEADING),
+    painPoint: firstItem(md, PAIN_POINT_HEADING),
   }
 }

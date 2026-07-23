@@ -11,8 +11,8 @@ const STAGES: Array<{ key: string; label: string }> = [
   { key: 'selling', label: '成交' },
 ]
 
-export default function StageLanes({ projects, onMove }: {
-  projects: Project[]; onMove: (slug: string, stage: string) => void
+export default function StageLanes({ projects, onMove, loaded }: {
+  projects: Project[]; onMove: (slug: string, stage: string) => void; loaded?: boolean
 }) {
   const navigate = useNavigate()
   const [dragSlug, setDragSlug] = useState<string | null>(null)
@@ -55,7 +55,7 @@ export default function StageLanes({ projects, onMove }: {
           )
         })}
       </div>
-      {projects.length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先在候选表点「立项」</div>}
+      {loaded && projects.length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先在候选卡片点「立项」</div>}
     </div>
   )
 }

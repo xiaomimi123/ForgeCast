@@ -60,4 +60,16 @@ describe('projects API', () => {
       targetBuyer: '主攻：中小商家', painPoint: '效率低',
     })
   })
+  it('analysis.md 路径不可读（被换成目录，读会 EISDIR）时列表仍 200，该项目 analysis_summary 为空串', async () => {
+    ctx.db.prepare("INSERT INTO projects (slug, brand_name, stage) VALUES ('broken', '演示', 'analysis')").run()
+    const dir = path.join(ctx.config.paths.workspace, 'broken')
+    // 把 analysis.md 建成目录而非文件，模拟权限异常/TOCTOU 等导致 readFileSync 抛错的场景
+    fs.mkdirSync(path.join(dir, 'analysis.md'), { recursive: true })
+
+    const app = createApp(ctx, createTaskQueue())
+    const res = await app.request('/api/projects')
+    expect(res.status).toBe(200)
+    const list = await res.json() as any[]
+    expect(list.find((p) => p.slug === 'broken').analysis_summary).toEqual({ targetBuyer: '', painPoint: '' })
+  })
 })

@@ -67,7 +67,7 @@ export default function CandidateCard({ c, rank, onPick, onRescore, picking, res
       <div className="flex items-baseline gap-2">
         <span className="text-xs text-neutral-400">#{rank}</span>
         <a className="font-medium text-blue-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
-        <span className="text-xs text-neutral-400">★{c.stars.toLocaleString()}</span>
+        <span className="text-xs text-neutral-400">★{num(c.stars).toLocaleString()}</span>
         <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">{c.license ?? '—'}</span>
         <span className="ml-auto text-sm font-semibold">{c.score ?? '—'}</span>
       </div>
