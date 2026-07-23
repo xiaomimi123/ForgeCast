@@ -46,6 +46,12 @@ describe('applyStoredSettings', () => {
     applyStoredSettings(config, db)
     expect(config.llm.apiKey).toBe('env-key')
   })
+  it('tts_mode 支持 kokoro（白名单需含新模式，否则 Web 设置页存不了）', () => {
+    const config = loadConfig(root, {})
+    setSettings(db, { tts_mode: 'kokoro' })
+    applyStoredSettings(config, db)
+    expect(config.tts.mode).toBe('kokoro')
+  })
 })
 
 describe('normalizeModes', () => {

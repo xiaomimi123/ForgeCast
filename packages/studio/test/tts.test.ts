@@ -17,7 +17,7 @@ describe('synthesizeVoice stub', () => {
   it('切句成字幕、写占位 wav、不发网络', async () => {
     const out = path.join(root, 'workspace/demo/videos/a.wav')
     const fetchSpy = vi.fn()
-    const r = await synthesizeVoice(ctx, '第一句话。第二句更长一些的话！第三句', out, fetchSpy as any)
+    const r = await synthesizeVoice(ctx, '第一句话。第二句更长一些的话！第三句', out, { fetchImpl: fetchSpy })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(r.cues.length).toBe(3)
     expect(r.cues[0].start).toBe(0)
@@ -44,7 +44,7 @@ describe('synthesizeVoice live', () => {
   it('成功时写入返回的音频字节，且请求 wav 格式', async () => {
     const out = path.join(root, 'workspace/demo/videos/live-ok.wav')
     const fetchSpy = vi.fn(async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }))
-    const r = await synthesizeVoice(liveCtx({}), '一句话。', out, fetchSpy as any)
+    const r = await synthesizeVoice(liveCtx({}), '一句话。', out, { fetchImpl: fetchSpy })
     expect(r.degraded).toBeUndefined()
     expect(fs.readFileSync(out)).toEqual(Buffer.from([1, 2, 3, 4]))
     const body = JSON.parse((fetchSpy.mock.calls[0] as any)[1].body)
@@ -55,7 +55,7 @@ describe('synthesizeVoice live', () => {
   it('HTTP 错误时回落占位音轨并带出原因，不抛异常', async () => {
     const out = path.join(root, 'workspace/demo/videos/live-500.wav')
     const fetchSpy = vi.fn(async () => new Response('upstream boom', { status: 500 }))
-    const r = await synthesizeVoice(liveCtx({}), '一句话。', out, fetchSpy as any)
+    const r = await synthesizeVoice(liveCtx({}), '一句话。', out, { fetchImpl: fetchSpy })
     expect(r.degraded).toContain('500')
     expect(r.degraded).toContain('upstream boom')
     expect(fs.existsSync(out)).toBe(true)
@@ -65,7 +65,7 @@ describe('synthesizeVoice live', () => {
   it('空音频响应算降级，不当成功', async () => {
     const out = path.join(root, 'workspace/demo/videos/live-empty.wav')
     const fetchSpy = vi.fn(async () => new Response(new Uint8Array([]), { status: 200 }))
-    const r = await synthesizeVoice(liveCtx({}), '一句话。', out, fetchSpy as any)
+    const r = await synthesizeVoice(liveCtx({}), '一句话。', out, { fetchImpl: fetchSpy })
     expect(r.degraded).toContain('空音频')
   })
 
@@ -73,14 +73,41 @@ describe('synthesizeVoice live', () => {
     const fetchSpy = vi.fn()
     const noKey = await synthesizeVoice(
       liveCtx({ FORGECAST_TTS_KEY: '' }), '一句话。',
-      path.join(root, 'workspace/demo/videos/nokey.wav'), fetchSpy as any,
+      path.join(root, 'workspace/demo/videos/nokey.wav'), { fetchImpl: fetchSpy },
     )
     const noModel = await synthesizeVoice(
       liveCtx({ FORGECAST_TTS_MODEL: '' }), '一句话。',
-      path.join(root, 'workspace/demo/videos/nomodel.wav'), fetchSpy as any,
+      path.join(root, 'workspace/demo/videos/nomodel.wav'), { fetchImpl: fetchSpy },
     )
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(noKey.degraded).toContain('FORGECAST_TTS_KEY')
     expect(noModel.degraded).toContain('FORGECAST_TTS_MODEL')
+  })
+})
+
+describe('synthesizeVoice kokoro', () => {
+  it('kokoro 模式调 runKokoro 写 wav，成功不降级', async () => {
+    const out = path.join(root, 'workspace/demo/videos/k.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'kokoro' })
+    const kctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runKokoro = vi.fn(async (_text: string, outPath: string) => {
+      fs.mkdirSync(path.dirname(outPath), { recursive: true })
+      fs.writeFileSync(outPath, Buffer.from([1, 2, 3, 4]))
+    })
+    const r = await synthesizeVoice(kctx, '一句话。', out, { runKokoro })
+    expect(runKokoro).toHaveBeenCalledOnce()
+    expect(r.degraded).toBeUndefined()
+    expect(fs.readFileSync(out).length).toBe(4)
+    expect(r.cues.length).toBe(1)
+  })
+
+  it('kokoro 失败时降级占位并带原因', async () => {
+    const out = path.join(root, 'workspace/demo/videos/kf.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'kokoro' })
+    const kctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runKokoro = vi.fn(async () => { throw new Error('kokoro-onnx 未安装') })
+    const r = await synthesizeVoice(kctx, '一句话。', out, { runKokoro })
+    expect(r.degraded).toContain('kokoro-onnx 未安装')
+    expect(fs.existsSync(out)).toBe(true) // 占位 wav
   })
 })

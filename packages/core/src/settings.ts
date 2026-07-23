@@ -40,7 +40,7 @@ export function applyStoredSettings(config: ForgecastConfig, db: Database.Databa
   put(s.model_analysis, (v) => { config.llm.models.analysis = v })
   put(s.model_copy, (v) => { config.llm.models.copy = v })
   put(s.model_scoring, (v) => { config.llm.models.scoring = v })
-  put(s.tts_mode, (v) => { if (v === 'live' || v === 'stub') config.tts.mode = v })
+  put(s.tts_mode, (v) => { if (v === 'live' || v === 'stub' || v === 'kokoro') config.tts.mode = v })
   put(s.tts_key, (v) => { config.tts.apiKey = v })
   put(s.tts_model, (v) => { config.tts.model = v })
   put(s.tts_base_url, (v) => { config.tts.baseURL = v })
