@@ -13,7 +13,7 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
     `- rebrandCost 换皮成本(0-30)：技术栈(React/Node/Next 高)、有无 Docker、i18n、UI 可主题化`,
     `- buyerClarity 买家清晰度(0-40)：能否一句话说清"什么老板会掏钱"，越垂直越高`,
     `- visualAppeal 内容可视性(0-30)：有无好看可演示的 UI（纯 CLI/后端低分）`,
-    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话"}`,
+    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本"}`,
     `项目：${meta.repo}（topics: ${meta.topics.join(',')}, stars: ${meta.stars}）`,
     `README:\n${readme.slice(0, 6000)}`,
   ].join('\n')
@@ -28,7 +28,12 @@ function heuristicScore(meta: RepoMeta, readme: string): ScoreDetail {
   const buyerClarity = Math.min(40, 18 + (readme.length > 200 ? 10 : 0) + (has(/crm|invoice|chat|booking|shop|commerce|pos|survey|form/) ? 12 : 0))
   const visualAppeal = Math.min(30, 8 + (has(/screenshot|demo|preview/) ? 12 : 0) + (has(/dashboard|ui|interface/) ? 10 : 0))
   const techStack = TECHS.filter((t) => r.includes(t)).concat(meta.topics)
-  return { rebrandCost, buyerClarity, visualAppeal, techStack: [...new Set(techStack)], rationale: `离线启发式评分：${meta.repo}` }
+  return {
+    rebrandCost, buyerClarity, visualAppeal, techStack: [...new Set(techStack)],
+    rationale: `离线启发式评分：${meta.repo}`,
+    // mock 不编造买家与痛点——关键词拼出来的假数据比空着更坏
+    targetBuyer: '', painPoint: '',
+  }
 }
 
 /** 从 LLM 文本里抽 JSON（可能包 ```json 围栏），并夹取维度到上限 */
@@ -43,5 +48,7 @@ function parseScoreJson(text: string): ScoreDetail {
     visualAppeal: clamp(o.visualAppeal, 30),
     techStack: Array.isArray(o.techStack) ? o.techStack.map(String) : [],
     rationale: typeof o.rationale === 'string' ? o.rationale : '',
+    targetBuyer: typeof o.targetBuyer === 'string' ? o.targetBuyer : '',
+    painPoint: typeof o.painPoint === 'string' ? o.painPoint : '',
   }
 }

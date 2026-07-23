@@ -26,7 +26,10 @@ async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: b
     const d = await scoreCandidate(ctx, meta, readme)
     score = d.rebrandCost + d.buyerClarity + d.visualAppeal
     techStack = JSON.stringify(d.techStack)
-    scoreDetail = JSON.stringify({ rebrandCost: d.rebrandCost, buyerClarity: d.buyerClarity, visualAppeal: d.visualAppeal, rationale: d.rationale })
+    scoreDetail = JSON.stringify({
+      rebrandCost: d.rebrandCost, buyerClarity: d.buyerClarity, visualAppeal: d.visualAppeal,
+      rationale: d.rationale, targetBuyer: d.targetBuyer, painPoint: d.painPoint,
+    })
   }
   ctx.db.prepare(UPSERT).run({
     repo: meta.repo, url: meta.url, description: meta.description, license: meta.license, license_ok: ok ? 1 : 0,
