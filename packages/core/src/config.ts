@@ -3,7 +3,7 @@ import path from 'node:path'
 export type LlmMode = 'mock' | 'live'
 export type GithubMode = 'mock' | 'live'
 export type VideoMode = 'render' | 'stub'
-export type TtsMode = 'stub' | 'live'
+export type TtsMode = 'stub' | 'live' | 'kokoro'
 
 export interface ForgecastConfig {
   root: string
@@ -42,7 +42,10 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
     github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
     video: { mode: videoMode },
     tts: {
-      mode: env.FORGECAST_TTS_MODE === 'live' ? 'live' : 'stub',
+      // 默认 kokoro（离线中文配音）；显式指定 live/stub 时按指定走
+      mode: env.FORGECAST_TTS_MODE === 'live' ? 'live'
+        : env.FORGECAST_TTS_MODE === 'stub' ? 'stub'
+        : 'kokoro',
       baseURL: env.FORGECAST_TTS_BASE_URL || 'https://aitoken.homes/v1',
       apiKey: env.FORGECAST_TTS_KEY ?? '',
       model: env.FORGECAST_TTS_MODEL ?? '',

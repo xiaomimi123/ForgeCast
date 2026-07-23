@@ -67,6 +67,12 @@ describe('normalizeModes', () => {
     expect(normalizeModes(config)).toEqual([])
     expect(config.llm.mode).toBe('live')
   })
+  it('kokoro 模式不被 normalizeModes 降级', () => {
+    const config = loadConfig(root, {})
+    config.tts.mode = 'kokoro'; config.tts.apiKey = ''
+    normalizeModes(config)
+    expect(config.tts.mode).toBe('kokoro')
+  })
 })
 
 describe('maskKey', () => {

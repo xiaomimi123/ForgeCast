@@ -43,9 +43,17 @@ describe('loadConfig', () => {
     expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render' })
     expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub' })
   })
-  it('tts 默认 stub，可设 live', () => {
-    expect(loadConfig('/tmp/x', {}).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '' })
+  it('tts 可设 stub，可设 live', () => {
+    expect(loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'stub' }).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '' })
     const cfg = loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'live', FORGECAST_TTS_KEY: 'k', FORGECAST_TTS_MODEL: 'm' })
     expect(cfg.tts).toEqual({ mode: 'live', baseURL: 'https://aitoken.homes/v1', apiKey: 'k', model: 'm' })
+  })
+  it('FORGECAST_TTS_MODE=kokoro 被识别', () => {
+    const c = loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'kokoro' })
+    expect(c.tts.mode).toBe('kokoro')
+  })
+  it('kokoro 是默认 TTS 模式（未设时）', () => {
+    const c = loadConfig('/tmp/x', {})
+    expect(c.tts.mode).toBe('kokoro')
   })
 })
