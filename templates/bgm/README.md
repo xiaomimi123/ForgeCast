@@ -1,6 +1,6 @@
 # BGM 曲库
 
-放无版权/可商用背景乐（.mp3/.wav/.m4a）。系统自动挑字典序第一个，或 `forgecast video ... --bgm=<文件名不含后缀>` 指定，`--no-bgm` 关闭。
+放无版权/可商用背景乐（.mp3/.wav/.m4a）。默认按文案 hook 情绪自动匹配、从对应情绪子文件夹随机选曲（见下）；未分情绪子文件夹时回落根目录随机挑。也可 `forgecast video ... --bgm=<文件名不含后缀>` 指定具体曲，`--no-bgm` 关闭。
 首次用某曲会分析节拍并缓存 `<曲>.beats.json`（同目录）。
 素材来源：Mixkit / Pixabay Music / YouTube Audio Library 等（注意各自授权，商用需确认）。
 音频与 .beats.json 均 gitignore，不入库。
