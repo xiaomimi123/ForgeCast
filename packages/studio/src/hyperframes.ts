@@ -116,8 +116,8 @@ export function resolveMood(hook: string, override?: string): string {
   return override || HOOK_MOOD[hook] || ''
 }
 
-/** 曲库选曲：name 指定则补 .mp3/.wav 后缀命中；否则字典序第一个音频；无则 null。 */
-export function pickBgm(bgmDir: string, name?: string): string | null {
+/** 选曲：有 name 则补后缀命中；无 name 时给了 rand 从音频随机、否则字典序第一个（向后兼容）。 */
+export function pickBgm(bgmDir: string, name?: string, rand?: () => number): string | null {
   if (!fs.existsSync(bgmDir)) return null
   if (name) {
     for (const ext of ['', '.mp3', '.wav', '.m4a']) {
@@ -127,7 +127,18 @@ export function pickBgm(bgmDir: string, name?: string): string | null {
     return null
   }
   const audio = fs.readdirSync(bgmDir).filter((f) => /\.(mp3|wav|m4a)$/i.test(f)).sort()
-  return audio.length ? path.join(bgmDir, audio[0]) : null
+  if (!audio.length) return null
+  const idx = rand ? Math.min(audio.length - 1, Math.floor(rand() * audio.length)) : 0
+  return path.join(bgmDir, audio[idx])
+}
+
+/** 情绪选曲：mood 非空且 <dir>/<mood>/ 有曲 → 该子目录随机；否则根目录随机；都空 → null。 */
+export function pickMoodBgm(bgmDir: string, mood: string, rand?: () => number): string | null {
+  if (mood) {
+    const hit = pickBgm(path.join(bgmDir, mood), undefined, rand)
+    if (hit) return hit
+  }
+  return pickBgm(bgmDir, undefined, rand)
 }
 
 /** 科技感背景变体名。CSS 定义在各模板 <style>（class bg-<name>），此处只出内层结构 + GSAP 微动。 */

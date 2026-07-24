@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
+import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood } from '../src/hyperframes'
@@ -137,6 +137,47 @@ describe('pickBgm', () => {
     expect(pickBgm('/no/such/dir')).toBeNull()
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
     expect(pickBgm(dir)).toBeNull()
+  })
+})
+
+describe('pickBgm 随机 + 向后兼容', () => {
+  it('给 rand 从音频列表随机挑（注入 rand 断言命中项）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'a.mp3'), 'x'); fs.writeFileSync(path.join(dir, 'b.mp3'), 'x'); fs.writeFileSync(path.join(dir, 'c.mp3'), 'x')
+    // 排序后 [a,b,c]；rand=0→a，rand≈0.99→c
+    expect(pickBgm(dir, undefined, () => 0)).toBe(path.join(dir, 'a.mp3'))
+    expect(pickBgm(dir, undefined, () => 0.99)).toBe(path.join(dir, 'c.mp3'))
+  })
+  it('不给 rand 仍字典序第一个（向后兼容）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'b.mp3'), 'x'); fs.writeFileSync(path.join(dir, 'a.mp3'), 'x')
+    expect(pickBgm(dir)).toBe(path.join(dir, 'a.mp3'))
+  })
+})
+
+describe('pickMoodBgm 情绪子目录', () => {
+  it('情绪子目录有曲 → 该子目录随机', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.mkdirSync(path.join(dir, 'tense'))
+    fs.writeFileSync(path.join(dir, 'tense', 'x.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x') // 根目录也有，但情绪目录优先
+    expect(pickMoodBgm(dir, 'tense', () => 0)).toBe(path.join(dir, 'tense', 'x.mp3'))
+  })
+  it('情绪子目录缺失/空 → 回落根目录随机', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x')
+    expect(pickMoodBgm(dir, 'tense', () => 0)).toBe(path.join(dir, 'root.mp3'))       // 无 tense 子目录
+    fs.mkdirSync(path.join(dir, 'warm'))                                              // 空子目录
+    expect(pickMoodBgm(dir, 'warm', () => 0)).toBe(path.join(dir, 'root.mp3'))
+  })
+  it('mood 为空 → 直接根目录随机', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x')
+    expect(pickMoodBgm(dir, '', () => 0)).toBe(path.join(dir, 'root.mp3'))
+  })
+  it('子目录与根都空 → null', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    expect(pickMoodBgm(dir, 'tense', () => 0)).toBeNull()
   })
 })
 
