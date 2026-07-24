@@ -5,6 +5,12 @@ librosa beat_track 取节拍 → 最小二乘拟合线性网格（不信标量 t
 import json
 import sys
 import numpy as np
+import scipy.signal
+# 兼容：librosa 0.9.x 的 beat_track 调 scipy.signal.hann，scipy>=1.13 已把窗函数移到
+# scipy.signal.windows。melo venv 的 scipy 较新（1.17），补回旧符号避免 AttributeError。
+for _w in ("hann", "hamming", "blackman", "bartlett"):
+    if not hasattr(scipy.signal, _w) and hasattr(scipy.signal.windows, _w):
+        setattr(scipy.signal, _w, getattr(scipy.signal.windows, _w))
 import librosa
 
 bgm, out = sys.argv[1], sys.argv[2]
