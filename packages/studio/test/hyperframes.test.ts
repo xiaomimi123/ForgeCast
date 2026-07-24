@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
-import { HOOK_MOOD, resolveMood } from '../src/hyperframes'
+import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -308,5 +308,39 @@ describe('resolveMood 情绪映射', () => {
   it('未知 hook 且无 override → 空串', () => {
     expect(resolveMood('nope')).toBe('')
     expect(resolveMood('')).toBe('')
+  })
+})
+
+describe('chooseBgmPath 选曲优先级链', () => {
+  function seed() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.mkdirSync(path.join(dir, 'tense')); fs.mkdirSync(path.join(dir, 'warm'))
+    fs.writeFileSync(path.join(dir, 'tense', 't.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'warm', 'w.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'named.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x')
+    return dir
+  }
+  it('--bgm 指定具体曲 → 跳过情绪匹配', () => {
+    const dir = seed()
+    expect(chooseBgmPath(dir, { bgm: 'named', mood: 'warm', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'named.mp3'))
+  })
+  it('bgm=none → null（--no-bgm）', () => {
+    const dir = seed()
+    expect(chooseBgmPath(dir, { bgm: 'none', mood: '', hook: 'pain' }, () => 0)).toBeNull()
+  })
+  it('--mood 覆盖 hook 自动映射', () => {
+    const dir = seed()
+    // hook=pain 本应 tense；mood=warm 覆盖 → warm 子目录
+    expect(chooseBgmPath(dir, { bgm: '', mood: 'warm', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'warm', 'w.mp3'))
+  })
+  it('默认按 hook 自动映射情绪', () => {
+    const dir = seed()
+    expect(chooseBgmPath(dir, { bgm: '', mood: '', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'tense', 't.mp3'))
+  })
+  it('情绪目录空 → 回落根目录', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x') // 无情绪子目录
+    expect(chooseBgmPath(dir, { bgm: '', mood: '', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'root.mp3'))
   })
 })

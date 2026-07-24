@@ -141,6 +141,13 @@ export function pickMoodBgm(bgmDir: string, mood: string, rand?: () => number): 
   return pickBgm(bgmDir, undefined, rand)
 }
 
+/** 选曲优先级链：bgm='none'→null；bgm 具体名→指定曲；否则按 resolveMood(hook,mood) 走情绪/根随机。 */
+export function chooseBgmPath(bgmDir: string, opts: { bgm: string; mood: string; hook: string }, rand?: () => number): string | null {
+  if (opts.bgm === 'none') return null
+  if (opts.bgm) return pickBgm(bgmDir, opts.bgm)
+  return pickMoodBgm(bgmDir, resolveMood(opts.hook, opts.mood), rand)
+}
+
 /** 科技感背景变体名。CSS 定义在各模板 <style>（class bg-<name>），此处只出内层结构 + GSAP 微动。 */
 export const TECH_BGS = ['grid', 'aurora', 'matrix', 'synth', 'mesh'] as const
 
