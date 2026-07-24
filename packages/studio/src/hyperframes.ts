@@ -17,6 +17,7 @@ const COSY_TIMEOUT_MS = 600_000 // CosyVoice2 慢 + 长旁白，给足
 // 本地 TTS 推理脚本相对本文件：packages/studio/src → packages/studio/scripts
 const MELO_SCRIPT = fileURLToPath(new URL('../scripts/melo_infer.py', import.meta.url))
 const COSY_SCRIPT = fileURLToPath(new URL('../scripts/cosy_infer.py', import.meta.url))
+const BEAT_SCRIPT = fileURLToPath(new URL('../scripts/beat_grid.py', import.meta.url))
 
 /** 带超时的 spawn：超时 kill 并 reject。stdin ignore。cmd 默认 npx（HyperFrames 用）。 */
 function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
@@ -44,6 +45,29 @@ export function runCosyTts(text: string, outWavAbs: string, cosyHome: string): P
   return spawnWithTimeout([COSY_SCRIPT, cosyHome, text, outWavAbs], {
     cmd: `${cosyHome}/venv/bin/python`, timeoutMs: COSY_TIMEOUT_MS, label: 'CosyVoice2',
   })
+}
+
+export interface BeatGrid { t0: number; T: number; bpm: number; beats: number[]; strongBeats: number[]; duration: number }
+
+/** 节拍分析：读 <bgm>.beats.json 缓存；无则 spawn beat_grid.py 生成再读。任何失败返 null（调用方降级不卡点）。 */
+export async function analyzeBeats(
+  bgmPath: string, beatPython: string,
+  deps: { run?: (args: string[]) => Promise<void> } = {},
+): Promise<BeatGrid | null> {
+  const cache = `${bgmPath}.beats.json`
+  const readCache = (): BeatGrid | null => {
+    try {
+      const g = JSON.parse(fs.readFileSync(cache, 'utf8'))
+      if (Array.isArray(g.beats) && typeof g.T === 'number') return g as BeatGrid
+      return null
+    } catch { return null }
+  }
+  if (fs.existsSync(cache)) { const g = readCache(); if (g) return g }
+  const run = deps.run ?? ((args: string[]) => spawnWithTimeout(args, { cmd: beatPython, timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'beat_grid' }))
+  try {
+    await run([BEAT_SCRIPT, bgmPath, cache])
+    return readCache()
+  } catch { return null }
 }
 
 export function escapeHtml(s: string): string {

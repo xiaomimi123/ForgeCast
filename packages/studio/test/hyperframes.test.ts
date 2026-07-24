@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { escapeHtml, fillTemplate, readShots, renderHyperframes, scaffoldHfProject } from '../src/hyperframes'
+import { describe, expect, it, vi } from 'vitest'
+import { analyzeBeats, escapeHtml, fillTemplate, readShots, renderHyperframes, scaffoldHfProject } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -61,3 +61,30 @@ function pngOf(w: number, h: number): Buffer {
   ihdr.writeUInt32BE(w, 8); ihdr.writeUInt32BE(h, 12)
   return Buffer.concat([sig, ihdr])
 }
+
+describe('analyzeBeats', () => {
+  it('缓存存在时不 spawn，直接读', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'beat-'))
+    const bgm = path.join(dir, 'x.mp3'); fs.writeFileSync(bgm, 'fake')
+    fs.writeFileSync(bgm + '.beats.json', JSON.stringify({ t0: 0.1, T: 0.5, bpm: 120, beats: [0.1, 0.6], strongBeats: [0.1], duration: 30 }))
+    const run = vi.fn()
+    const g = await analyzeBeats(bgm, '/fake/py', { run })
+    expect(run).not.toHaveBeenCalled()
+    expect(g?.bpm).toBe(120)
+    expect(g?.beats).toEqual([0.1, 0.6])
+  })
+  it('无缓存时 spawn 生成后读', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'beat-'))
+    const bgm = path.join(dir, 'y.mp3'); fs.writeFileSync(bgm, 'fake')
+    const run = vi.fn(async () => { fs.writeFileSync(bgm + '.beats.json', JSON.stringify({ t0: 0, T: 0.5, bpm: 120, beats: [0], strongBeats: [], duration: 10 })) })
+    const g = await analyzeBeats(bgm, '/fake/py', { run })
+    expect(run).toHaveBeenCalledOnce()
+    expect(g?.duration).toBe(10)
+  })
+  it('spawn 失败或缓存坏 → null', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'beat-'))
+    const bgm = path.join(dir, 'z.mp3'); fs.writeFileSync(bgm, 'fake')
+    const run = vi.fn(async () => { throw new Error('librosa 挂了') })
+    expect(await analyzeBeats(bgm, '/fake/py', { run })).toBeNull()
+  })
+})
