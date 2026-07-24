@@ -314,6 +314,10 @@ describe('buildDemoSections 消费卡点方案', () => {
     const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 8, shot: 0 }, { start: 26, shot: 1 }] } })
     expect((r.html.match(/id="car\d+"/g) || []).length).toBe(1)
   })
+  it('plan cuts 早于窗口起点(carStart=6)的被过滤', () => {
+    const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 2, shot: 0 }, { start: 8, shot: 1 }] } })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(1) // 2s 的被丢
+  })
   it('不传 plan 行为不变（回归：无 beats 按图数均分）', () => {
     const r = buildDemoSections({ ...base, durationSec: 30 })
     expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length)

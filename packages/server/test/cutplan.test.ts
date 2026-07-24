@@ -35,6 +35,10 @@ describe('cutplan API', () => {
   it('PUT 非法方案 → 400', async () => {
     expect((await app.request('/api/projects/demo/cutplan', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: { bgm: 'x' } }) })).status).toBe(400)
   })
+  it('PUT plan.bgm 路径穿越 → 400', async () => {
+    const plan = { bgm: '../../../etc/hosts', grid: { t0: 0, T: 0.5, bpm: 120, strongBeats: [], duration: 24 }, cadence: 4, offsetSec: 0, cuts: [] }
+    expect((await app.request('/api/projects/demo/cutplan', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan }) })).status).toBe(400)
+  })
   it('analyze 无 beatPython → 400', async () => {
     ctx.config.video.beatPython = ''
     expect((await app.request('/api/projects/demo/cutplan/analyze', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(400)

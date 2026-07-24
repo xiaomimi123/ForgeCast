@@ -316,11 +316,19 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   const cutplanPath = (slug: string) => path.join(ctx.config.paths.workspace, slug, 'cutplan.json')
   const projExists = (slug: string) => !!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
 
+  // bgm 相对名必须落在 templates/bgm 内（防 ../ 穿越读到曲库外文件）
+  const bgmInside = (rel: string) => {
+    const bgmRoot = path.resolve(ctx.config.paths.templates, 'bgm')
+    const abs = path.resolve(bgmRoot, rel)
+    return abs === bgmRoot ? false : abs.startsWith(bgmRoot + path.sep)
+  }
+
   app.post('/api/projects/:slug/cutplan/analyze', async (c) => {
     const slug = c.req.param('slug')
     if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
     if (!ctx.config.video.beatPython) return c.json({ error: '需配置 FORGECAST_BEAT_PYTHON（librosa）才能分析卡点' }, 400)
     const body = await c.req.json().catch(() => ({} as any))
+    if (typeof body.bgm === 'string' && body.bgm && !bgmInside(body.bgm)) return c.json({ error: 'bgm 路径非法' }, 400)
     const shots = readShots(path.join(ctx.config.paths.workspace, slug, 'shots'))
     if (!shots.length) return c.json({ error: 'demo 需要 workspace/<slug>/shots/ 里的截图' }, 400)
     const copyRow: any = ctx.db.prepare("SELECT hook FROM assets WHERE project_id = (SELECT id FROM projects WHERE slug=?) AND type='copy' ORDER BY id DESC LIMIT 1").get(slug)
@@ -350,6 +358,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const ok = plan && typeof plan.bgm === 'string' && plan.grid && typeof plan.grid.t0 === 'number' && typeof plan.grid.T === 'number'
       && typeof plan.cadence === 'number' && typeof plan.offsetSec === 'number' && Array.isArray(plan.cuts)
     if (!ok) return c.json({ error: '方案字段非法' }, 400)
+    if (!bgmInside(plan.bgm)) return c.json({ error: 'bgm 路径非法' }, 400)
     fs.mkdirSync(path.dirname(cutplanPath(slug)), { recursive: true })
     fs.writeFileSync(cutplanPath(slug), JSON.stringify(plan, null, 2))
     return c.json({ ok: true })

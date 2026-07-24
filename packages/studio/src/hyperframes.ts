@@ -388,7 +388,7 @@ export function buildDemoSections(opts: {
   let carClips: Array<{ id: string; start: number; dur: number; shot: Shot }>
   if (plan && plan.cuts.length) {
     // 方案模式：用方案 cuts（过滤超出窗口末的），时长到下一刀/carEnd
-    const pc = plan.cuts.filter((c) => c.start < carEnd).sort((a, b) => a.start - b.start)
+    const pc = plan.cuts.filter((c) => c.start >= carStart && c.start < carEnd).sort((a, b) => a.start - b.start)
     carClips = pc.map((c, k) => ({
       id: `car${k}`, start: c.start, dur: (pc[k + 1]?.start ?? carEnd) - c.start,
       shot: shots[Math.max(0, Math.min(shots.length - 1, c.shot))],

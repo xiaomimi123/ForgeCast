@@ -98,7 +98,8 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     let grid: BeatGrid | null = null
     let audioMix: AudioMix | undefined
     let demoPlan: { cuts: Array<{ start: number; shot: number }> } | undefined
-    if (cutPlan?.bgm && cutPlan?.grid && fs.existsSync(path.join(ctx.config.paths.templates, 'bgm', cutPlan.bgm))) {
+    if (cutPlan?.bgm && cutPlan?.grid && typeof cutPlan.grid.T === 'number' && typeof cutPlan.grid.t0 === 'number'
+      && fs.existsSync(path.join(ctx.config.paths.templates, 'bgm', cutPlan.bgm))) {
       grid = cutPlan.grid
       demoPlan = { cuts: planCutTimes(cutPlan, shots.length) }
       if (ctx.config.video.mode !== 'stub') {
