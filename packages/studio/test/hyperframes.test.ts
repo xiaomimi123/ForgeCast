@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, fillAccents, gridBeats, injectAudioCaptions } from '../src/hyperframes'
+import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -172,6 +172,20 @@ describe('gridBeats（线性网格外推整条时长）', () => {
   })
   it('T 非正时兜底返回检测 beats', () => {
     expect(gridBeats({ t0: 0, T: 0, bpm: 0, beats: [1, 2], strongBeats: [], duration: 5 }, 10)).toEqual([1, 2])
+  })
+})
+
+describe('buildTechBg 科技背景变体', () => {
+  it('已知变体出对应 class + 内层 + 烘进时长的 GSAP 微动', () => {
+    const g = buildTechBg('synth', 30)
+    expect(g.cls).toBe('bg-synth')
+    expect(g.inner).toContain('class="sun"')
+    expect(g.inner).toContain('class="mv"')
+    expect(g.anim).toContain('duration:30')
+    expect(g.anim).not.toContain('{{') // 时长已烘进，不留模板 slot
+  })
+  it('未知变体回落 grid', () => {
+    expect(buildTechBg('nope', 10).cls).toBe('bg-grid')
   })
 })
 

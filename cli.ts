@@ -116,6 +116,7 @@ async function main() {
       if (rest.includes('--no-bgm')) ctx.config.video.bgm = 'none'
       else if (arg('bgm')) ctx.config.video.bgm = arg('bgm') as string
       if (rest.includes('--no-captions')) ctx.config.video.captions = false
+      if (arg('bg')) ctx.config.video.bg = arg('bg') as string
       if (rest.includes('--cut') || arg('cut') !== undefined) {
         console.log('  ⚠ --cut：videocut 预处理占位，本版未实装（需装 videocut-skills + 火山 ASR key），继续常规渲染')
       }

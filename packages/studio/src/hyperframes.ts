@@ -123,6 +123,35 @@ export function pickBgm(bgmDir: string, name?: string): string | null {
   return audio.length ? path.join(bgmDir, audio[0]) : null
 }
 
+/** 科技感背景变体名。CSS 定义在各模板 <style>（class bg-<name>），此处只出内层结构 + GSAP 微动。 */
+export const TECH_BGS = ['grid', 'aurora', 'matrix', 'synth', 'mesh'] as const
+/**
+ * 组装科技背景：返回 #techbg 的 class、内层 HTML、GSAP 微动行（时长已烘进，供填 <!--HF_BGANIM-->）。
+ * 动画只用 GSAP 挂主线 tl（可 seek）——不用 CSS @keyframes（逐帧 seek 下不随帧走）。未知名回落 grid。
+ */
+export function buildTechBg(variant: string, durationSec: number): { cls: string; inner: string; anim: string } {
+  const v = (TECH_BGS as readonly string[]).includes(variant) ? variant : 'grid'
+  const d = durationSec
+  const vig = '<div class="vig"></div>'
+  switch (v) {
+    case 'aurora':
+      return { cls: 'bg-aurora', inner: `<div class="mv"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{xPercent:-6,yPercent:-4},{xPercent:6,yPercent:4,duration:${d},ease:"none"},0);` }
+    case 'matrix':
+      return { cls: 'bg-matrix', inner: `<div class="mv"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{y:-220},{y:220,duration:${d},ease:"none"},0);` }
+    case 'synth':
+      return { cls: 'bg-synth', inner: `<div class="sun"></div><div class="mv"></div>${vig}`,
+        anim: `tl.to("#techbg .mv",{backgroundPosition:"0px 70px",duration:${d},ease:"none"},0);` }
+    case 'mesh':
+      return { cls: 'bg-mesh', inner: `<div class="mv"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{y:0},{y:46,duration:${d},ease:"none"},0);` }
+    default:
+      return { cls: 'bg-grid', inner: `<div class="mv"></div><div class="sweep"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{y:0},{y:80,duration:${d},ease:"none"},0);tl.fromTo("#techbg .sweep",{xPercent:0},{xPercent:320,duration:${d},ease:"none"},0);` }
+  }
+}
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')

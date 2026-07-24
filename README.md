@@ -31,6 +31,7 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_BGM | 背景乐选曲：空=自动挑曲库字典序第一个 / `none`=关 / 具体文件名（不含后缀）=指定。素材放 `templates/bgm/`（gitignore），CLI 亦可 `--bgm=<name>` / `--no-bgm` |
 | FORGECAST_BEAT_PYTHON | 节拍分析用的 python（含 librosa），默认回落 `FORGECAST_MELO_PYTHON`；缺失则加 BGM 但不卡点 |
 | FORGECAST_CAPTIONS | 是否把旁白字幕烧进视频：默认开；`off`/`0`/`false` 关（在平台自配字幕时用）。CLI 亦可 `--no-captions` |
+| FORGECAST_BG | demo 科技背景变体：`grid`(赛博网格,默认)/`aurora`(极光)/`matrix`(数据雨)/`synth`(合成波)/`mesh`(深空)。CLI 亦可 `--bg=<name>` |
 
 > 模式设为 `live` 但缺 key 时会自动降级（LLM→mock、TTS→stub），并在命令输出里打印 `⚠` 说明——
 > 看到该提示说明拿到的是 fixture 文案 / 占位音轨，不是真实生成结果。
