@@ -245,3 +245,39 @@ export function runKokoroTts(text: string, outWavAbs: string, voice: string, lan
     timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'hyperframes tts',
   })
 }
+
+/** ffmpeg filter_complex：BGM 裁/loop 到时长+压 -18dB+被旁白 sidechaincompress；SFX 各强拍 adelay 后并入；最后与旁白 amix。 */
+export function buildMixFilter(opts: { hasSfx: boolean; strongBeats: number[]; durationSec: number }): string {
+  const ms = opts.durationSec * 1000
+  // [0:a]=旁白 [1:a]=BGM [2:a]=SFX(单次)
+  const parts: string[] = []
+  parts.push('[0:a]asplit=2[narr][sc]')
+  // BGM：截到时长、压低、以旁白(sc)为触发做 ducking
+  parts.push(`[1:a]atrim=0:${opts.durationSec},volume=-18dB[bgmv]`)
+  parts.push('[bgmv][sc]sidechaincompress=threshold=0.03:ratio=8:attack=5:release=300[bgmduck]')
+  const mixIns = ['[narr]', '[bgmduck]']
+  if (opts.hasSfx && opts.strongBeats.length) {
+    opts.strongBeats.forEach((t, i) => {
+      const delay = Math.round(t * 1000)
+      parts.push(`[2:a]adelay=${delay}|${delay},volume=-6dB[sfx${i}]`)
+      mixIns.push(`[sfx${i}]`)
+    })
+  }
+  parts.push(`${mixIns.join('')}amix=inputs=${mixIns.length}:normalize=0:duration=first[aout]`)
+  return parts.join(';')
+}
+
+/** 把 BGM/SFX 混进已渲染的 mp4（旁白轨来自 mp4）。失败抛错，调用方降级保留原视频。 */
+export async function mixAudio(mp4: string, opts: {
+  bgmPath: string; sfxPath: string | null; strongBeats: number[]; durationSec: number
+  deps?: { run?: (args: string[]) => Promise<void> }
+}): Promise<void> {
+  const filter = buildMixFilter({ hasSfx: !!opts.sfxPath, strongBeats: opts.strongBeats, durationSec: opts.durationSec })
+  const tmp = `${mp4}.mix.mp4`
+  const args = ['-y', '-i', mp4, '-stream_loop', '-1', '-i', opts.bgmPath]
+  if (opts.sfxPath) args.push('-i', opts.sfxPath)
+  args.push('-filter_complex', filter, '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'aac', tmp)
+  const run = opts.deps?.run ?? ((a: string[]) => spawnWithTimeout(a, { cmd: 'ffmpeg', timeoutMs: RENDER_TIMEOUT_MS, label: 'ffmpeg mix' }))
+  await run(args)
+  fs.renameSync(tmp, mp4)
+}

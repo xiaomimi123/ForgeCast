@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapToBeat } from '../src/hyperframes'
+import { buildMixFilter, mixAudio } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -115,5 +116,27 @@ describe('pickBgm', () => {
     expect(pickBgm('/no/such/dir')).toBeNull()
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
     expect(pickBgm(dir)).toBeNull()
+  })
+})
+
+describe('buildMixFilter', () => {
+  it('无 SFX：BGM 压低 + ducking + 与旁白 amix', () => {
+    const f = buildMixFilter({ hasSfx: false, strongBeats: [], durationSec: 20 })
+    expect(f).toContain('sidechaincompress')
+    expect(f).toContain('amix')
+    expect(f).not.toContain('adelay')
+  })
+  it('有 SFX：每个强拍 adelay 后并入', () => {
+    const f = buildMixFilter({ hasSfx: true, strongBeats: [1.5, 3.0], durationSec: 20 })
+    expect(f).toContain('adelay=1500')
+    expect(f).toContain('adelay=3000')
+  })
+})
+
+describe('mixAudio', () => {
+  it('spawn ffmpeg 且失败抛错', async () => {
+    const run = vi.fn(async () => { throw new Error('ffmpeg 挂') })
+    await expect(mixAudio('/tmp/x.mp4', { bgmPath: '/tmp/b.mp3', sfxPath: null, strongBeats: [], durationSec: 10, deps: { run } }))
+      .rejects.toThrow(/ffmpeg 挂/)
   })
 })
