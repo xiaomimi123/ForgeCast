@@ -65,7 +65,8 @@ export default function ProjectDetailPage() {
   const p = project.data
 
   return (
-    <div className="grid grid-cols-[1fr_360px] gap-6">
+    <div className="space-y-6">
+      <div className="grid grid-cols-[1fr_360px] gap-6">
       <div className="rounded-lg border bg-white p-6 text-sm leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h2]:font-bold [&_h2]:mt-4 [&_li]:ml-4">
         <div className="mb-3 flex items-center gap-3 border-b pb-2">
           <button className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
@@ -110,8 +111,10 @@ export default function ProjectDetailPage() {
             {raw.data?.files.length === 0 && <li className="text-neutral-400">暂无</li>}
           </ul>
         </div>
-        <CutPlanEditor slug={slug} />
       </div>
+      </div>
+      {/* 卡点编辑器挪到下方全宽（窄侧栏放不下卡点列表） */}
+      <CutPlanEditor slug={slug} />
     </div>
   )
 }
