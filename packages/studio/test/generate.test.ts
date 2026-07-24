@@ -32,6 +32,10 @@ describe('generateVideo (stub)', () => {
     expect(html).toContain('快客通') // brandName 填入
     // 强拍标记必须被替换掉（无曲库时替换为空串，不残留）
     expect(html).not.toContain('<!--HF_ACCENTS-->')
+    // flash 全套 fx：科技背景注入 + 文字带解码标记 + fx 标记消费干净
+    expect(html).toContain('id="techbg"')
+    expect(html).toContain('class="painT tw"')
+    expect(html).not.toContain('<!--HF_BG-->'); expect(html).not.toContain('<!--HF_DECODE-->'); expect(html).not.toContain('<!--HF_FXCSS-->')
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
     expect(row.type).toBe('video')
     expect(row.file_path).toBe(out.filePath)
@@ -45,6 +49,10 @@ describe('generateVideo (stub)', () => {
     expect(html).toContain('class="bubble') // 气泡
     expect(html).toContain('<audio id="narration"')
     expect(html).not.toContain('<!--HF_SECTIONS-->')
+    // story 特判：不加科技背景（保聊天真截图感），只结尾卖点/CTA 解码
+    expect(html).not.toContain('id="techbg"')
+    expect(html).toContain('class="sell tw"')
+    expect(html).not.toContain('<!--HF_DECODE-->') // 解码运行时已注入
   })
   it('无 copy 素材 → 抛错', async () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('empty')").run()
@@ -87,6 +95,10 @@ describe('generateVideo (stub)', () => {
     // 音轨与字幕必须真注入产物（防 fillTemplate 把注释标记以外的 {{}} 吃掉的回归）
     expect(html).toContain('<audio id="narration"')
     expect(html).toContain('class="cap clip"') // 字幕默认烧进片（不做逐字解码，保持整齐）
+    // changelog 全套 fx：科技背景 + 标题解码 + fx 标记消费干净
+    expect(html).toContain('id="techbg"')
+    expect(html).toContain('class="title tw"')
+    expect(html).not.toContain('<!--HF_BG-->'); expect(html).not.toContain('<!--HF_DECODE-->')
     // 注释标记应已被替换掉，不残留
     expect(html).not.toContain('<!--HF_AUDIO-->')
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
