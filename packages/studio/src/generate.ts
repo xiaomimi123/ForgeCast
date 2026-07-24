@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, buildDemoSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildDemoSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
@@ -91,9 +91,28 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // 时长自适应：跟旁白末尾对齐（下限 14s），避免旁白被截断
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(14, Math.ceil(lastEnd))
-    // BGM：选曲→分析节拍（fail-soft）；截图轮播每 4 拍快切+图片弹跳（卡点）
-    const { grid, audioMix } = await selectBgm(ctx, duration, onProgress, copy.hook)
-    const demo = buildDemoSections({ ...s, shots, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
+    // 有 cutplan.json 则按方案渲染（钉曲 + 方案 cuts，不重跑选曲/分析）；否则自动
+    const planPath = path.join(ctx.config.paths.workspace, slug, 'cutplan.json')
+    let cutPlan: any = null
+    if (fs.existsSync(planPath)) { try { cutPlan = JSON.parse(fs.readFileSync(planPath, 'utf8')) } catch { cutPlan = null } }
+    let grid: BeatGrid | null = null
+    let audioMix: AudioMix | undefined
+    let demoPlan: { cuts: Array<{ start: number; shot: number }> } | undefined
+    if (cutPlan?.bgm && cutPlan?.grid && typeof cutPlan.grid.T === 'number' && typeof cutPlan.grid.t0 === 'number'
+      && fs.existsSync(path.join(ctx.config.paths.templates, 'bgm', cutPlan.bgm))) {
+      grid = cutPlan.grid
+      demoPlan = { cuts: planCutTimes(cutPlan, shots.length) }
+      if (ctx.config.video.mode !== 'stub') {
+        const bgmAbs = path.join(ctx.config.paths.templates, 'bgm', cutPlan.bgm)
+        const sfxPath = pickBgm(path.join(ctx.config.paths.templates, 'sfx'))
+        audioMix = { bgmPath: bgmAbs, sfxPath, strongBeats: cutPlan.grid.strongBeats ?? [], durationSec: duration }
+      }
+    } else {
+      if (cutPlan?.bgm) onProgress('⚠ 卡点方案曲子不存在，改用自动卡点')
+      const sel = await selectBgm(ctx, duration, onProgress, copy.hook)
+      grid = sel.grid; audioMix = sel.audioMix
+    }
+    const demo = buildDemoSections({ ...s, shots, durationSec: duration, beats: (!demoPlan && grid) ? gridBeats(grid, duration) : undefined, plan: demoPlan })
     let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', () => demo.html)
     html = injectTechFx(html, { bg: ctx.config.video.bg, durationSec: duration })

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
+import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, planCutTimes, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
@@ -295,6 +295,35 @@ describe('buildDemoSections（截图轮播卡点）', () => {
   })
 })
 
+describe('buildDemoSections 消费卡点方案', () => {
+  const base = {
+    hookTitle: '钩子', painPoints: ['痛1'], priceAnchor: '¥99', cta: '扣1', brandName: 'demo',
+    shots: [{ rel: '01.png', orientation: 'portrait' as const }, { rel: '02.png', orientation: 'landscape' as const }],
+  }
+  it('给 plan 用方案 cuts（时间+配图），不再自动 cadence', () => {
+    // 方案：两刀 8s(图1)、12s(图0)
+    const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 8, shot: 1 }, { start: 12, shot: 0 }] } })
+    // car0 落在 8s、car1 落在 12s
+    expect(r.html).toMatch(/id="car0" data-start="8/)
+    expect(r.html).toMatch(/id="car1" data-start="12/)
+    // 每刀一条图片弹跳
+    expect(r.accents).toContain('tl.to("#car0"'); expect(r.accents).toContain('tl.to("#car1"')
+  })
+  it('plan cuts 超过窗口末(carEnd=dur-6)的被过滤', () => {
+    // dur=30 → carEnd=24；一刀在 26s 应被丢
+    const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 8, shot: 0 }, { start: 26, shot: 1 }] } })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(1)
+  })
+  it('plan cuts 早于窗口起点(carStart=6)的被过滤', () => {
+    const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 2, shot: 0 }, { start: 8, shot: 1 }] } })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(1) // 2s 的被丢
+  })
+  it('不传 plan 行为不变（回归：无 beats 按图数均分）', () => {
+    const r = buildDemoSections({ ...base, durationSec: 30 })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length)
+  })
+})
+
 describe('resolveMood 情绪映射', () => {
   it('四 hook 映射到情绪键', () => {
     expect(resolveMood('pain')).toBe('tense')
@@ -342,5 +371,49 @@ describe('chooseBgmPath 选曲优先级链', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
     fs.writeFileSync(path.join(dir, 'root.mp3'), 'x') // 无情绪子目录
     expect(chooseBgmPath(dir, { bgm: '', mood: '', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'root.mp3'))
+  })
+})
+
+describe('autoCutPlan 自动卡点方案', () => {
+  const grid = { t0: 0, T: 0.5 } // 拍在 0,0.5,1,...
+  it('每 cadence 拍一刀，图循环 k%shotCount', () => {
+    // duration=30 → 窗口 [6,24)；cadence=4 → beat 12,16,20,...(t0=0 时 beat=时间/0.5)
+    const cuts = autoCutPlan(grid, 2, 30, 4)
+    expect(cuts[0].beat).toBe(12)          // 6s / 0.5 = 12
+    expect(cuts[1].beat).toBe(16)          // +4 拍
+    expect(cuts[0].shot).toBe(0); expect(cuts[1].shot).toBe(1); expect(cuts[2].shot).toBe(0) // 循环
+    // 都 < 窗口末 24s → beat < 48
+    expect(cuts.every((c) => c.beat < 48)).toBe(true)
+  })
+  it('cadence=2 更密', () => {
+    expect(autoCutPlan(grid, 3, 30, 2).length).toBeGreaterThan(autoCutPlan(grid, 3, 30, 4).length)
+  })
+  it('shotCount<=0 返空', () => {
+    expect(autoCutPlan(grid, 0, 30, 4)).toEqual([])
+  })
+  it('cadence 非法(0/负/NaN) 不死循环——回落步进', () => {
+    const grid = { t0: 0, T: 0.5 }
+    expect(autoCutPlan(grid, 2, 30, 0).length).toBeGreaterThan(0)      // 0 不能死循环
+    expect(autoCutPlan(grid, 2, 30, -4).length).toBeGreaterThan(0)     // 负不能死循环
+    expect(autoCutPlan(grid, 2, 30, NaN).length).toBeGreaterThan(0)    // NaN 不能死循环
+    // 且非法输入回落到默认步进(4)，与 cadence=4 结果一致
+    expect(autoCutPlan(grid, 2, 30, 0)).toEqual(autoCutPlan(grid, 2, 30, 4))
+  })
+})
+
+describe('planCutTimes 方案→时间', () => {
+  const plan = { grid: { t0: 0.5, T: 0.5 }, offsetSec: 0, cuts: [{ beat: 12, shot: 0 }, { beat: 16, shot: 5 }] }
+  it('beat+offset+grid 算时间，shot 越界钳制，升序', () => {
+    const t = planCutTimes(plan, 3)
+    expect(t[0].start).toBeCloseTo(0.5 + 12 * 0.5, 5)   // 6.5
+    expect(t[1].start).toBeCloseTo(0.5 + 16 * 0.5, 5)   // 8.5
+    expect(t[1].shot).toBe(2)                            // 5 钳到 shotCount-1=2
+  })
+  it('offsetSec 平移所有刀', () => {
+    const t = planCutTimes({ ...plan, offsetSec: 0.2 }, 3)
+    expect(t[0].start).toBeCloseTo(6.7, 5)
+  })
+  it('shotCount<=0 返空', () => {
+    expect(planCutTimes(plan, 0)).toEqual([])
   })
 })
