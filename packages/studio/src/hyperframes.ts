@@ -70,6 +70,26 @@ export async function analyzeBeats(
   } catch { return null }
 }
 
+/** 返回最近的 beat 时间；beats 空则原样返回。 */
+export function snapToBeat(t: number, beats: number[]): number {
+  if (!beats.length) return t
+  return beats.reduce((best, b) => (Math.abs(b - t) < Math.abs(best - t) ? b : best), beats[0])
+}
+
+/** 曲库选曲：name 指定则补 .mp3/.wav 后缀命中；否则字典序第一个音频；无则 null。 */
+export function pickBgm(bgmDir: string, name?: string): string | null {
+  if (!fs.existsSync(bgmDir)) return null
+  if (name) {
+    for (const ext of ['', '.mp3', '.wav', '.m4a']) {
+      const p = path.join(bgmDir, name + ext)
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) return p
+    }
+    return null
+  }
+  const audio = fs.readdirSync(bgmDir).filter((f) => /\.(mp3|wav|m4a)$/i.test(f)).sort()
+  return audio.length ? path.join(bgmDir, audio[0]) : null
+}
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')

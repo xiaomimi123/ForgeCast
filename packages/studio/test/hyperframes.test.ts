@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { analyzeBeats, escapeHtml, fillTemplate, readShots, renderHyperframes, scaffoldHfProject } from '../src/hyperframes'
+import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapToBeat } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -86,5 +86,34 @@ describe('analyzeBeats', () => {
     const bgm = path.join(dir, 'z.mp3'); fs.writeFileSync(bgm, 'fake')
     const run = vi.fn(async () => { throw new Error('librosa 挂了') })
     expect(await analyzeBeats(bgm, '/fake/py', { run })).toBeNull()
+  })
+})
+
+describe('snapToBeat', () => {
+  it('吸附到最近的拍', () => {
+    expect(snapToBeat(3.1, [0, 1, 2, 3, 4])).toBe(3)
+    expect(snapToBeat(3.6, [0, 1, 2, 3, 4])).toBe(4)
+  })
+  it('beats 空时原样返回', () => {
+    expect(snapToBeat(3.1, [])).toBe(3.1)
+  })
+})
+
+describe('pickBgm', () => {
+  it('指定名命中（补后缀）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'tech.mp3'), 'a')
+    expect(pickBgm(dir, 'tech')).toBe(path.join(dir, 'tech.mp3'))
+  })
+  it('不指定则取字典序第一个音频', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'b.mp3'), 'a'); fs.writeFileSync(path.join(dir, 'a.wav'), 'a')
+    fs.writeFileSync(path.join(dir, 'note.txt'), 'x') // 非音频忽略
+    expect(pickBgm(dir)).toBe(path.join(dir, 'a.wav'))
+  })
+  it('空目录/不存在返 null', () => {
+    expect(pickBgm('/no/such/dir')).toBeNull()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    expect(pickBgm(dir)).toBeNull()
   })
 })
