@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions } from '../src/hyperframes'
+import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -186,6 +186,11 @@ describe('buildTechBg 科技背景变体', () => {
   })
   it('未知变体回落 grid', () => {
     expect(buildTechBg('nope', 10).cls).toBe('bg-grid')
+  })
+  it('resolveTechBg：random 按 rng 挑一套，具体名原样返回', () => {
+    expect(resolveTechBg('synth')).toBe('synth')
+    expect(resolveTechBg('random', () => 0)).toBe('grid')       // 索引 0
+    expect(resolveTechBg('auto', () => 0.99)).toBe('mesh')      // 索引 4（末位）
   })
 })
 

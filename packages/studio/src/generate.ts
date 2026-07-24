@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, buildDemoSections, buildStorySections, buildTechBg, gridBeats, injectAudioCaptions, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildDemoSections, buildStorySections, buildTechBg, gridBeats, injectAudioCaptions, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, resolveTechBg, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
@@ -94,7 +94,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // BGM：选曲→分析节拍（fail-soft）；截图轮播每 4 拍快切+图片弹跳（卡点）
     const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
     const demo = buildDemoSections({ ...s, shots, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
-    const bg = buildTechBg(ctx.config.video.bg, duration)
+    const bg = buildTechBg(resolveTechBg(ctx.config.video.bg), duration)
     let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', () => demo.html)
     html = html.replace('<!--HF_BG-->', () => `<div id="techbg" class="${bg.cls}">${bg.inner}</div>`)

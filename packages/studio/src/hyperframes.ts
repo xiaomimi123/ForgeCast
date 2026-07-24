@@ -125,6 +125,12 @@ export function pickBgm(bgmDir: string, name?: string): string | null {
 
 /** 科技感背景变体名。CSS 定义在各模板 <style>（class bg-<name>），此处只出内层结构 + GSAP 微动。 */
 export const TECH_BGS = ['grid', 'aurora', 'matrix', 'synth', 'mesh'] as const
+
+/** 解析背景名：random/auto → 随机挑一套（内容池自然有变化）；其余原样返回。rand 可注入便于测试。 */
+export function resolveTechBg(name: string, rand: () => number = Math.random): string {
+  if (name === 'random' || name === 'auto') return TECH_BGS[Math.floor(rand() * TECH_BGS.length)]
+  return name
+}
 /**
  * 组装科技背景：返回 #techbg 的 class、内层 HTML、GSAP 微动行（时长已烘进，供填 <!--HF_BGANIM-->）。
  * 动画只用 GSAP 挂主线 tl（可 seek）——不用 CSS @keyframes（逐帧 seek 下不随帧走）。未知名回落 grid。
