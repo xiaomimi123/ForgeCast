@@ -105,12 +105,18 @@ describe('snapStarts（顺序吸附防重叠）', () => {
   it('无网格原样返回 start', () => {
     expect(snapStarts([{ start: 0, dur: 3 }, { start: 3, dur: 3 }], undefined)).toEqual([0, 3])
   })
-  it('密集拍网格下吸附后仍单调、后段不早于前段结束', () => {
-    const beats = Array.from({ length: 40 }, (_, i) => +(i * 0.3).toFixed(2)) // T=0.3s 很密
-    const segs = [{ start: 0, dur: 3 }, { start: 3, dur: 3 }, { start: 6, dur: 3 }]
+  it('密集拍网格下吸附后单调递增且相邻段不重叠（钳位生效）', () => {
+    // per=0.8s 的短段轮播，拍间隔 0.6s：独立吸附会让第二段吸到 6.6 < 第一段结束 6.8，重叠。
+    const beats = Array.from({ length: 30 }, (_, i) => +(i * 0.6).toFixed(2))
+    const segs = [{ start: 6, dur: 0.8 }, { start: 6.8, dur: 0.8 }, { start: 7.6, dur: 0.8 }]
     const st = snapStarts(segs, beats)
-    expect(st[1]).toBeGreaterThanOrEqual(st[0] + segs[0].dur) // pain 不早于 hook 结束
-    expect(st[2]).toBeGreaterThanOrEqual(st[1] + segs[1].dur) // price 不早于 pain 结束
+    // 逐段：后段 start 不早于前段结束（无重叠、不倒序）
+    for (let i = 1; i < st.length; i++) {
+      expect(st[i]).toBeGreaterThanOrEqual(st[i - 1] + segs[i - 1].dur)
+    }
+    // 且这个数据确实触发了钳位（至少一段的 snapped start 被抬离了它自己最近的拍）——
+    // 断言 st[1] 不等于对 6.8 的独立最近拍（0.6*11=6.6），证明钳位真的介入了
+    expect(st[1]).toBeGreaterThan(6.6)
   })
 })
 
