@@ -158,6 +158,77 @@ export function buildTechBg(variant: string, durationSec: number): { cls: string
   }
 }
 
+/** 科技背景（5 变体）+ 逐字解码 的共享 CSS。四模板经 <!--HF_FXCSS--> 注入，避免复制多份。 */
+export const FX_CSS = `
+      /* 科技感背景变体（--bg=grid|aurora|matrix|synth|mesh 切换） */
+      #techbg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+      #techbg .vig { position: absolute; inset: 0; box-shadow: inset 0 0 420px rgba(0,0,0,.72); }
+      .bg-grid { background: radial-gradient(1200px 900px at 50% 20%, rgba(34,98,168,.38), transparent 62%), radial-gradient(1100px 850px at 82% 92%, rgba(96,52,168,.30), transparent 60%), linear-gradient(165deg, #0a0e1a, #0d1117 55%, #080a11); }
+      .bg-grid .mv { position: absolute; inset: -25%; background-image: linear-gradient(rgba(96,178,255,.11) 2px, transparent 2px), linear-gradient(90deg, rgba(96,178,255,.11) 2px, transparent 2px); background-size: 80px 80px; -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); }
+      .bg-grid .sweep { position: absolute; top: -50%; left: -30%; width: 55%; height: 200%; background: linear-gradient(105deg, transparent, rgba(120,200,255,.10), transparent); transform: skewX(-12deg); }
+      .bg-aurora { background: linear-gradient(160deg, #07101a, #0a1020 60%, #0b0a18); }
+      .bg-aurora .mv { position: absolute; inset: -30%; filter: blur(30px); background: radial-gradient(600px 380px at 30% 30%, rgba(40,180,150,.34), transparent 60%), radial-gradient(680px 420px at 72% 40%, rgba(60,120,230,.32), transparent 62%), radial-gradient(560px 400px at 50% 80%, rgba(150,60,210,.30), transparent 62%); }
+      .bg-matrix { background: linear-gradient(180deg, #020806, #04120b 50%, #020806); }
+      .bg-matrix .mv { position: absolute; left: 0; right: 0; top: -100%; height: 200%; opacity: .5; background-image: repeating-linear-gradient(0deg, rgba(0,255,140,.18) 0 2px, transparent 2px 26px); -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 42px); mask-image: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 42px); }
+      .bg-synth { background: linear-gradient(180deg, #160a2a 0%, #2a1150 42%, #4a1a5e 52%, #0a0618 52%, #0a0618 100%); }
+      .bg-synth .sun { position: absolute; left: 50%; top: 34%; width: 520px; height: 520px; transform: translate(-50%,-50%); border-radius: 50%; background: radial-gradient(circle, #ff8a3d 0%, #ff4d8d 46%, rgba(255,77,141,0) 70%); filter: blur(6px); }
+      .bg-synth .mv { position: absolute; left: -20%; right: -20%; bottom: 0; height: 48%; transform: perspective(320px) rotateX(72deg); transform-origin: bottom; background-image: linear-gradient(rgba(255,90,200,.5) 2px, transparent 2px), linear-gradient(90deg, rgba(120,120,255,.45) 2px, transparent 2px); background-size: 70px 70px; }
+      .bg-mesh { background: radial-gradient(900px 700px at 28% 26%, rgba(70,40,150,.42), transparent 60%), radial-gradient(1000px 800px at 78% 74%, rgba(30,70,150,.36), transparent 62%), linear-gradient(160deg, #060812, #0a0a16 60%, #05040d); }
+      .bg-mesh .mv { position: absolute; inset: 0; opacity: .5; background-image: radial-gradient(rgba(150,180,255,.25) 1.5px, transparent 1.5px); background-size: 46px 46px; -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 40%, transparent 80%); mask-image: radial-gradient(circle at 50% 50%, #000 40%, transparent 80%); }
+      /* 逐字解码/故障风：每字叠「乱码层 .gh + 最终字 .fin」，靠 opacity 点亮做扫描→锁定 */
+      .twc { position: relative; display: inline-block; }
+      .twc .gh { position: absolute; left: 0; top: 0; color: #5cf; text-shadow: 0 0 18px rgba(90,200,255,.95), 0 0 4px rgba(90,200,255,.9); }
+      .twc .fin { text-shadow: 0 0 12px rgba(120,190,255,.45); }`
+
+/**
+ * 逐字解码运行时（经 <!--HF_DECODE--> 注入各模板 <script>，须在 tl 定义后、__timelines 赋值前）。
+ * .tw 文字拆单字，随所属 clip 的 data-start 逐字敲出，每字先闪 K 帧青色乱码鬼影(.gh)再锁定(.fin)。
+ * 全程只动 opacity——不改 textContent（后者逐帧 seek 下不生效，见 injectAudioCaptions 注释）。
+ */
+export const DECODE_RUNTIME = `(function () {
+        var POOL = '日月火水木金土山川云电系统数据端口零一二三ABCDEF0123456789#@%&*<>/|=+アイウエオカキクケコサシスセソ';
+        function rc() { return POOL[(Math.random() * POOL.length) | 0]; }
+        var K = 5, gstep = 0.045;
+        document.querySelectorAll('.tw').forEach(function (el) {
+          var clip = el.closest('.clip') || el;
+          var start = parseFloat(clip.getAttribute('data-start') || '0');
+          var chars = Array.from(el.textContent);
+          el.textContent = '';
+          var step = Math.min(0.055, 1.1 / Math.max(1, chars.length));
+          chars.forEach(function (ch, i) {
+            var t0 = start + i * step;
+            var c = document.createElement('span'); c.className = 'twc';
+            if (ch === ' ') { c.innerHTML = '&nbsp;'; el.appendChild(c); tl.set(c, { opacity: 0 }, 0); tl.set(c, { opacity: 1 }, t0); return; }
+            var fin = document.createElement('span'); fin.className = 'fin'; fin.textContent = ch; c.appendChild(fin);
+            var ghosts = [];
+            for (var j = 0; j < K; j++) { var g = document.createElement('span'); g.className = 'gh'; g.textContent = rc(); c.appendChild(g); ghosts.push(g); }
+            el.appendChild(c);
+            tl.set(c, { opacity: 0 }, 0); tl.set(c, { opacity: 1 }, t0);
+            tl.set(fin, { opacity: 0 }, 0);
+            ghosts.forEach(function (g, j) { tl.set(g, { opacity: 0 }, 0); tl.set(g, { opacity: 1 }, t0 + j * gstep); tl.set(g, { opacity: 0 }, t0 + (j + 1) * gstep); });
+            tl.set(fin, { opacity: 1 }, t0 + K * gstep);
+          });
+        });
+      })();`
+
+/**
+ * 注入科技背景 + 解码运行时到模板。填 <!--HF_FXCSS-->（CSS）、<!--HF_DECODE-->（解码脚本），
+ * bg 提供时再填 <!--HF_BG-->（背景 DOM）与 <!--HF_BGANIM-->（GSAP 微动）；bg 省略/none 则背景标记清空
+ * （story 聊天场不加科技背景但仍要解码卖点/CTA）。全用函数 replacer 避免 $& 被当替换模式。
+ */
+export function injectTechFx(html: string, opts: { bg?: string; durationSec: number }): string {
+  let out = html
+    .replace('<!--HF_FXCSS-->', () => FX_CSS)
+    .replace('<!--HF_DECODE-->', () => DECODE_RUNTIME)
+  if (opts.bg && opts.bg !== 'none') {
+    const bg = buildTechBg(resolveTechBg(opts.bg), opts.durationSec)
+    out = out.replace('<!--HF_BG-->', () => `<div id="techbg" class="${bg.cls}">${bg.inner}</div>`).replace('<!--HF_BGANIM-->', () => bg.anim)
+  } else {
+    out = out.replace('<!--HF_BG-->', () => '').replace('<!--HF_BGANIM-->', () => '')
+  }
+  return out
+}
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -341,8 +412,8 @@ export function buildStorySections(opts: {
   ], beats)
   return [
     clip(st[0], chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
-    clip(st[1], 3, 1, `<div class="fill pad center sellFill"><div class="sell">${escapeHtml(sellingPoint)}</div></div>`),
-    clip(st[2], 3, 1, `<div class="fill pad center sellFill"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[1], 3, 1, `<div class="fill pad center sellFill"><div class="sell tw">${escapeHtml(sellingPoint)}</div></div>`),
+    clip(st[2], 3, 1, `<div class="fill pad center sellFill"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
 }
 
