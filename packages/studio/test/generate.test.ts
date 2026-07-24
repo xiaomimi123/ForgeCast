@@ -140,4 +140,36 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     // 截图拷进 assets
     expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
   })
+  it('有 cutplan.json：按方案渲染（钉曲 + 方案 cuts），不重跑选曲', async () => {
+    const shotsDir = path.join(root, 'workspace/demo/shots')
+    fs.mkdirSync(shotsDir, { recursive: true })
+    fs.writeFileSync(path.join(shotsDir, '01.png'), pngOf(1080, 1920))
+    fs.writeFileSync(path.join(shotsDir, '02.png'), pngOf(1080, 1920))
+    // 曲库放一首 tense 曲 + 写方案钉住它
+    const bgmDir = path.join(root, 'templates/bgm/tense'); fs.mkdirSync(bgmDir, { recursive: true })
+    fs.writeFileSync(path.join(bgmDir, 'x.mp3'), 'fake')
+    fs.writeFileSync(path.join(root, 'workspace/demo/cutplan.json'), JSON.stringify({
+      bgm: 'tense/x.mp3', grid: { t0: 0, T: 0.5, bpm: 120, strongBeats: [], duration: 24 },
+      cadence: 4, offsetSec: 0, cuts: [{ beat: 16, shot: 0 }, { beat: 20, shot: 1 }],
+    }))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(dctx, { slug: 'demo', tpl: 'demo', onProgress: () => {} })
+    expect(r.filePath).toContain('demo-')
+    const html = fs.readFileSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    // 方案 cuts：16 拍 ×0.5 = 8s、20 拍 = 10s
+    expect(html).toMatch(/id="car0" data-start="8/)
+    expect(html).toMatch(/id="car1" data-start="10/)
+  })
+  it('cutplan.json 曲子不存在 → 降级自动（不崩）', async () => {
+    const shotsDir = path.join(root, 'workspace/demo/shots'); fs.mkdirSync(shotsDir, { recursive: true })
+    fs.writeFileSync(path.join(shotsDir, '01.png'), pngOf(1080, 1920))
+    fs.writeFileSync(path.join(root, 'workspace/demo/cutplan.json'), JSON.stringify({
+      bgm: 'tense/missing.mp3', grid: { t0: 0, T: 0.5, bpm: 120, strongBeats: [], duration: 24 }, cadence: 4, offsetSec: 0, cuts: [{ beat: 16, shot: 0 }],
+    }))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(dctx, { slug: 'demo', tpl: 'demo', onProgress: () => {} })
+    expect(r.filePath).toContain('demo-') // 仍出片
+  })
 })
