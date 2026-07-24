@@ -31,7 +31,7 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_BGM | 背景乐选曲：空=自动挑曲库字典序第一个 / `none`=关 / 具体文件名（不含后缀）=指定。素材放 `templates/bgm/`（gitignore），CLI 亦可 `--bgm=<name>` / `--no-bgm` |
 | FORGECAST_BEAT_PYTHON | 节拍分析用的 python（含 librosa），默认回落 `FORGECAST_MELO_PYTHON`；缺失则加 BGM 但不卡点 |
 | FORGECAST_CAPTIONS | 是否把旁白字幕烧进视频：默认开；`off`/`0`/`false` 关（在平台自配字幕时用）。CLI 亦可 `--no-captions` |
-| FORGECAST_BG | demo 科技背景变体：`grid`(赛博网格,默认)/`aurora`(极光)/`matrix`(数据雨)/`synth`(合成波)/`mesh`(深空)。CLI 亦可 `--bg=<name>` |
+| FORGECAST_BG | 科技背景变体(demo/flash/changelog)：`grid`(赛博网格,默认)/`aurora`(极光)/`matrix`(数据雨)/`synth`(合成波)/`mesh`(深空)/`random`(每条随机)。CLI 亦可 `--bg=<name>` |
 
 > 模式设为 `live` 但缺 key 时会自动降级（LLM→mock、TTS→stub），并在命令输出里打印 `⚠` 说明——
 > 看到该提示说明拿到的是 fixture 文案 / 占位音轨，不是真实生成结果。
@@ -47,7 +47,7 @@ forgecast rebrand <slug>                    # 生成换皮改造清单 rebrand-p
 forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--no-captions]  # HyperFrames 渲染竖屏视频（flash 文字快闪/story 微信气泡/demo 产品截图轮播/changelog 代码变更）
 #   demo 需 workspace/<slug>/shots/ 放产品截图；配音默认 Kokoro 离线中文；环境依赖见 docs/hyperframes-deploy.md
 #   曲库非空时自动垫 BGM：旁白响时 ducking 闪避，段/截图切换吸附节拍（卡点），强拍加缩放脉冲 + 音效；见 docs/superpowers/specs/2026-07-24-bgm-beat-sync-design.md
-#   demo：截图轮播每 4 拍快切+图片弹跳，标题大字逐字解码(故障风)出场，赛博网格科技背景；--no-captions 不烧字幕
+#   出场特效：标题大字逐字解码(故障风)+科技背景——demo(截图轮播每4拍快切+图片弹跳)/flash/changelog 全套；story 只结尾卖点/CTA解码保聊天真截图感；--no-captions 不烧字幕
 forgecast publish <id> --platform=<xhs|douyin> [--url=<link>]  # 回填发布（平台/链接）
 forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/询单
 forgecast lead <id> --wechat=<..> [--intent=<..>]           # 登记询单（归因到素材）
