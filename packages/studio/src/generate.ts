@@ -72,7 +72,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const { audioMix } = await selectBgm(ctx, duration, onProgress)
     // 先 fillTemplate 填转义 slot，再注入音轨/字幕（注释标记，不被 {{}} 正则误吃）
     const filled = fillTemplate(readTemplate('changelog'), { ...slots, duration: String(duration), s2dur: String(duration - 6) })
-    let html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration)
+    let html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
     html = fillAccents(html, '')
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress, audioMix)
@@ -96,7 +96,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const demo = buildDemoSections({ ...s, shots, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
     let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', () => demo.html)
-    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
     html = fillAccents(html, demo.accents)
     // 截图拷进 hf/assets
     const shotAssets: Record<string, Buffer> = {}
@@ -120,7 +120,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const sections = buildStorySections({ ...s, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
     let html = fillTemplate(readTemplate('story'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', () => sections)
-    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
     html = fillAccents(html, '')
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress, audioMix)
@@ -138,7 +138,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   // BGM：选曲→分析节拍（fail-soft）。段边界写死在模板、不吸附；静态文字场不加脉冲，只混音
   const { audioMix } = await selectBgm(ctx, duration, onProgress)
   let html = fillTemplate(readTemplate('flash'), { ...s, duration: String(duration) })
-  html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+  html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
   html = fillAccents(html, '')
   scaffoldHfProject(hfDir, html)
   return renderAndRegister(ctx, hfDir, slug, 'flash', copy.hook, project.id, onProgress, audioMix)

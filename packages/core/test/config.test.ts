@@ -40,8 +40,9 @@ describe('loadConfig', () => {
     expect(cfg.github).toEqual({ mode: 'live', token: 'ghp_1' })
   })
   it('video 默认 render，可设 stub', () => {
-    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render', bgm: '', beatPython: '' })
-    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub', bgm: '', beatPython: '' })
+    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render', bgm: '', beatPython: '', captions: true })
+    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub', bgm: '', beatPython: '', captions: true })
+    expect(loadConfig('/tmp/x', { FORGECAST_CAPTIONS: 'off' }).video.captions).toBe(false)
   })
   it('tts 可设 stub，可设 live', () => {
     expect(loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'stub' }).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '', voice: '', meloPython: '', cosyHome: '' })

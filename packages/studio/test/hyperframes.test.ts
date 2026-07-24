@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, fillAccents, gridBeats } from '../src/hyperframes'
+import { buildDemoSections, fillAccents, gridBeats, injectAudioCaptions } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -172,6 +172,22 @@ describe('gridBeats（线性网格外推整条时长）', () => {
   })
   it('T 非正时兜底返回检测 beats', () => {
     expect(gridBeats({ t0: 0, T: 0, bpm: 0, beats: [1, 2], strongBeats: [], duration: 5 }, 10)).toEqual([1, 2])
+  })
+})
+
+describe('injectAudioCaptions 字幕开关', () => {
+  const cues = [{ start: 0, end: 2, text: '你好' }, { start: 2, end: 4, text: '世界' }]
+  it('captions=true 注入字幕 div（不带 tw 解码）', () => {
+    const out = injectAudioCaptions('<!--HF_AUDIO--><!--HF_CAPTIONS-->', 'a.wav', cues, 10, true)
+    expect(out).toContain('class="cap clip"')
+    expect(out).not.toContain('cap clip tw')
+    expect(out).toContain('你好')
+  })
+  it('captions=false 不注入字幕，仍保留音轨', () => {
+    const out = injectAudioCaptions('<!--HF_AUDIO--><!--HF_CAPTIONS-->', 'a.wav', cues, 10, false)
+    expect(out).not.toContain('class="cap')
+    expect(out).not.toContain('你好')
+    expect(out).toContain('<audio id="narration"')
   })
 })
 

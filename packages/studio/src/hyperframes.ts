@@ -142,17 +142,18 @@ export function fillTemplate(tplHtml: string, slots: Record<string, string>): st
  * cue 文本经 escapeHtml 防注入。两个标记都在 body 内。四套模板共用此逻辑（DRY），
  * 模板须提供 .cap 定位样式（bottom 字幕条）。
  */
-export function injectAudioCaptions(html: string, audioRel: string | null, cues: Cue[], durationSec: number): string {
+export function injectAudioCaptions(html: string, audioRel: string | null, cues: Cue[], durationSec: number, captions = true): string {
   const audioTag = audioRel
     ? `<audio id="narration" class="clip" data-start="0" data-duration="${durationSec}" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>`
     : ''
-  // .tw：逐字解码出场标记。模板若在 <script> 带解码运行时（如 demo）则字幕逐字敲出，
-  // 否则该 class 惰性无效果（native clip 显隐照常）。解码只动 opacity，不改 textContent，
-  // 兼容"逐帧 seek 下 .set(textContent) 不生效"这条限制。
-  const capClips = cues.map((c) => {
-    const dur = Math.max(0.5, c.end - c.start)
-    return `<div class="cap clip tw" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
-  }).join('\n')
+  // 字幕默认烧进片；captions=false 则不注入（用户在平台自配字幕，避免底部文字杂乱）。
+  // 字幕不做逐字解码（会显乱），保持整齐——解码只用于标题大字（见各模板 .tw）。
+  const capClips = captions
+    ? cues.map((c) => {
+        const dur = Math.max(0.5, c.end - c.start)
+        return `<div class="cap clip" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
+      }).join('\n')
+    : ''
   // 用函数 replacer：替换值含用户文案，直接传字符串会让 $& / $` 等被当替换模式解释
   return html.replace('<!--HF_AUDIO-->', () => audioTag).replace('<!--HF_CAPTIONS-->', () => capClips)
 }
