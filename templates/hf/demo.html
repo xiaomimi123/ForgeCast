@@ -40,6 +40,7 @@
       const tl = gsap.timeline({ paused: true });
       // 轻微运镜（整体缓慢放大），具体分镜显隐交给 HyperFrames clip 时间轴
       tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      <!--HF_ACCENTS-->
       window.__timelines["main"] = tl;
     </script>
   </body>

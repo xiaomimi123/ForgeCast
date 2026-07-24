@@ -40,8 +40,8 @@ describe('loadConfig', () => {
     expect(cfg.github).toEqual({ mode: 'live', token: 'ghp_1' })
   })
   it('video 默认 render，可设 stub', () => {
-    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render' })
-    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub' })
+    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render', bgm: '', beatPython: '' })
+    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub', bgm: '', beatPython: '' })
   })
   it('tts 可设 stub，可设 live', () => {
     expect(loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'stub' }).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '', voice: '', meloPython: '', cosyHome: '' })
@@ -55,5 +55,13 @@ describe('loadConfig', () => {
   it('kokoro 是默认 TTS 模式（未设时）', () => {
     const c = loadConfig('/tmp/x', {})
     expect(c.tts.mode).toBe('kokoro')
+  })
+  it('video 配置含 bgm 与 beatPython（beatPython 默认回落 melo）', () => {
+    const c = loadConfig('/tmp/x', { FORGECAST_MELO_PYTHON: '/venv/melo/py' })
+    expect(c.video.bgm).toBe('')
+    expect(c.video.beatPython).toBe('/venv/melo/py')
+    const c2 = loadConfig('/tmp/x', { FORGECAST_BGM: 'none', FORGECAST_BEAT_PYTHON: '/venv/beat/py' })
+    expect(c2.video.bgm).toBe('none')
+    expect(c2.video.beatPython).toBe('/venv/beat/py')
   })
 })

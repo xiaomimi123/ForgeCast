@@ -1,8 +1,10 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { escapeHtml, fillTemplate, readShots, renderHyperframes, scaffoldHfProject } from '../src/hyperframes'
+import { describe, expect, it, vi } from 'vitest'
+import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
+import { buildMixFilter, mixAudio } from '../src/hyperframes'
+import { injectBeatAccents } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -61,3 +63,109 @@ function pngOf(w: number, h: number): Buffer {
   ihdr.writeUInt32BE(w, 8); ihdr.writeUInt32BE(h, 12)
   return Buffer.concat([sig, ihdr])
 }
+
+describe('analyzeBeats', () => {
+  it('缓存存在时不 spawn，直接读', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'beat-'))
+    const bgm = path.join(dir, 'x.mp3'); fs.writeFileSync(bgm, 'fake')
+    fs.writeFileSync(bgm + '.beats.json', JSON.stringify({ t0: 0.1, T: 0.5, bpm: 120, beats: [0.1, 0.6], strongBeats: [0.1], duration: 30 }))
+    const run = vi.fn()
+    const g = await analyzeBeats(bgm, '/fake/py', { run })
+    expect(run).not.toHaveBeenCalled()
+    expect(g?.bpm).toBe(120)
+    expect(g?.beats).toEqual([0.1, 0.6])
+  })
+  it('无缓存时 spawn 生成后读', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'beat-'))
+    const bgm = path.join(dir, 'y.mp3'); fs.writeFileSync(bgm, 'fake')
+    const run = vi.fn(async () => { fs.writeFileSync(bgm + '.beats.json', JSON.stringify({ t0: 0, T: 0.5, bpm: 120, beats: [0], strongBeats: [], duration: 10 })) })
+    const g = await analyzeBeats(bgm, '/fake/py', { run })
+    expect(run).toHaveBeenCalledOnce()
+    expect(g?.duration).toBe(10)
+  })
+  it('spawn 失败或缓存坏 → null', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'beat-'))
+    const bgm = path.join(dir, 'z.mp3'); fs.writeFileSync(bgm, 'fake')
+    const run = vi.fn(async () => { throw new Error('librosa 挂了') })
+    expect(await analyzeBeats(bgm, '/fake/py', { run })).toBeNull()
+  })
+})
+
+describe('snapToBeat', () => {
+  it('吸附到最近的拍', () => {
+    expect(snapToBeat(3.1, [0, 1, 2, 3, 4])).toBe(3)
+    expect(snapToBeat(3.6, [0, 1, 2, 3, 4])).toBe(4)
+  })
+  it('beats 空时原样返回', () => {
+    expect(snapToBeat(3.1, [])).toBe(3.1)
+  })
+})
+
+describe('snapStarts（顺序吸附防重叠）', () => {
+  it('无网格原样返回 start', () => {
+    expect(snapStarts([{ start: 0, dur: 3 }, { start: 3, dur: 3 }], undefined)).toEqual([0, 3])
+  })
+  it('密集拍网格下吸附后单调递增且相邻段不重叠（钳位生效）', () => {
+    // per=0.8s 的短段轮播，拍间隔 0.6s：独立吸附会让第二段吸到 6.6 < 第一段结束 6.8，重叠。
+    const beats = Array.from({ length: 30 }, (_, i) => +(i * 0.6).toFixed(2))
+    const segs = [{ start: 6, dur: 0.8 }, { start: 6.8, dur: 0.8 }, { start: 7.6, dur: 0.8 }]
+    const st = snapStarts(segs, beats)
+    // 逐段：后段 start 不早于前段结束（无重叠、不倒序）
+    for (let i = 1; i < st.length; i++) {
+      expect(st[i]).toBeGreaterThanOrEqual(st[i - 1] + segs[i - 1].dur)
+    }
+    // 且这个数据确实触发了钳位（至少一段的 snapped start 被抬离了它自己最近的拍）——
+    // 断言 st[1] 不等于对 6.8 的独立最近拍（0.6*11=6.6），证明钳位真的介入了
+    expect(st[1]).toBeGreaterThan(6.6)
+  })
+})
+
+describe('pickBgm', () => {
+  it('指定名命中（补后缀）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'tech.mp3'), 'a')
+    expect(pickBgm(dir, 'tech')).toBe(path.join(dir, 'tech.mp3'))
+  })
+  it('不指定则取字典序第一个音频', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'b.mp3'), 'a'); fs.writeFileSync(path.join(dir, 'a.wav'), 'a')
+    fs.writeFileSync(path.join(dir, 'note.txt'), 'x') // 非音频忽略
+    expect(pickBgm(dir)).toBe(path.join(dir, 'a.wav'))
+  })
+  it('空目录/不存在返 null', () => {
+    expect(pickBgm('/no/such/dir')).toBeNull()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    expect(pickBgm(dir)).toBeNull()
+  })
+})
+
+describe('buildMixFilter', () => {
+  it('无 SFX：BGM 压低 + ducking + 与旁白 amix', () => {
+    const f = buildMixFilter({ hasSfx: false, strongBeats: [], durationSec: 20 })
+    expect(f).toContain('sidechaincompress')
+    expect(f).toContain('amix')
+    expect(f).not.toContain('adelay')
+  })
+  it('有 SFX：每个强拍 adelay 后并入', () => {
+    const f = buildMixFilter({ hasSfx: true, strongBeats: [1.5, 3.0], durationSec: 20 })
+    expect(f).toContain('adelay=1500')
+    expect(f).toContain('adelay=3000')
+  })
+})
+
+describe('mixAudio', () => {
+  it('spawn ffmpeg 且失败抛错', async () => {
+    const run = vi.fn(async () => { throw new Error('ffmpeg 挂') })
+    await expect(mixAudio('/tmp/x.mp4', { bgmPath: '/tmp/b.mp3', sfxPath: null, strongBeats: [], durationSec: 10, deps: { run } }))
+      .rejects.toThrow(/ffmpeg 挂/)
+  })
+})
+
+describe('injectBeatAccents', () => {
+  it('每个强拍生成一个脉冲，替换标记', () => {
+    const html = injectBeatAccents('<script>tl;<!--HF_ACCENTS--></script>', [1.0, 2.5])
+    expect(html).toContain('1'); expect(html).toContain('2.5')
+    expect(html).not.toContain('<!--HF_ACCENTS-->')
+    expect((html.match(/gsap|tl\./g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+})

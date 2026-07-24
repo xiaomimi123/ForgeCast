@@ -17,6 +17,7 @@ const COSY_TIMEOUT_MS = 600_000 // CosyVoice2 慢 + 长旁白，给足
 // 本地 TTS 推理脚本相对本文件：packages/studio/src → packages/studio/scripts
 const MELO_SCRIPT = fileURLToPath(new URL('../scripts/melo_infer.py', import.meta.url))
 const COSY_SCRIPT = fileURLToPath(new URL('../scripts/cosy_infer.py', import.meta.url))
+const BEAT_SCRIPT = fileURLToPath(new URL('../scripts/beat_grid.py', import.meta.url))
 
 /** 带超时的 spawn：超时 kill 并 reject。stdin ignore。cmd 默认 npx（HyperFrames 用）。 */
 function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
@@ -44,6 +45,67 @@ export function runCosyTts(text: string, outWavAbs: string, cosyHome: string): P
   return spawnWithTimeout([COSY_SCRIPT, cosyHome, text, outWavAbs], {
     cmd: `${cosyHome}/venv/bin/python`, timeoutMs: COSY_TIMEOUT_MS, label: 'CosyVoice2',
   })
+}
+
+export interface BeatGrid { t0: number; T: number; bpm: number; beats: number[]; strongBeats: number[]; duration: number }
+
+/** 节拍分析：读 <bgm>.beats.json 缓存；无则 spawn beat_grid.py 生成再读。任何失败返 null（调用方降级不卡点）。 */
+export async function analyzeBeats(
+  bgmPath: string, beatPython: string,
+  deps: { run?: (args: string[]) => Promise<void> } = {},
+): Promise<BeatGrid | null> {
+  const cache = `${bgmPath}.beats.json`
+  const readCache = (): BeatGrid | null => {
+    try {
+      const g = JSON.parse(fs.readFileSync(cache, 'utf8'))
+      if (Array.isArray(g.beats) && typeof g.T === 'number') return g as BeatGrid
+      return null
+    } catch { return null }
+  }
+  if (fs.existsSync(cache)) { const g = readCache(); if (g) return g }
+  const run = deps.run ?? ((args: string[]) => spawnWithTimeout(args, { cmd: beatPython, timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'beat_grid' }))
+  try {
+    await run([BEAT_SCRIPT, bgmPath, cache])
+    return readCache()
+  } catch { return null }
+}
+
+/** 返回最近的 beat 时间；beats 空则原样返回。 */
+export function snapToBeat(t: number, beats: number[]): number {
+  if (!beats.length) return t
+  return beats.reduce((best, b) => (Math.abs(b - t) < Math.abs(best - t) ? b : best), beats[0])
+}
+
+/**
+ * 顺序吸附一组 (start,dur) 段的 start 到最近拍：吸附后保证**不早于前一段结束**(prevStart+prevDur)，
+ * 防止独立吸附把相邻段拉到同一拍/倒序，导致同 track 画面重叠或错序。段须已按时间先后排列。
+ * 无网格时原样返回 start。
+ */
+export function snapStarts(segs: Array<{ start: number; dur: number }>, beats?: number[]): number[] {
+  if (!beats || !beats.length) return segs.map((s) => s.start)
+  const out: number[] = []
+  let prevEnd = -Infinity
+  for (const { start, dur } of segs) {
+    let s = snapToBeat(start, beats)
+    if (s < prevEnd) s = prevEnd // 不早于前一段结束
+    out.push(s)
+    prevEnd = s + dur
+  }
+  return out
+}
+
+/** 曲库选曲：name 指定则补 .mp3/.wav 后缀命中；否则字典序第一个音频；无则 null。 */
+export function pickBgm(bgmDir: string, name?: string): string | null {
+  if (!fs.existsSync(bgmDir)) return null
+  if (name) {
+    for (const ext of ['', '.mp3', '.wav', '.m4a']) {
+      const p = path.join(bgmDir, name + ext)
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) return p
+    }
+    return null
+  }
+  const audio = fs.readdirSync(bgmDir).filter((f) => /\.(mp3|wav|m4a)$/i.test(f)).sort()
+  return audio.length ? path.join(bgmDir, audio[0]) : null
 }
 
 export function escapeHtml(s: string): string {
@@ -138,28 +200,38 @@ export function readShots(shotsDir: string): Shot[] {
  */
 export function buildDemoSections(opts: {
   hookTitle: string; painPoints: string[]; priceAnchor: string; cta: string; brandName: string
-  shots: Shot[]; durationSec: number
+  shots: Shot[]; durationSec: number; beats?: number[]
 }): string {
-  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec } = opts
+  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec, beats } = opts
   const clip = (start: number, dur: number, track: number, inner: string) =>
     `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
   const per = shots.length ? (carEnd - carStart) / shots.length : 0
   const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
+  // 段顺序：hook(0,3)→pain(3,3)→截图 i(carStart+i*per, per)→price(dur-6,3)→cta(dur-3,3)
+  // 有节拍网格时一次性顺序吸附（防止独立吸附把相邻段拉到同一拍/倒序）
+  const segs = [
+    { start: 0, dur: 3 },
+    { start: 3, dur: 3 },
+    ...shots.map((_, i) => ({ start: carStart + i * per, dur: per })),
+    { start: durationSec - 6, dur: 3 },
+    { start: durationSec - 3, dur: 3 },
+  ]
+  const st = snapStarts(segs, beats)
   const shotHtml = shots.map((s, i) => {
     // 文件名由操作者放入，转义 + encodeURI 防属性/CSS url 破坏
     const src = escapeHtml(`assets/${encodeURI(s.rel)}`)
     const body = s.orientation === 'portrait'
       ? `<div class="phoneWrap"><div class="phone"><img src="${src}"/></div></div>`
       : `<div class="wideWrap"><div class="wideBg" style="background-image:url('${src}')"></div><div class="wideFg"><img src="${src}"/></div></div>`
-    return clip(carStart + i * per, per, 2, body)
+    return clip(st[2 + i], per, 2, body)
   }).join('\n')
   return [
-    clip(0, 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
-    clip(3, 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
+    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
+    clip(st[1], 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
     shotHtml,
-    clip(durationSec - 6, 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
-    clip(durationSec - 3, 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[2 + shots.length], 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
+    clip(st[2 + shots.length + 1], 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
 }
 
@@ -169,17 +241,23 @@ export function buildDemoSections(opts: {
  */
 export function buildStorySections(opts: {
   bubbles: Array<{ who: 'them' | 'me'; text: string }>; sellingPoint: string; cta: string; brandName: string
-  durationSec: number
+  durationSec: number; beats?: number[]
 }): string {
-  const { bubbles, sellingPoint, cta, brandName, durationSec } = opts
+  const { bubbles, sellingPoint, cta, brandName, durationSec, beats } = opts
   const clip = (start: number, dur: number, track: number, inner: string) =>
     `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const bubbleHtml = bubbles.map((b) => `<div class="bubble ${b.who}">${escapeHtml(b.text)}</div>`).join('')
   const chatDur = Math.max(1, durationSec - 6)
+  // 段顺序：chat(0, chatDur)→sell(dur-6,3)→cta(dur-3,3)。有节拍网格时一次性顺序吸附
+  const st = snapStarts([
+    { start: 0, dur: chatDur },
+    { start: durationSec - 6, dur: 3 },
+    { start: durationSec - 3, dur: 3 },
+  ], beats)
   return [
-    clip(0, chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
-    clip(durationSec - 6, 3, 1, `<div class="fill pad center sellFill"><div class="sell">${escapeHtml(sellingPoint)}</div></div>`),
-    clip(durationSec - 3, 3, 1, `<div class="fill pad center sellFill"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[0], chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
+    clip(st[1], 3, 1, `<div class="fill pad center sellFill"><div class="sell">${escapeHtml(sellingPoint)}</div></div>`),
+    clip(st[2], 3, 1, `<div class="fill pad center sellFill"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
 }
 
@@ -200,4 +278,52 @@ export function runKokoroTts(text: string, outWavAbs: string, voice: string, lan
   return spawnWithTimeout(['--yes', `hyperframes@${HF_VERSION}`, 'tts', text, '--voice', voice, '--lang', lang, '--output', outWavAbs], {
     timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'hyperframes tts',
   })
+}
+
+/**
+ * 强拍脉冲：每个 strongBeat 给 #root 叠一个轻微 scale 弹跳（幅度小防晕）。填 <!--HF_ACCENTS-->。
+ * 必须挂在主时间线 `tl` 上（`tl.to(...)`）而非裸 `gsap.to`——HyperFrames 靠 seek 暂停的 tl 逐帧渲染，
+ * 裸 gsap.to 不受 tl 时间轴控制、页面加载时会立即实时跑完，脉冲渲不出来。
+ */
+export function injectBeatAccents(html: string, strongBeats: number[]): string {
+  const lines = strongBeats.map((t) =>
+    `tl.to("#root", { keyframes: [{ scale: 1.02, duration: 0.07 }, { scale: 1.0, duration: 0.08 }] }, ${t});`,
+  ).join('\n')
+  return html.replace('<!--HF_ACCENTS-->', () => lines)
+}
+
+/** ffmpeg filter_complex：BGM 裁/loop 到时长+压 -18dB+被旁白 sidechaincompress；SFX 各强拍 adelay 后并入；最后与旁白 amix。 */
+export function buildMixFilter(opts: { hasSfx: boolean; strongBeats: number[]; durationSec: number }): string {
+  const ms = opts.durationSec * 1000
+  // [0:a]=旁白 [1:a]=BGM [2:a]=SFX(单次)
+  const parts: string[] = []
+  parts.push('[0:a]asplit=2[narr][sc]')
+  // BGM：截到时长、压低、以旁白(sc)为触发做 ducking
+  parts.push(`[1:a]atrim=0:${opts.durationSec},volume=-18dB[bgmv]`)
+  parts.push('[bgmv][sc]sidechaincompress=threshold=0.03:ratio=8:attack=5:release=300[bgmduck]')
+  const mixIns = ['[narr]', '[bgmduck]']
+  if (opts.hasSfx && opts.strongBeats.length) {
+    opts.strongBeats.forEach((t, i) => {
+      const delay = Math.round(t * 1000)
+      parts.push(`[2:a]adelay=${delay}|${delay},volume=-6dB[sfx${i}]`)
+      mixIns.push(`[sfx${i}]`)
+    })
+  }
+  parts.push(`${mixIns.join('')}amix=inputs=${mixIns.length}:normalize=0:duration=first[aout]`)
+  return parts.join(';')
+}
+
+/** 把 BGM/SFX 混进已渲染的 mp4（旁白轨来自 mp4）。失败抛错，调用方降级保留原视频。 */
+export async function mixAudio(mp4: string, opts: {
+  bgmPath: string; sfxPath: string | null; strongBeats: number[]; durationSec: number
+  deps?: { run?: (args: string[]) => Promise<void> }
+}): Promise<void> {
+  const filter = buildMixFilter({ hasSfx: !!opts.sfxPath, strongBeats: opts.strongBeats, durationSec: opts.durationSec })
+  const tmp = `${mp4}.mix.mp4`
+  const args = ['-y', '-i', mp4, '-stream_loop', '-1', '-i', opts.bgmPath]
+  if (opts.sfxPath) args.push('-i', opts.sfxPath)
+  args.push('-filter_complex', filter, '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'aac', tmp)
+  const run = opts.deps?.run ?? ((a: string[]) => spawnWithTimeout(a, { cmd: 'ffmpeg', timeoutMs: RENDER_TIMEOUT_MS, label: 'ffmpeg mix' }))
+  await run(args)
+  fs.renameSync(tmp, mp4)
 }

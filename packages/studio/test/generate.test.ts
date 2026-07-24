@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { copyFixtures, createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as hyperframes from '../src/hyperframes'
 import { generateVideo } from '../src/generate'
 
 let ctx: CoreCtx
@@ -29,6 +30,8 @@ describe('generateVideo (stub)', () => {
     const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
     expect(html).toContain('data-composition-id="main"')
     expect(html).toContain('快客通') // brandName 填入
+    // 强拍标记必须被替换掉（无曲库时替换为空串，不残留）
+    expect(html).not.toContain('<!--HF_ACCENTS-->')
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
     expect(row.type).toBe('video')
     expect(row.file_path).toBe(out.filePath)
@@ -52,6 +55,26 @@ describe('generateVideo (stub)', () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('other')").run() // id=2
     await expect(generateVideo(ctx, { slug: 'other', assetId: 1 })).rejects.toThrow(/文案/)
   })
+  it('无 BGM 曲库时正常出片（不加 BGM 不报错）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash', onProgress: () => {} })
+    expect(out.filePath).toContain('flash-')
+    // hf 项目仍产出，无 BGM 分支不抛错
+    expect(fs.existsSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'))).toBe(true)
+  })
+  it('stub 模式即便配了 beatPython 且曲库有曲，也不跑节拍分析（不 spawn librosa）', async () => {
+    // 曲库放一首"曲子"、配上 beatPython——开发机常见组合（导出了 FORGECAST_MELO_PYTHON）
+    const bgmDir = path.join(root, 'templates/bgm')
+    fs.mkdirSync(bgmDir, { recursive: true })
+    fs.writeFileSync(path.join(bgmDir, 'tech.mp3'), 'fake')
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub', FORGECAST_BEAT_PYTHON: '/fake/py' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const spy = vi.spyOn(hyperframes, 'analyzeBeats')
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
   it('tpl=changelog 走 HyperFrames stub，产出 asset 行与 hf 项目', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
@@ -67,6 +90,7 @@ describe('generateVideo (stub)', () => {
     // 注释标记应已被替换掉，不残留
     expect(html).not.toContain('<!--HF_AUDIO-->')
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
+    expect(html).not.toContain('<!--HF_ACCENTS-->')
   })
 })
 
@@ -97,6 +121,7 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     expect(html).toContain('class="wideBg"')       // 横图虚化背景
     expect(html).toContain('<audio id="narration"')
     expect(html).not.toContain('<!--HF_SECTIONS-->')
+    expect(html).not.toContain('<!--HF_ACCENTS-->')
     // 截图拷进 assets
     expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
   })
