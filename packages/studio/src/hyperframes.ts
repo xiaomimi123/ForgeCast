@@ -12,9 +12,11 @@ const HF_VERSION = '0.7.68'
 // render/tts 单进程超时（Chrome/kokoro 卡死不能把进程内任务队列永久挂住）
 const RENDER_TIMEOUT_MS = 600_000
 const TTS_SPAWN_TIMEOUT_MS = 180_000
+const COSY_TIMEOUT_MS = 600_000 // CosyVoice2 慢 + 长旁白，给足
 
-// melo 推理脚本相对本文件：packages/studio/src → packages/studio/scripts
+// 本地 TTS 推理脚本相对本文件：packages/studio/src → packages/studio/scripts
 const MELO_SCRIPT = fileURLToPath(new URL('../scripts/melo_infer.py', import.meta.url))
+const COSY_SCRIPT = fileURLToPath(new URL('../scripts/cosy_infer.py', import.meta.url))
 
 /** 带超时的 spawn：超时 kill 并 reject。stdin ignore。cmd 默认 npx（HyperFrames 用）。 */
 function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
@@ -33,6 +35,14 @@ function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; ti
 export function runMeloTts(text: string, outWavAbs: string, meloPython: string): Promise<void> {
   return spawnWithTimeout([MELO_SCRIPT, text, outWavAbs], {
     cmd: meloPython, timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'MeloTTS',
+  })
+}
+
+/** CosyVoice2 零样本克隆配音：spawn <cosyHome>/venv/bin/python scripts/cosy_infer.py <cosyHome> <text> <out>。
+ *  慢（RTF ~2.75x），超时给足。cosyHome 约定含 venv/CosyVoice/model/prompt.wav+txt。 */
+export function runCosyTts(text: string, outWavAbs: string, cosyHome: string): Promise<void> {
+  return spawnWithTimeout([COSY_SCRIPT, cosyHome, text, outWavAbs], {
+    cmd: `${cosyHome}/venv/bin/python`, timeoutMs: COSY_TIMEOUT_MS, label: 'CosyVoice2',
   })
 }
 

@@ -156,3 +156,24 @@ describe('synthesizeVoice melo', () => {
     expect(fs.existsSync(out)).toBe(true)
   })
 })
+
+describe('synthesizeVoice cosy', () => {
+  it('cosy 模式调 runCosy 写 wav，成功不降级', async () => {
+    const out = path.join(root, 'workspace/demo/videos/c.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'cosy', FORGECAST_COSY_HOME: '/fake/cosy' })
+    const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runCosy = vi.fn(async (_t: string, o: string) => { fs.mkdirSync(path.dirname(o), { recursive: true }); fs.writeFileSync(o, Buffer.from([1, 2, 3, 4])) })
+    const r = await synthesizeVoice(cctx, '一句话。', out, { runCosy })
+    expect(runCosy).toHaveBeenCalledOnce()
+    expect(r.degraded).toBeUndefined()
+  })
+  it('cosy 缺 FORGECAST_COSY_HOME 降级', async () => {
+    const out = path.join(root, 'workspace/demo/videos/c2.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'cosy' })
+    const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runCosy = vi.fn()
+    const r = await synthesizeVoice(cctx, '一句话。', out, { runCosy })
+    expect(runCosy).not.toHaveBeenCalled()
+    expect(r.degraded).toContain('FORGECAST_COSY_HOME')
+  })
+})

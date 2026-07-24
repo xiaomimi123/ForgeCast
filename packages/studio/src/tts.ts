@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
-import { runKokoroTts, runMeloTts } from './hyperframes'
+import { runCosyTts, runKokoroTts, runMeloTts } from './hyperframes'
 
 export interface Cue { start: number; end: number; text: string }
 /** degraded：live/kokoro 模式失败回落占位音轨时的原因（stub 模式下为 undefined，不算降级） */
@@ -11,6 +11,7 @@ export interface VoiceResult { audioRel: string | null; cues: Cue[]; degraded?: 
 export interface TtsDeps {
   runKokoro?: (text: string, outWavAbs: string) => Promise<void>
   runMelo?: (text: string, outWavAbs: string) => Promise<void>
+  runCosy?: (text: string, outWavAbs: string) => Promise<void>
   fetchImpl?: typeof fetch
 }
 
@@ -99,6 +100,18 @@ export async function synthesizeVoice(
       return { audioRel: rel, cues }
     } catch (err) {
       return degrade(`MeloTTS 失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  if (ctx.config.tts.mode === 'cosy') {
+    if (!ctx.config.tts.cosyHome) return degrade('cosy 模式但未配置 FORGECAST_COSY_HOME（CosyVoice2 目录，见部署文档）')
+    const run = deps.runCosy ?? ((t: string, o: string) => runCosyTts(t, o, ctx.config.tts.cosyHome))
+    try {
+      await run(clean, outWavAbs)
+      if (!fs.existsSync(outWavAbs) || fs.statSync(outWavAbs).size === 0) return degrade('CosyVoice2 未产出音频')
+      return { audioRel: rel, cues }
+    } catch (err) {
+      return degrade(`CosyVoice2 失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

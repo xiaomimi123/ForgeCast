@@ -4,7 +4,7 @@ import type { ForgecastConfig } from './config'
 // PUT 白名单：只有这些 key 可写入 settings 表（防止任意键注入）
 export const SETTING_KEYS = [
   'llm_mode', 'llm_key', 'llm_base_url', 'model_analysis', 'model_copy', 'model_scoring',
-  'tts_mode', 'tts_key', 'tts_model', 'tts_base_url', 'tts_voice', 'melo_python',
+  'tts_mode', 'tts_key', 'tts_model', 'tts_base_url', 'tts_voice', 'melo_python', 'cosy_home',
   'github_mode', 'github_token',
 ] as const
 export type SettingKey = (typeof SETTING_KEYS)[number]
@@ -40,11 +40,12 @@ export function applyStoredSettings(config: ForgecastConfig, db: Database.Databa
   put(s.model_analysis, (v) => { config.llm.models.analysis = v })
   put(s.model_copy, (v) => { config.llm.models.copy = v })
   put(s.model_scoring, (v) => { config.llm.models.scoring = v })
-  put(s.tts_mode, (v) => { if (v === 'live' || v === 'stub' || v === 'kokoro' || v === 'melo') config.tts.mode = v })
+  put(s.tts_mode, (v) => { if (v === 'live' || v === 'stub' || v === 'kokoro' || v === 'melo' || v === 'cosy') config.tts.mode = v })
   put(s.tts_key, (v) => { config.tts.apiKey = v })
   put(s.tts_model, (v) => { config.tts.model = v })
   put(s.tts_voice, (v) => { config.tts.voice = v })
   put(s.melo_python, (v) => { config.tts.meloPython = v })
+  put(s.cosy_home, (v) => { config.tts.cosyHome = v })
   put(s.tts_base_url, (v) => { config.tts.baseURL = v })
   put(s.github_mode, (v) => { if (v === 'live' || v === 'mock') config.github.mode = v })
   put(s.github_token, (v) => { config.github.token = v })

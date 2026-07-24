@@ -17,9 +17,12 @@
 ## TTS 模式（`FORGECAST_TTS_MODE`）
 
 - `kokoro`（默认）— 本地 Kokoro 离线中文配音（`zf_xiaobei`），免 key。**机器味重、咬字糊**，仅作兜底。
-- `melo` — 本地 MeloTTS 离线中文配音，**明显更自然**，免 key。需单独 venv（见下）。**只有一个女声**（换男声/多音色见 CosyVoice2 计划）。
+- `melo` — 本地 MeloTTS 离线中文配音，**明显更自然**，免 key。需单独 venv（见下）。**只有一个女声**。快（RTF 0.23x，一条视频约 8s 配音）。
+- `cosy` — 本地 CosyVoice2 零样本克隆，**男声/任意音色**（给段参考音频克隆谁的声音都行）。免 key。**慢**（RTF ~2.75x，一条视频约 90s+ 配音）。需 `FORGECAST_COSY_HOME`（见下）。
 - `live` — 中转站 OpenAI 兼容 `/audio/speech`（需 `FORGECAST_TTS_KEY`/`FORGECAST_TTS_MODEL`/`FORGECAST_TTS_VOICE`）。音质最好、音色最全，付费。
 - `stub` — 静音占位（测试用）。
+
+选型：**日常批量用 `melo`（快、女声够好）；要男声/特定音色的精品用 `cosy`（慢但灵活）；不想维护本地重模型就 `live`（云端，付费）。**
 
 ### MeloTTS 本地配音（`melo` 模式）
 
@@ -106,3 +109,36 @@ docker compose --profile render run --rm renderer \
 | `changelog` | 代码变更讲解（开发碎片） | 仅文案 |
 
 时长自适应：跟旁白末尾对齐（各模板有下限），旁白多长片子多长，不截断。
+
+### CosyVoice2 本地克隆配音（`cosy` 模式）
+
+CosyVoice2 靠一段参考音频克隆任意音色（含男声），`FORGECAST_COSY_HOME` 指向一个约定结构的目录：
+
+```
+$FORGECAST_COSY_HOME/
+├── venv/            # py3.11 venv（装了 CosyVoice requirements）
+├── CosyVoice/       # clone github.com/FunAudioLLM/CosyVoice（含 third_party/Matcha-TTS 子模块）
+├── model/           # CosyVoice2-0.5B（modelscope 下，~5.3G）
+├── prompt.wav       # 要克隆的参考音频（换男声就换这个 + prompt.txt）
+└── prompt.txt       # 参考音频的转写文本
+```
+
+搭建：
+```bash
+H=~/.forgecast-cosy; mkdir -p $H
+GIT_LFS_SKIP_SMUDGE=1 git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git $H/CosyVoice
+uv venv --python 3.11 $H/venv
+uv pip install --python $H/venv/bin/python "setuptools<80" wheel pip   # 先装，否则 openai-whisper 构建缺 pkg_resources
+# 去掉 requirements 里的 cu121 extra-index（Mac 用不上），再关构建隔离装
+grep -v "extra-index-url.*cu121\|onnxruntime-cuda" $H/CosyVoice/requirements.txt > /tmp/cosy-reqs.txt
+uv pip install --python $H/venv/bin/python --no-build-isolation -r /tmp/cosy-reqs.txt
+$H/venv/bin/python -c "from modelscope import snapshot_download; snapshot_download('iic/CosyVoice2-0.5B', local_dir='$H/model')"
+# 参考音频：任意 5-10s 清晰人声（男声就放男声），写好转写
+cp $H/CosyVoice/asset/zero_shot_prompt.wav $H/prompt.wav   # 自带女声示例，替换成你要的音色
+printf '希望你以后能够做的比我还好呦。' > $H/prompt.txt
+export FORGECAST_TTS_MODE=cosy FORGECAST_COSY_HOME=$H
+```
+
+- **Apple Silicon 强制 CPU**：`scripts/cosy_infer.py` 已 `torch.backends.mps.is_available=lambda:False`。M1 上模型加载 ~10s、合成 RTF ~2.75x。
+- **换音色 = 换 `prompt.wav` + `prompt.txt`**（不用改代码/环境变量）。
+- `pynini`/`ttsfrd` 在 Mac 装不上没关系——CosyVoice2 用 `wetext` 前端兜底。

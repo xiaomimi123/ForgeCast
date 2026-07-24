@@ -3,7 +3,7 @@ import path from 'node:path'
 export type LlmMode = 'mock' | 'live'
 export type GithubMode = 'mock' | 'live'
 export type VideoMode = 'render' | 'stub'
-export type TtsMode = 'stub' | 'live' | 'kokoro' | 'melo'
+export type TtsMode = 'stub' | 'live' | 'kokoro' | 'melo' | 'cosy'
 
 export interface ForgecastConfig {
   root: string
@@ -15,7 +15,7 @@ export interface ForgecastConfig {
   }
   github: { mode: GithubMode; token: string }
   video: { mode: VideoMode }
-  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string }
+  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string }
   paths: { workspace: string; db: string; templates: string }
 }
 
@@ -46,12 +46,14 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       mode: env.FORGECAST_TTS_MODE === 'live' ? 'live'
         : env.FORGECAST_TTS_MODE === 'stub' ? 'stub'
         : env.FORGECAST_TTS_MODE === 'melo' ? 'melo'
+        : env.FORGECAST_TTS_MODE === 'cosy' ? 'cosy'
         : 'kokoro',
       baseURL: env.FORGECAST_TTS_BASE_URL || 'https://aitoken.homes/v1',
       apiKey: env.FORGECAST_TTS_KEY ?? '',
       model: env.FORGECAST_TTS_MODEL ?? '',
       voice: env.FORGECAST_TTS_VOICE ?? '',
       meloPython: env.FORGECAST_MELO_PYTHON ?? '',
+      cosyHome: env.FORGECAST_COSY_HOME ?? '',
     },
     paths: {
       workspace: path.join(resolvedRoot, 'workspace'),

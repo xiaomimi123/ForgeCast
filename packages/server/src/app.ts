@@ -76,7 +76,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       tts: {
         mode: cfg.tts.mode,
         key_set: !!cfg.tts.apiKey, key_masked: maskKey(cfg.tts.apiKey),
-        base_url: cfg.tts.baseURL, model: cfg.tts.model, voice: cfg.tts.voice, melo_python: cfg.tts.meloPython,
+        base_url: cfg.tts.baseURL, model: cfg.tts.model, voice: cfg.tts.voice, melo_python: cfg.tts.meloPython, cosy_home: cfg.tts.cosyHome,
       },
       github: {
         mode: cfg.github.mode,

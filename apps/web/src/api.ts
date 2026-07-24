@@ -58,7 +58,7 @@ export interface Lead {
 }
 export interface SettingsView {
   llm: { mode: 'live' | 'mock'; key_set: boolean; key_masked: string; base_url: string; models: { analysis: string; copy: string; scoring: string } }
-  tts: { mode: 'live' | 'stub' | 'kokoro'; key_set: boolean; key_masked: string; base_url: string; model: string; voice: string; melo_python: string }
+  tts: { mode: 'live' | 'stub' | 'kokoro'; key_set: boolean; key_masked: string; base_url: string; model: string; voice: string; melo_python: string; cosy_home: string }
   github: { mode: 'live' | 'mock'; token_set: boolean; token_masked: string }
   /** 选了 live 却缺 key 时的降级说明（服务端会把模式改回 mock/stub） */
   mode_notes: string[]
