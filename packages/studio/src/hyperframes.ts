@@ -375,29 +375,41 @@ export function planCutTimes(plan: { grid: { t0: number; T: number }; offsetSec:
  */
 export function buildDemoSections(opts: {
   hookTitle: string; painPoints: string[]; priceAnchor: string; cta: string; brandName: string
-  shots: Shot[]; durationSec: number; beats?: number[]
+  shots: Shot[]; durationSec: number; beats?: number[]; plan?: { cuts: Array<{ start: number; shot: number }> }
 }): { html: string; accents: string } {
-  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec, beats } = opts
+  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec, beats, plan } = opts
   const clip = (start: number, dur: number, track: number, inner: string, id?: string) =>
     `<div class="clip"${id ? ` id="${id}"` : ''} data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
 
-  // 轮播切点：有节拍网格→每 4 拍一刀（约 2s@120BPM）、图不够循环轮播（卡点）；否则退回按图数均分
-  const hasBeats = !!(beats && beats.length)
-  let cutStarts: number[] = []
-  if (hasBeats) {
-    const win = beats!.filter((b) => b >= carStart && b < carEnd)
-    cutStarts = win.filter((_, i) => i % 4 === 0) // 每 4 拍取一刀
+  // 是否需要图片弹跳强调：有节拍网格，或用了卡点方案（方案本身就是卡点，同样按刀弹一下）
+  const hasBeats = !!(beats && beats.length) || !!(plan && plan.cuts.length)
+
+  let carClips: Array<{ id: string; start: number; dur: number; shot: Shot }>
+  if (plan && plan.cuts.length) {
+    // 方案模式：用方案 cuts（过滤超出窗口末的），时长到下一刀/carEnd
+    const pc = plan.cuts.filter((c) => c.start < carEnd).sort((a, b) => a.start - b.start)
+    carClips = pc.map((c, k) => ({
+      id: `car${k}`, start: c.start, dur: (pc[k + 1]?.start ?? carEnd) - c.start,
+      shot: shots[Math.max(0, Math.min(shots.length - 1, c.shot))],
+    }))
+  } else {
+    // 自动模式（现有逻辑）：每 4 拍一刀 / 图数均分
+    let cutStarts: number[] = []
+    if (hasBeats) {
+      const win = beats!.filter((b) => b >= carStart && b < carEnd)
+      cutStarts = win.filter((_, i) => i % 4 === 0) // 每 4 拍取一刀
+    }
+    if (cutStarts.length < 2) {
+      // 无 BGM / 窗口内拍太少：退回按图数均分（与原行为一致，保证有图能播）
+      const per = shots.length ? (carEnd - carStart) / shots.length : 0
+      cutStarts = shots.map((_, i) => carStart + i * per)
+    }
+    // 每刀循环取一张图；时长 = 到下一刀（末刀到 carEnd）
+    carClips = cutStarts.map((start, k) => ({
+      id: `car${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
+    }))
   }
-  if (cutStarts.length < 2) {
-    // 无 BGM / 窗口内拍太少：退回按图数均分（与原行为一致，保证有图能播）
-    const per = shots.length ? (carEnd - carStart) / shots.length : 0
-    cutStarts = shots.map((_, i) => carStart + i * per)
-  }
-  // 每刀循环取一张图；时长 = 到下一刀（末刀到 carEnd）
-  const carClips = cutStarts.map((start, k) => ({
-    id: `car${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
-  }))
 
   const painHtml = painPoints.map((p) => `<div class="pain tw">· ${escapeHtml(p)}</div>`).join('')
 

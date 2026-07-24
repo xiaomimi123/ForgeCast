@@ -295,6 +295,31 @@ describe('buildDemoSections（截图轮播卡点）', () => {
   })
 })
 
+describe('buildDemoSections 消费卡点方案', () => {
+  const base = {
+    hookTitle: '钩子', painPoints: ['痛1'], priceAnchor: '¥99', cta: '扣1', brandName: 'demo',
+    shots: [{ rel: '01.png', orientation: 'portrait' as const }, { rel: '02.png', orientation: 'landscape' as const }],
+  }
+  it('给 plan 用方案 cuts（时间+配图），不再自动 cadence', () => {
+    // 方案：两刀 8s(图1)、12s(图0)
+    const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 8, shot: 1 }, { start: 12, shot: 0 }] } })
+    // car0 落在 8s、car1 落在 12s
+    expect(r.html).toMatch(/id="car0" data-start="8/)
+    expect(r.html).toMatch(/id="car1" data-start="12/)
+    // 每刀一条图片弹跳
+    expect(r.accents).toContain('tl.to("#car0"'); expect(r.accents).toContain('tl.to("#car1"')
+  })
+  it('plan cuts 超过窗口末(carEnd=dur-6)的被过滤', () => {
+    // dur=30 → carEnd=24；一刀在 26s 应被丢
+    const r = buildDemoSections({ ...base, durationSec: 30, plan: { cuts: [{ start: 8, shot: 0 }, { start: 26, shot: 1 }] } })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(1)
+  })
+  it('不传 plan 行为不变（回归：无 beats 按图数均分）', () => {
+    const r = buildDemoSections({ ...base, durationSec: 30 })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length)
+  })
+})
+
 describe('resolveMood 情绪映射', () => {
   it('四 hook 映射到情绪键', () => {
     expect(resolveMood('pain')).toBe('tense')
