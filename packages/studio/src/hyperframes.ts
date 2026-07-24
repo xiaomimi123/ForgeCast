@@ -109,8 +109,15 @@ export function snapStarts(segs: Array<{ start: number; dur: number }>, beats?: 
   return out
 }
 
-/** 曲库选曲：name 指定则补 .mp3/.wav 后缀命中；否则字典序第一个音频；无则 null。 */
-export function pickBgm(bgmDir: string, name?: string): string | null {
+/** hook 类型 → 情绪键（文件夹名）。hook 本身即内容的情绪策略角度。 */
+export const HOOK_MOOD: Record<string, string> = { pain: 'tense', sideline: 'upbeat', infogap: 'tech', story: 'warm' }
+/** 情绪键：显式 override 优先，否则按 hook 映射；都无则空串（走根目录回落）。 */
+export function resolveMood(hook: string, override?: string): string {
+  return override || HOOK_MOOD[hook] || ''
+}
+
+/** 选曲：有 name 则补后缀命中；无 name 时给了 rand 从音频随机、否则字典序第一个（向后兼容）。 */
+export function pickBgm(bgmDir: string, name?: string, rand?: () => number): string | null {
   if (!fs.existsSync(bgmDir)) return null
   if (name) {
     for (const ext of ['', '.mp3', '.wav', '.m4a']) {
@@ -120,7 +127,25 @@ export function pickBgm(bgmDir: string, name?: string): string | null {
     return null
   }
   const audio = fs.readdirSync(bgmDir).filter((f) => /\.(mp3|wav|m4a)$/i.test(f)).sort()
-  return audio.length ? path.join(bgmDir, audio[0]) : null
+  if (!audio.length) return null
+  const idx = rand ? Math.min(audio.length - 1, Math.floor(rand() * audio.length)) : 0
+  return path.join(bgmDir, audio[idx])
+}
+
+/** 情绪选曲：mood 非空且 <dir>/<mood>/ 有曲 → 该子目录随机；否则根目录随机；都空 → null。 */
+export function pickMoodBgm(bgmDir: string, mood: string, rand?: () => number): string | null {
+  if (mood) {
+    const hit = pickBgm(path.join(bgmDir, mood), undefined, rand)
+    if (hit) return hit
+  }
+  return pickBgm(bgmDir, undefined, rand)
+}
+
+/** 选曲优先级链：bgm='none'→null；bgm 具体名→指定曲；否则按 resolveMood(hook,mood) 走情绪/根随机。 */
+export function chooseBgmPath(bgmDir: string, opts: { bgm: string; mood: string; hook: string }, rand?: () => number): string | null {
+  if (opts.bgm === 'none') return null
+  if (opts.bgm) return pickBgm(bgmDir, opts.bgm)
+  return pickMoodBgm(bgmDir, resolveMood(opts.hook, opts.mood), rand)
 }
 
 /** 科技感背景变体名。CSS 定义在各模板 <style>（class bg-<name>），此处只出内层结构 + GSAP 微动。 */

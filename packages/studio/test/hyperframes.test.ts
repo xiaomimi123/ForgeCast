@@ -2,9 +2,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
+import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
+import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -139,6 +140,47 @@ describe('pickBgm', () => {
   })
 })
 
+describe('pickBgm 随机 + 向后兼容', () => {
+  it('给 rand 从音频列表随机挑（注入 rand 断言命中项）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'a.mp3'), 'x'); fs.writeFileSync(path.join(dir, 'b.mp3'), 'x'); fs.writeFileSync(path.join(dir, 'c.mp3'), 'x')
+    // 排序后 [a,b,c]；rand=0→a，rand≈0.99→c
+    expect(pickBgm(dir, undefined, () => 0)).toBe(path.join(dir, 'a.mp3'))
+    expect(pickBgm(dir, undefined, () => 0.99)).toBe(path.join(dir, 'c.mp3'))
+  })
+  it('不给 rand 仍字典序第一个（向后兼容）', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'b.mp3'), 'x'); fs.writeFileSync(path.join(dir, 'a.mp3'), 'x')
+    expect(pickBgm(dir)).toBe(path.join(dir, 'a.mp3'))
+  })
+})
+
+describe('pickMoodBgm 情绪子目录', () => {
+  it('情绪子目录有曲 → 该子目录随机', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.mkdirSync(path.join(dir, 'tense'))
+    fs.writeFileSync(path.join(dir, 'tense', 'x.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x') // 根目录也有，但情绪目录优先
+    expect(pickMoodBgm(dir, 'tense', () => 0)).toBe(path.join(dir, 'tense', 'x.mp3'))
+  })
+  it('情绪子目录缺失/空 → 回落根目录随机', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x')
+    expect(pickMoodBgm(dir, 'tense', () => 0)).toBe(path.join(dir, 'root.mp3'))       // 无 tense 子目录
+    fs.mkdirSync(path.join(dir, 'warm'))                                              // 空子目录
+    expect(pickMoodBgm(dir, 'warm', () => 0)).toBe(path.join(dir, 'root.mp3'))
+  })
+  it('mood 为空 → 直接根目录随机', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x')
+    expect(pickMoodBgm(dir, '', () => 0)).toBe(path.join(dir, 'root.mp3'))
+  })
+  it('子目录与根都空 → null', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    expect(pickMoodBgm(dir, 'tense', () => 0)).toBeNull()
+  })
+})
+
 describe('buildMixFilter', () => {
   it('无 SFX：BGM 压低 + ducking + 与旁白 amix', () => {
     const f = buildMixFilter({ hasSfx: false, strongBeats: [], durationSec: 20 })
@@ -250,5 +292,55 @@ describe('buildDemoSections（截图轮播卡点）', () => {
     const r = buildDemoSections({ ...base, durationSec: 30 })
     expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length) // 一图一段
     expect(r.accents).toBe('') // 无 BGM 不卡点不弹
+  })
+})
+
+describe('resolveMood 情绪映射', () => {
+  it('四 hook 映射到情绪键', () => {
+    expect(resolveMood('pain')).toBe('tense')
+    expect(resolveMood('sideline')).toBe('upbeat')
+    expect(resolveMood('infogap')).toBe('tech')
+    expect(resolveMood('story')).toBe('warm')
+  })
+  it('override 覆盖 hook 映射', () => {
+    expect(resolveMood('pain', 'warm')).toBe('warm')
+  })
+  it('未知 hook 且无 override → 空串', () => {
+    expect(resolveMood('nope')).toBe('')
+    expect(resolveMood('')).toBe('')
+  })
+})
+
+describe('chooseBgmPath 选曲优先级链', () => {
+  function seed() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.mkdirSync(path.join(dir, 'tense')); fs.mkdirSync(path.join(dir, 'warm'))
+    fs.writeFileSync(path.join(dir, 'tense', 't.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'warm', 'w.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'named.mp3'), 'x')
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x')
+    return dir
+  }
+  it('--bgm 指定具体曲 → 跳过情绪匹配', () => {
+    const dir = seed()
+    expect(chooseBgmPath(dir, { bgm: 'named', mood: 'warm', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'named.mp3'))
+  })
+  it('bgm=none → null（--no-bgm）', () => {
+    const dir = seed()
+    expect(chooseBgmPath(dir, { bgm: 'none', mood: '', hook: 'pain' }, () => 0)).toBeNull()
+  })
+  it('--mood 覆盖 hook 自动映射', () => {
+    const dir = seed()
+    // hook=pain 本应 tense；mood=warm 覆盖 → warm 子目录
+    expect(chooseBgmPath(dir, { bgm: '', mood: 'warm', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'warm', 'w.mp3'))
+  })
+  it('默认按 hook 自动映射情绪', () => {
+    const dir = seed()
+    expect(chooseBgmPath(dir, { bgm: '', mood: '', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'tense', 't.mp3'))
+  })
+  it('情绪目录空 → 回落根目录', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
+    fs.writeFileSync(path.join(dir, 'root.mp3'), 'x') // 无情绪子目录
+    expect(chooseBgmPath(dir, { bgm: '', mood: '', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'root.mp3'))
   })
 })
