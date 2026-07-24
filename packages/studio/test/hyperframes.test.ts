@@ -362,6 +362,14 @@ describe('autoCutPlan 自动卡点方案', () => {
   it('shotCount<=0 返空', () => {
     expect(autoCutPlan(grid, 0, 30, 4)).toEqual([])
   })
+  it('cadence 非法(0/负/NaN) 不死循环——回落步进', () => {
+    const grid = { t0: 0, T: 0.5 }
+    expect(autoCutPlan(grid, 2, 30, 0).length).toBeGreaterThan(0)      // 0 不能死循环
+    expect(autoCutPlan(grid, 2, 30, -4).length).toBeGreaterThan(0)     // 负不能死循环
+    expect(autoCutPlan(grid, 2, 30, NaN).length).toBeGreaterThan(0)    // NaN 不能死循环
+    // 且非法输入回落到默认步进(4)，与 cadence=4 结果一致
+    expect(autoCutPlan(grid, 2, 30, 0)).toEqual(autoCutPlan(grid, 2, 30, 4))
+  })
 })
 
 describe('planCutTimes 方案→时间', () => {

@@ -348,9 +348,11 @@ export function autoCutPlan(grid: { t0: number; T: number }, shotCount: number, 
   if (shotCount <= 0 || !(grid.T > 0)) return []
   const carStart = 6, carEnd = Math.max(7, durationSec - 6)
   const nStart = Math.max(0, Math.ceil((carStart - grid.t0) / grid.T - 1e-9))
+  // cadence 非法（0/负/NaN）时步进不前进甚至往 -∞ 走会死循环——规整为 ≥1 的整数步进，非法回落 4
+  const step = Number.isFinite(cadence) && cadence >= 1 ? Math.floor(cadence) : 4
   const cuts: Array<{ beat: number; shot: number }> = []
   let k = 0
-  for (let n = nStart; grid.t0 + n * grid.T < carEnd; n += cadence) {
+  for (let n = nStart; grid.t0 + n * grid.T < carEnd; n += step) {
     cuts.push({ beat: n, shot: k % shotCount }); k++
   }
   return cuts
