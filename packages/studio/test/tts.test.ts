@@ -125,3 +125,34 @@ describe('cleanNarrationText', () => {
     expect(cleanNarrationText('正文(旁白)结尾')).toBe('正文结尾')
   })
 })
+
+describe('synthesizeVoice melo', () => {
+  it('melo 模式调 runMelo 写 wav，成功不降级', async () => {
+    const out = path.join(root, 'workspace/demo/videos/m.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'melo', FORGECAST_MELO_PYTHON: '/fake/py' })
+    const mctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runMelo = vi.fn(async (_t: string, o: string) => { fs.mkdirSync(path.dirname(o), { recursive: true }); fs.writeFileSync(o, Buffer.from([1, 2, 3, 4])) })
+    const r = await synthesizeVoice(mctx, '一句话。', out, { runMelo })
+    expect(runMelo).toHaveBeenCalledOnce()
+    expect(r.degraded).toBeUndefined()
+    expect(fs.readFileSync(out).length).toBe(4)
+  })
+  it('melo 缺 FORGECAST_MELO_PYTHON 时降级并说明', async () => {
+    const out = path.join(root, 'workspace/demo/videos/m2.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'melo' })
+    const mctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runMelo = vi.fn()
+    const r = await synthesizeVoice(mctx, '一句话。', out, { runMelo })
+    expect(runMelo).not.toHaveBeenCalled()
+    expect(r.degraded).toContain('FORGECAST_MELO_PYTHON')
+  })
+  it('melo 失败降级带原因', async () => {
+    const out = path.join(root, 'workspace/demo/videos/m3.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'melo', FORGECAST_MELO_PYTHON: '/fake/py' })
+    const mctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runMelo = vi.fn(async () => { throw new Error('venv 不存在') })
+    const r = await synthesizeVoice(mctx, '一句话。', out, { runMelo })
+    expect(r.degraded).toContain('venv 不存在')
+    expect(fs.existsSync(out)).toBe(true)
+  })
+})

@@ -6,12 +6,12 @@ import { api, type SettingsView } from '../api'
 interface Draft {
   llm_mode: string; llm_key: string; llm_base_url: string
   model_analysis: string; model_copy: string; model_scoring: string
-  tts_mode: string; tts_key: string; tts_base_url: string; tts_model: string; tts_voice: string
+  tts_mode: string; tts_key: string; tts_base_url: string; tts_model: string; tts_voice: string; melo_python: string
   github_mode: string; github_token: string
 }
 const emptyDraft: Draft = {
   llm_mode: 'mock', llm_key: '', llm_base_url: '', model_analysis: '', model_copy: '', model_scoring: '',
-  tts_mode: 'stub', tts_key: '', tts_base_url: '', tts_model: '', tts_voice: '', github_mode: 'mock', github_token: '',
+  tts_mode: 'kokoro', tts_key: '', tts_base_url: '', tts_model: '', tts_voice: '', melo_python: '', github_mode: 'mock', github_token: '',
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -40,7 +40,7 @@ export default function SettingsPage() {
     setD({
       llm_mode: s.llm.mode, llm_key: '', llm_base_url: s.llm.base_url,
       model_analysis: s.llm.models.analysis, model_copy: s.llm.models.copy, model_scoring: s.llm.models.scoring,
-      tts_mode: s.tts.mode, tts_key: '', tts_base_url: s.tts.base_url, tts_model: s.tts.model, tts_voice: s.tts.voice,
+      tts_mode: s.tts.mode, tts_key: '', tts_base_url: s.tts.base_url, tts_model: s.tts.model, tts_voice: s.tts.voice, melo_python: s.tts.melo_python,
       github_mode: s.github.mode, github_token: '',
     })
   }, [settings.data])
@@ -106,7 +106,8 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <h3 className="font-medium">配音 TTS（视频旁白）</h3>
           <select className="rounded border px-2 py-1 text-sm" value={d.tts_mode} onChange={(e) => set({ tts_mode: e.target.value })}>
-            <option value="kokoro">kokoro（离线中文，免 key）</option>
+            <option value="kokoro">kokoro（离线，机器味重）</option>
+            <option value="melo">melo（离线中文，更自然，需 venv）</option>
             <option value="live">live（接 TTS 服务，用 key）</option>
             <option value="stub">stub（静音占位）</option>
           </select>
@@ -117,6 +118,7 @@ export default function SettingsPage() {
           <Field label="语音模型 id"><input className={inputCls} value={d.tts_model} onChange={(e) => set({ tts_model: e.target.value })} /></Field>
           <Field label="音色 id" hint="如 MiniMax/火山 的具体音色，留空用 default"><input className={inputCls} value={d.tts_voice} onChange={(e) => set({ tts_voice: e.target.value })} /></Field>
         </div>
+        <Field label="MeloTTS venv python" hint="melo 模式用；MeloTTS venv 的 python 绝对路径"><input className={inputCls} value={d.melo_python} onChange={(e) => set({ melo_python: e.target.value })} /></Field>
         <div className="flex items-center gap-3">
           <button className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={runTtsTest.isPending} onClick={() => runTtsTest.mutate()}>测试连接</button>
           {ttsTest && <span className="text-xs text-neutral-600">{ttsTest}</span>}

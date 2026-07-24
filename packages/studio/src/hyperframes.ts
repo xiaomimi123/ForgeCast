@@ -13,16 +13,26 @@ const HF_VERSION = '0.7.68'
 const RENDER_TIMEOUT_MS = 600_000
 const TTS_SPAWN_TIMEOUT_MS = 180_000
 
-/** 带超时的 spawn：超时 kill 并 reject。stdin ignore；用 npx --yes 避免交互询问挂起。 */
-function spawnWithTimeout(args: string[], opts: { cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
+// melo 推理脚本相对本文件：packages/studio/src → packages/studio/scripts
+const MELO_SCRIPT = fileURLToPath(new URL('../scripts/melo_infer.py', import.meta.url))
+
+/** 带超时的 spawn：超时 kill 并 reject。stdin ignore。cmd 默认 npx（HyperFrames 用）。 */
+function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
   return new Promise((resolve, reject) => {
-    const p = spawn('npx', ['--yes', ...args], { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const p = spawn(opts.cmd ?? 'npx', args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     let err = ''
     const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error(`${opts.label} 超时（${opts.timeoutMs}ms）已终止`)) }, opts.timeoutMs)
     p.stdout.on('data', (d) => opts.onStdout?.(d.toString().trim().slice(0, 120)))
     p.stderr.on('data', (d) => { err += d.toString() })
     p.on('error', (e) => { clearTimeout(timer); reject(e) })
     p.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(`${opts.label} 退出码 ${code}: ${err.slice(0, 400)}`)) })
+  })
+}
+
+/** MeloTTS 配音：spawn <meloPython> scripts/melo_infer.py <text> <out>（强制 CPU，见脚本）。 */
+export function runMeloTts(text: string, outWavAbs: string, meloPython: string): Promise<void> {
+  return spawnWithTimeout([MELO_SCRIPT, text, outWavAbs], {
+    cmd: meloPython, timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'MeloTTS',
   })
 }
 
@@ -170,14 +180,14 @@ export async function renderHyperframes(
 ): Promise<void> {
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
   if (mode === 'stub') { fs.writeFileSync(outPath, STUB_BYTES); return }
-  await spawnWithTimeout([`hyperframes@${HF_VERSION}`, 'render', '--output', outPath], {
+  await spawnWithTimeout(['--yes', `hyperframes@${HF_VERSION}`, 'render', '--output', outPath], {
     cwd: projectDir, timeoutMs: RENDER_TIMEOUT_MS, label: 'hyperframes render', onStdout: opts.onProgress,
   })
 }
 
 /** Kokoro 配音：spawn `hyperframes tts`（带超时 + --yes + pin 版本）。供 tts.ts 复用。 */
 export function runKokoroTts(text: string, outWavAbs: string, voice: string, lang = 'zh'): Promise<void> {
-  return spawnWithTimeout([`hyperframes@${HF_VERSION}`, 'tts', text, '--voice', voice, '--lang', lang, '--output', outWavAbs], {
+  return spawnWithTimeout(['--yes', `hyperframes@${HF_VERSION}`, 'tts', text, '--voice', voice, '--lang', lang, '--output', outWavAbs], {
     timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'hyperframes tts',
   })
 }

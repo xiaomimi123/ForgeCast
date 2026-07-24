@@ -73,7 +73,11 @@ describe('settings API', () => {
   })
 
   it('test-tts：stub 模式返回未发起真实请求', async () => {
-    const r = await (await app.request('/api/settings/test-tts', { method: 'POST' })).json() as any
+    // 默认已是 kokoro，显式切 stub 后测试端点不真 spawn
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-set2-'))
+    const cfg = loadConfig(root, { FORGECAST_TTS_MODE: 'stub' })
+    const stubApp = createApp({ db: openDb(cfg.paths.db), config: cfg, llm: createLlmClient(cfg.llm) }, createTaskQueue())
+    const r = await (await stubApp.request('/api/settings/test-tts', { method: 'POST' })).json() as any
     expect(r.ok).toBe(false)
     expect(r.message).toContain('stub')
   })

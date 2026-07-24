@@ -76,7 +76,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       tts: {
         mode: cfg.tts.mode,
         key_set: !!cfg.tts.apiKey, key_masked: maskKey(cfg.tts.apiKey),
-        base_url: cfg.tts.baseURL, model: cfg.tts.model, voice: cfg.tts.voice,
+        base_url: cfg.tts.baseURL, model: cfg.tts.model, voice: cfg.tts.voice, melo_python: cfg.tts.meloPython,
       },
       github: {
         mode: cfg.github.mode,
@@ -116,16 +116,16 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   })
 
   app.post('/api/settings/test-tts', async (c) => {
-    if (ctx.config.tts.mode !== 'live') {
-      return c.json({ ok: false, message: '当前为 stub 模式（未配置 live key），未发起真实请求' })
+    if (ctx.config.tts.mode === 'stub') {
+      return c.json({ ok: false, message: '当前为 stub 模式（静音占位），未发起真实合成' })
     }
-    // 合成一句极短文本到临时文件：既验 key 也验语音模型 id，比渲一整条视频快
+    // 合成一句极短文本到临时文件：live 验 key/模型、kokoro/melo 验本地依赖，比渲一整条视频快
     const tmp = path.join(os.tmpdir(), `forgecast-tts-test-${process.pid}.wav`)
     try {
       const r = await synthesizeVoice(ctx, '连接测试', tmp)
       if (r.degraded) return c.json({ ok: false, message: r.degraded })
       const size = fs.statSync(tmp).size
-      return c.json({ ok: true, message: `连接成功，返回音频 ${(size / 1024).toFixed(1)} KB` })
+      return c.json({ ok: true, message: `${ctx.config.tts.mode} 合成成功，音频 ${(size / 1024).toFixed(1)} KB` })
     } catch (e) {
       return c.json({ ok: false, message: e instanceof Error ? e.message : String(e) })
     } finally {

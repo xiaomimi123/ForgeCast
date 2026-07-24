@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
-import { runKokoroTts } from './hyperframes'
+import { runKokoroTts, runMeloTts } from './hyperframes'
 
 export interface Cue { start: number; end: number; text: string }
 /** degraded：live/kokoro 模式失败回落占位音轨时的原因（stub 模式下为 undefined，不算降级） */
@@ -10,6 +10,7 @@ export interface VoiceResult { audioRel: string | null; cues: Cue[]; degraded?: 
 /** synthesizeVoice 可注入依赖：测试用 mock，生产走默认实现 */
 export interface TtsDeps {
   runKokoro?: (text: string, outWavAbs: string) => Promise<void>
+  runMelo?: (text: string, outWavAbs: string) => Promise<void>
   fetchImpl?: typeof fetch
 }
 
@@ -86,6 +87,18 @@ export async function synthesizeVoice(
       return { audioRel: rel, cues }
     } catch (err) {
       return degrade(`Kokoro 失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  if (ctx.config.tts.mode === 'melo') {
+    if (!ctx.config.tts.meloPython) return degrade('melo 模式但未配置 FORGECAST_MELO_PYTHON（MeloTTS venv 的 python，见部署文档）')
+    const run = deps.runMelo ?? ((t: string, o: string) => runMeloTts(t, o, ctx.config.tts.meloPython))
+    try {
+      await run(clean, outWavAbs)
+      if (!fs.existsSync(outWavAbs) || fs.statSync(outWavAbs).size === 0) return degrade('MeloTTS 未产出音频')
+      return { audioRel: rel, cues }
+    } catch (err) {
+      return degrade(`MeloTTS 失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 

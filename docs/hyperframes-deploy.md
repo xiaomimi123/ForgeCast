@@ -16,9 +16,35 @@
 
 ## TTS 模式（`FORGECAST_TTS_MODE`）
 
-- `kokoro`（默认）— 本地 Kokoro 离线中文配音（`zf_xiaobei`），免 key。
-- `live` — 中转站 OpenAI 兼容 `/audio/speech`（需 `FORGECAST_TTS_KEY`/`FORGECAST_TTS_MODEL`）。
+- `kokoro`（默认）— 本地 Kokoro 离线中文配音（`zf_xiaobei`），免 key。**机器味重、咬字糊**，仅作兜底。
+- `melo` — 本地 MeloTTS 离线中文配音，**明显更自然**，免 key。需单独 venv（见下）。**只有一个女声**（换男声/多音色见 CosyVoice2 计划）。
+- `live` — 中转站 OpenAI 兼容 `/audio/speech`（需 `FORGECAST_TTS_KEY`/`FORGECAST_TTS_MODEL`/`FORGECAST_TTS_VOICE`）。音质最好、音色最全，付费。
 - `stub` — 静音占位（测试用）。
+
+### MeloTTS 本地配音（`melo` 模式）
+
+MeloTTS 需要一个独立 Python venv（torch 等依赖较重）。`FORGECAST_MELO_PYTHON` 指向该 venv 的 python。
+
+```bash
+uv venv --python 3.11 ~/.forgecast-venvs/melo
+uv pip install --python ~/.forgecast-venvs/melo/bin/python \
+    "git+https://github.com/myshell-ai/MeloTTS.git" "setuptools<80"
+~/.forgecast-venvs/melo/bin/python -m unidic download   # ~526MB 词典
+export FORGECAST_TTS_MODE=melo FORGECAST_MELO_PYTHON=~/.forgecast-venvs/melo/bin/python
+```
+
+**Apple Silicon（M1/M2/M3）必须走纯 CPU**——MeloTTS 的 MPS 路径慢到不可用（实测 163s/句），纯 CPU 反而快（~1.3s/句，RTF 0.23x）。`scripts/melo_infer.py` 已在脚本内 `torch.backends.mps.is_available=lambda:False` 强制 CPU，无需额外配置。
+
+**踩坑（CN 网络 / VPN）**：
+- `setuptools<80`——新版删了 `pkg_resources`，librosa 会报 `No module named 'pkg_resources'`。
+- `unidic download` 的 526MB 词典若被 VPN 拦，多试几次（可断点续）。
+- nltk 数据（`averaged_perceptron_tagger`、`averaged_perceptron_tagger_eng`、`cmudict`）会被 VPN 沉洞（`SSRF attempt to restricted IP 198.18.x`）。从 github 手动取放 `~/nltk_data/`：
+  ```bash
+  for it in corpora/cmudict taggers/averaged_perceptron_tagger taggers/averaged_perceptron_tagger_eng; do
+    curl -sL "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/$it.zip" \
+      -o ~/nltk_data/$(dirname $it)/$(basename $it).zip && unzip -oq ~/nltk_data/$(dirname $it)/$(basename $it).zip -d ~/nltk_data/$(dirname $it)/
+  done
+  ```
 
 字幕 cues 来自文案切句，任何模式下都有字幕。口播脚本的 `【节奏标记】`（画面指示）在配音/字幕前会被 `cleanNarrationText` 去掉。
 
