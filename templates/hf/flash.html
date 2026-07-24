@@ -15,18 +15,20 @@
       .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
       .brand { font-size: 40px; color: #8888aa; }
       .cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); z-index: 5; }
+      <!--HF_FXCSS-->
     </style>
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
-      <div id="s1" class="clip fill pad center" data-start="0" data-duration="4" data-track-index="1" style="background:linear-gradient(160deg,#1a1a2e,#16213e)">
-        <div class="painT">{{painTitle}}</div>
+      <!--HF_BG-->
+      <div id="s1" class="clip fill pad center" data-start="0" data-duration="4" data-track-index="1">
+        <div class="painT tw">{{painTitle}}</div>
       </div>
       <div id="s2" class="clip fill pad center" data-start="4" data-duration="4" data-track-index="1">
-        <div class="sell">{{sellingPoint}}</div>
+        <div class="sell tw">{{sellingPoint}}</div>
       </div>
-      <div id="s3" class="clip fill pad center" data-start="8" data-duration="4" data-track-index="1" style="background:#1a1a2e">
-        <div class="cta">{{cta}}</div><div class="brand">@{{brandName}}</div>
+      <div id="s3" class="clip fill pad center" data-start="8" data-duration="4" data-track-index="1">
+        <div class="cta tw">{{cta}}</div><div class="brand">@{{brandName}}</div>
       </div>
       <!--HF_CAPTIONS-->
       <!--HF_AUDIO-->
@@ -34,11 +36,10 @@
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-      tl.from("#s1 .painT", { opacity: 0, y: 40, duration: .6 }, 0.2);
-      tl.from("#s2 .sell", { opacity: 0, scale: .9, duration: .6 }, 4.2);
-      tl.from("#s3 .cta", { opacity: 0, y: 30, duration: .5 }, 8.2);
       tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      <!--HF_BGANIM-->
       <!--HF_ACCENTS-->
+      <!--HF_DECODE-->
       window.__timelines["main"] = tl;
     </script>
   </body>

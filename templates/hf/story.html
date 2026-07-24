@@ -21,6 +21,7 @@
       .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
       .brand { font-size: 40px; color: #8888aa; }
       .cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); z-index: 5; }
+      <!--HF_FXCSS-->
     </style>
   </head>
   <body>
@@ -35,6 +36,7 @@
       // 气泡逐条淡入（聊天场在前 60%）
       gsap.utils.toArray(".bubble").forEach((b, i) => { tl.from(b, { opacity: 0, y: 40, duration: .5 }, 0.4 + i * 0.9); });
       <!--HF_ACCENTS-->
+      <!--HF_DECODE-->
       window.__timelines["main"] = tl;
     </script>
   </body>
