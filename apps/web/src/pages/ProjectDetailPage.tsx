@@ -3,6 +3,7 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useParams } from 'react-router-dom'
 import { api, subscribeTask, type Project } from '../api'
+import CutPlanEditor from './CutPlanEditor'
 
 const FIELDS = [
   { key: 'brand_name', label: '品牌名' },
@@ -109,6 +110,7 @@ export default function ProjectDetailPage() {
             {raw.data?.files.length === 0 && <li className="text-neutral-400">暂无</li>}
           </ul>
         </div>
+        <CutPlanEditor slug={slug} />
       </div>
     </div>
   )
