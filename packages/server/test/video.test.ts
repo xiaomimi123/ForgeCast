@@ -13,7 +13,9 @@ function wait(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
 
 beforeEach(() => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-vsrv-'))
-  const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub' })
+  // TTS 也 stub：本套测的是 video API/队列/素材流程，非 TTS。默认 kokoro 会 spawn
+  // `npx hyperframes tts`，失败降级要 ~2.8s（超过 runTask 的 2s 轮询窗），令测试超时假红。
+  const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
   ctx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
   ctx.db.prepare("INSERT INTO projects (slug) VALUES ('demo')").run()
   const copyDir = path.join(root, 'workspace/demo/copy')
