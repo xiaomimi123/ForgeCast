@@ -27,6 +27,10 @@
       .wideFg { position: absolute; inset: 0; display: flex; align-items: center; }
       .wideFg img { width: 100%; }
       .cap { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font-size: 46px; font-weight: 800; color: #fff; padding: 0 70px; text-shadow: 0 4px 22px rgba(0,0,0,.9); z-index: 5; }
+      /* 逐字解码/故障风：每字叠「乱码层 .gh + 最终字 .fin」，靠 opacity 点亮做扫描→锁定 */
+      .twc { position: relative; display: inline-block; }
+      .twc .gh { position: absolute; left: 0; top: 0; color: #5cf; text-shadow: 0 0 18px rgba(90,200,255,.95), 0 0 4px rgba(90,200,255,.9); }
+      .twc .fin { text-shadow: 0 0 12px rgba(120,190,255,.45); }
     </style>
   </head>
   <body>
@@ -41,6 +45,39 @@
       // 轻微运镜（整体缓慢放大），具体分镜显隐交给 HyperFrames clip 时间轴
       tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
       <!--HF_ACCENTS-->
+      // 逐字解码出场：.tw 文字拆成单字，随所属 clip 的 data-start 逐字敲出；
+      // 每字先闪几帧随机乱码（.gh 青色辉光）再锁定最终字（.fin）。全程只动 opacity
+      // （不改 textContent——后者在逐帧 seek 渲染下不生效，见 injectAudioCaptions 注释）。
+      (function () {
+        var POOL = '日月火水木金土山川云电系统数据端口零一二三ABCDEF0123456789#@%&*<>/|=+アイウエオカキクケコサシスセソ';
+        function rc() { return POOL[(Math.random() * POOL.length) | 0]; }
+        var K = 5, gstep = 0.045; // 乱码帧数 + 每帧停留
+        document.querySelectorAll('.tw').forEach(function (el) {
+          var clip = el.closest('.clip') || el;
+          var start = parseFloat(clip.getAttribute('data-start') || '0');
+          var chars = Array.from(el.textContent);
+          el.textContent = '';
+          var step = Math.min(0.055, 1.1 / Math.max(1, chars.length)); // 打字速度（长文本更快，整体≤~1.1s）
+          chars.forEach(function (ch, i) {
+            var t0 = start + i * step;
+            var c = document.createElement('span');
+            c.className = 'twc';
+            if (ch === ' ') { c.innerHTML = '&nbsp;'; el.appendChild(c); tl.set(c, { opacity: 0 }, 0); tl.set(c, { opacity: 1 }, t0); return; }
+            var fin = document.createElement('span'); fin.className = 'fin'; fin.textContent = ch; c.appendChild(fin);
+            var ghosts = [];
+            for (var j = 0; j < K; j++) { var g = document.createElement('span'); g.className = 'gh'; g.textContent = rc(); c.appendChild(g); ghosts.push(g); }
+            el.appendChild(c);
+            tl.set(c, { opacity: 0 }, 0); tl.set(c, { opacity: 1 }, t0);
+            tl.set(fin, { opacity: 0 }, 0);
+            ghosts.forEach(function (g, j) {
+              tl.set(g, { opacity: 0 }, 0);
+              tl.set(g, { opacity: 1 }, t0 + j * gstep);
+              tl.set(g, { opacity: 0 }, t0 + (j + 1) * gstep);
+            });
+            tl.set(fin, { opacity: 1 }, t0 + K * gstep);
+          });
+        });
+      })();
       window.__timelines["main"] = tl;
     </script>
   </body>

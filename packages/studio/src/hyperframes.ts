@@ -146,9 +146,12 @@ export function injectAudioCaptions(html: string, audioRel: string | null, cues:
   const audioTag = audioRel
     ? `<audio id="narration" class="clip" data-start="0" data-duration="${durationSec}" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>`
     : ''
+  // .tw：逐字解码出场标记。模板若在 <script> 带解码运行时（如 demo）则字幕逐字敲出，
+  // 否则该 class 惰性无效果（native clip 显隐照常）。解码只动 opacity，不改 textContent，
+  // 兼容"逐帧 seek 下 .set(textContent) 不生效"这条限制。
   const capClips = cues.map((c) => {
     const dur = Math.max(0.5, c.end - c.start)
-    return `<div class="cap clip" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
+    return `<div class="cap clip tw" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
   }).join('\n')
   // 用函数 replacer：替换值含用户文案，直接传字符串会让 $& / $` 等被当替换模式解释
   return html.replace('<!--HF_AUDIO-->', () => audioTag).replace('<!--HF_CAPTIONS-->', () => capClips)
@@ -241,7 +244,7 @@ export function buildDemoSections(opts: {
     id: `car${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
   }))
 
-  const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
+  const painHtml = painPoints.map((p) => `<div class="pain tw">· ${escapeHtml(p)}</div>`).join('')
 
   // 段顺序（时间先后）：hook(0,3)→pain(3,3)→轮播各刀→price(dur-6,3)→cta(dur-3,3)
   // 一次性顺序吸附（防相邻段吸到同一拍/倒序）
@@ -264,11 +267,11 @@ export function buildDemoSections(opts: {
   const nCar = carClips.length
   const carHtml = carClips.map((c, k) => clip(st[2 + k], c.dur, 2, shotBody(c.shot), c.id)).join('\n')
   const html = [
-    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
+    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT tw">${escapeHtml(hookTitle)}</div></div>`),
     clip(st[1], 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
     carHtml,
-    clip(st[2 + nCar], 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
-    clip(st[2 + nCar + 1], 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[2 + nCar], 3, 1, `<div class="fill pad center"><div class="price tw">${escapeHtml(priceAnchor)}</div></div>`),
+    clip(st[2 + nCar + 1], 3, 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
 
   // 图片弹跳：每张切进来时（吸附后的 start，与画面切同拍）scale 1→1.06→1.0 弹一下。
