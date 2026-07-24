@@ -14,7 +14,7 @@ export interface ForgecastConfig {
     models: { analysis: string; copy: string; scoring: string }
   }
   github: { mode: GithubMode; token: string }
-  video: { mode: VideoMode; bgm: string; beatPython: string; captions: boolean; bg: string }
+  video: { mode: VideoMode; bgm: string; beatPython: string; captions: boolean; bg: string; mood: string }
   tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string }
   paths: { workspace: string; db: string; templates: string }
 }
@@ -48,6 +48,8 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       captions: !/^(off|0|false)$/i.test(env.FORGECAST_CAPTIONS ?? ''),
       // 科技感背景变体：grid(赛博网格)/aurora(极光)/matrix(数据雨)/synth(合成波)/mesh(深空)，默认 grid
       bg: env.FORGECAST_BG || 'grid',
+      // 情绪键（tense/upbeat/tech/warm）：空=按 hook 自动映射；显式指定则覆盖
+      mood: env.FORGECAST_MOOD || '',
     },
     tts: {
       // 默认 kokoro（离线中文配音）；显式指定 live/stub 时按指定走

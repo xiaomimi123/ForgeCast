@@ -109,6 +109,13 @@ export function snapStarts(segs: Array<{ start: number; dur: number }>, beats?: 
   return out
 }
 
+/** hook 类型 → 情绪键（文件夹名）。hook 本身即内容的情绪策略角度。 */
+export const HOOK_MOOD: Record<string, string> = { pain: 'tense', sideline: 'upbeat', infogap: 'tech', story: 'warm' }
+/** 情绪键：显式 override 优先，否则按 hook 映射；都无则空串（走根目录回落）。 */
+export function resolveMood(hook: string, override?: string): string {
+  return override || HOOK_MOOD[hook] || ''
+}
+
 /** 曲库选曲：name 指定则补 .mp3/.wav 后缀命中；否则字典序第一个音频；无则 null。 */
 export function pickBgm(bgmDir: string, name?: string): string | null {
   if (!fs.existsSync(bgmDir)) return null

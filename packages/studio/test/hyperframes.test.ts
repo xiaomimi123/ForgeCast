@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
+import { HOOK_MOOD, resolveMood } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -250,5 +251,21 @@ describe('buildDemoSections（截图轮播卡点）', () => {
     const r = buildDemoSections({ ...base, durationSec: 30 })
     expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length) // 一图一段
     expect(r.accents).toBe('') // 无 BGM 不卡点不弹
+  })
+})
+
+describe('resolveMood 情绪映射', () => {
+  it('四 hook 映射到情绪键', () => {
+    expect(resolveMood('pain')).toBe('tense')
+    expect(resolveMood('sideline')).toBe('upbeat')
+    expect(resolveMood('infogap')).toBe('tech')
+    expect(resolveMood('story')).toBe('warm')
+  })
+  it('override 覆盖 hook 映射', () => {
+    expect(resolveMood('pain', 'warm')).toBe('warm')
+  })
+  it('未知 hook 且无 override → 空串', () => {
+    expect(resolveMood('nope')).toBe('')
+    expect(resolveMood('')).toBe('')
   })
 })
