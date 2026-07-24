@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
+import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, planCutTimes, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
@@ -342,5 +342,41 @@ describe('chooseBgmPath 选曲优先级链', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bgm-'))
     fs.writeFileSync(path.join(dir, 'root.mp3'), 'x') // 无情绪子目录
     expect(chooseBgmPath(dir, { bgm: '', mood: '', hook: 'pain' }, () => 0)).toBe(path.join(dir, 'root.mp3'))
+  })
+})
+
+describe('autoCutPlan 自动卡点方案', () => {
+  const grid = { t0: 0, T: 0.5 } // 拍在 0,0.5,1,...
+  it('每 cadence 拍一刀，图循环 k%shotCount', () => {
+    // duration=30 → 窗口 [6,24)；cadence=4 → beat 12,16,20,...(t0=0 时 beat=时间/0.5)
+    const cuts = autoCutPlan(grid, 2, 30, 4)
+    expect(cuts[0].beat).toBe(12)          // 6s / 0.5 = 12
+    expect(cuts[1].beat).toBe(16)          // +4 拍
+    expect(cuts[0].shot).toBe(0); expect(cuts[1].shot).toBe(1); expect(cuts[2].shot).toBe(0) // 循环
+    // 都 < 窗口末 24s → beat < 48
+    expect(cuts.every((c) => c.beat < 48)).toBe(true)
+  })
+  it('cadence=2 更密', () => {
+    expect(autoCutPlan(grid, 3, 30, 2).length).toBeGreaterThan(autoCutPlan(grid, 3, 30, 4).length)
+  })
+  it('shotCount<=0 返空', () => {
+    expect(autoCutPlan(grid, 0, 30, 4)).toEqual([])
+  })
+})
+
+describe('planCutTimes 方案→时间', () => {
+  const plan = { grid: { t0: 0.5, T: 0.5 }, offsetSec: 0, cuts: [{ beat: 12, shot: 0 }, { beat: 16, shot: 5 }] }
+  it('beat+offset+grid 算时间，shot 越界钳制，升序', () => {
+    const t = planCutTimes(plan, 3)
+    expect(t[0].start).toBeCloseTo(0.5 + 12 * 0.5, 5)   // 6.5
+    expect(t[1].start).toBeCloseTo(0.5 + 16 * 0.5, 5)   // 8.5
+    expect(t[1].shot).toBe(2)                            // 5 钳到 shotCount-1=2
+  })
+  it('offsetSec 平移所有刀', () => {
+    const t = planCutTimes({ ...plan, offsetSec: 0.2 }, 3)
+    expect(t[0].start).toBeCloseTo(6.7, 5)
+  })
+  it('shotCount<=0 返空', () => {
+    expect(planCutTimes(plan, 0)).toEqual([])
   })
 })

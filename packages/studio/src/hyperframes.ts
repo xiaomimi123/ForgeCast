@@ -343,6 +343,27 @@ export function readShots(shotsDir: string): Shot[] {
   })
 }
 
+/** 自动卡点方案：轮播窗口 [6, durationSec-6) 内每隔 cadence 拍取一刀，beat=拍序号，shot=k%shotCount。 */
+export function autoCutPlan(grid: { t0: number; T: number }, shotCount: number, durationSec: number, cadence: number): Array<{ beat: number; shot: number }> {
+  if (shotCount <= 0 || !(grid.T > 0)) return []
+  const carStart = 6, carEnd = Math.max(7, durationSec - 6)
+  const nStart = Math.max(0, Math.ceil((carStart - grid.t0) / grid.T - 1e-9))
+  const cuts: Array<{ beat: number; shot: number }> = []
+  let k = 0
+  for (let n = nStart; grid.t0 + n * grid.T < carEnd; n += cadence) {
+    cuts.push({ beat: n, shot: k % shotCount }); k++
+  }
+  return cuts
+}
+
+/** 方案每刀 → 时间：start = t0 + offsetSec + beat×T；shot 钳到 [0,shotCount-1]；按 start 升序。 */
+export function planCutTimes(plan: { grid: { t0: number; T: number }; offsetSec: number; cuts: Array<{ beat: number; shot: number }> }, shotCount: number): Array<{ start: number; shot: number }> {
+  if (shotCount <= 0) return []
+  return plan.cuts
+    .map((c) => ({ start: plan.grid.t0 + plan.offsetSec + c.beat * plan.grid.T, shot: Math.max(0, Math.min(shotCount - 1, c.shot)) }))
+    .sort((a, b) => a.start - b.start)
+}
+
 /**
  * 组装 demo 模板的分镜段（填 <!--HF_SECTIONS-->）+ 图片强拍弹跳（填 <!--HF_ACCENTS-->）。
  * 五段：钩子→痛点→截图轮播→报价→CTA。碰头/痛点/报价/CTA 固定 3s。
