@@ -4,7 +4,7 @@ import type { ForgecastConfig } from './config'
 // PUT 白名单：只有这些 key 可写入 settings 表（防止任意键注入）
 export const SETTING_KEYS = [
   'llm_mode', 'llm_key', 'llm_base_url', 'model_analysis', 'model_copy', 'model_scoring',
-  'tts_mode', 'tts_key', 'tts_model', 'tts_base_url',
+  'tts_mode', 'tts_key', 'tts_model', 'tts_base_url', 'tts_voice',
   'github_mode', 'github_token',
 ] as const
 export type SettingKey = (typeof SETTING_KEYS)[number]
@@ -43,6 +43,7 @@ export function applyStoredSettings(config: ForgecastConfig, db: Database.Databa
   put(s.tts_mode, (v) => { if (v === 'live' || v === 'stub' || v === 'kokoro') config.tts.mode = v })
   put(s.tts_key, (v) => { config.tts.apiKey = v })
   put(s.tts_model, (v) => { config.tts.model = v })
+  put(s.tts_voice, (v) => { config.tts.voice = v })
   put(s.tts_base_url, (v) => { config.tts.baseURL = v })
   put(s.github_mode, (v) => { if (v === 'live' || v === 'mock') config.github.mode = v })
   put(s.github_token, (v) => { config.github.token = v })

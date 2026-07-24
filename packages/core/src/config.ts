@@ -15,7 +15,7 @@ export interface ForgecastConfig {
   }
   github: { mode: GithubMode; token: string }
   video: { mode: VideoMode }
-  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string }
+  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string }
   paths: { workspace: string; db: string; templates: string }
 }
 
@@ -49,6 +49,7 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       baseURL: env.FORGECAST_TTS_BASE_URL || 'https://aitoken.homes/v1',
       apiKey: env.FORGECAST_TTS_KEY ?? '',
       model: env.FORGECAST_TTS_MODEL ?? '',
+      voice: env.FORGECAST_TTS_VOICE ?? '',
     },
     paths: {
       workspace: path.join(resolvedRoot, 'workspace'),

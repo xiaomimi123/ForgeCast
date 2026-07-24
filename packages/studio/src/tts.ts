@@ -97,7 +97,7 @@ export async function synthesizeVoice(
     const res = await fetchImpl(`${ctx.config.tts.baseURL}/audio/speech`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ctx.config.tts.apiKey}` },
-      body: JSON.stringify({ model: ctx.config.tts.model, input: clean, voice: 'default', response_format: 'wav' }),
+      body: JSON.stringify({ model: ctx.config.tts.model, input: clean, voice: ctx.config.tts.voice || 'default', response_format: 'wav' }),
       signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
     })
     if (!res.ok) return degrade(`TTS HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`)

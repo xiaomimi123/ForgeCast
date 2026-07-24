@@ -6,12 +6,12 @@ import { api, type SettingsView } from '../api'
 interface Draft {
   llm_mode: string; llm_key: string; llm_base_url: string
   model_analysis: string; model_copy: string; model_scoring: string
-  tts_mode: string; tts_key: string; tts_base_url: string; tts_model: string
+  tts_mode: string; tts_key: string; tts_base_url: string; tts_model: string; tts_voice: string
   github_mode: string; github_token: string
 }
 const emptyDraft: Draft = {
   llm_mode: 'mock', llm_key: '', llm_base_url: '', model_analysis: '', model_copy: '', model_scoring: '',
-  tts_mode: 'stub', tts_key: '', tts_base_url: '', tts_model: '', github_mode: 'mock', github_token: '',
+  tts_mode: 'stub', tts_key: '', tts_base_url: '', tts_model: '', tts_voice: '', github_mode: 'mock', github_token: '',
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -40,7 +40,7 @@ export default function SettingsPage() {
     setD({
       llm_mode: s.llm.mode, llm_key: '', llm_base_url: s.llm.base_url,
       model_analysis: s.llm.models.analysis, model_copy: s.llm.models.copy, model_scoring: s.llm.models.scoring,
-      tts_mode: s.tts.mode, tts_key: '', tts_base_url: s.tts.base_url, tts_model: s.tts.model,
+      tts_mode: s.tts.mode, tts_key: '', tts_base_url: s.tts.base_url, tts_model: s.tts.model, tts_voice: s.tts.voice,
       github_mode: s.github.mode, github_token: '',
     })
   }, [settings.data])
@@ -106,14 +106,16 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <h3 className="font-medium">配音 TTS（视频旁白）</h3>
           <select className="rounded border px-2 py-1 text-sm" value={d.tts_mode} onChange={(e) => set({ tts_mode: e.target.value })}>
+            <option value="kokoro">kokoro（离线中文，免 key）</option>
+            <option value="live">live（接 TTS 服务，用 key）</option>
             <option value="stub">stub（静音占位）</option>
-            <option value="live">live（用 key）</option>
           </select>
         </div>
         <Field label="API Key" hint="MiniMax 等，走 /audio/speech"><input type="password" className={inputCls} value={d.tts_key} placeholder={keyPlaceholder(s.tts.key_set, s.tts.key_masked)} onChange={(e) => set({ tts_key: e.target.value })} /></Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Base URL"><input className={inputCls} value={d.tts_base_url} onChange={(e) => set({ tts_base_url: e.target.value })} /></Field>
           <Field label="语音模型 id"><input className={inputCls} value={d.tts_model} onChange={(e) => set({ tts_model: e.target.value })} /></Field>
+          <Field label="音色 id" hint="如 MiniMax/火山 的具体音色，留空用 default"><input className={inputCls} value={d.tts_voice} onChange={(e) => set({ tts_voice: e.target.value })} /></Field>
         </div>
         <div className="flex items-center gap-3">
           <button className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={runTtsTest.isPending} onClick={() => runTtsTest.mutate()}>测试连接</button>
