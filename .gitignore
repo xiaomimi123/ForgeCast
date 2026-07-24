@@ -16,3 +16,11 @@ workspace/*/shots/
 .cache/
 templates/knowledge/dbskill/
 templates/hf/fonts/*.otf
+
+# BGM/音效素材库（授权各异，不入库；beats.json 为分析缓存）
+templates/bgm/*.mp3
+templates/bgm/*.wav
+templates/bgm/*.m4a
+templates/bgm/*.beats.json
+templates/sfx/*.mp3
+templates/sfx/*.wav

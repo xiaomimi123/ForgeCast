@@ -14,7 +14,7 @@ export interface ForgecastConfig {
     models: { analysis: string; copy: string; scoring: string }
   }
   github: { mode: GithubMode; token: string }
-  video: { mode: VideoMode }
+  video: { mode: VideoMode; bgm: string; beatPython: string }
   tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string }
   paths: { workspace: string; db: string; templates: string }
 }
@@ -40,7 +40,11 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       },
     },
     github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
-    video: { mode: videoMode },
+    video: {
+      mode: videoMode,
+      bgm: env.FORGECAST_BGM ?? '',
+      beatPython: env.FORGECAST_BEAT_PYTHON || env.FORGECAST_MELO_PYTHON || '',
+    },
     tts: {
       // 默认 kokoro（离线中文配音）；显式指定 live/stub 时按指定走
       mode: env.FORGECAST_TTS_MODE === 'live' ? 'live'
