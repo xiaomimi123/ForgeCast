@@ -120,8 +120,11 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     expect(html).toContain('class="phone"')       // 竖图手机外框
     expect(html).toContain('class="wideBg"')       // 横图虚化背景
     expect(html).toContain('<audio id="narration"')
+    expect(html).toContain('id="techbg"')            // 科技背景已注入
     expect(html).not.toContain('<!--HF_SECTIONS-->')
     expect(html).not.toContain('<!--HF_ACCENTS-->')
+    expect(html).not.toContain('<!--HF_BG-->')       // 背景标记消费干净
+    expect(html).not.toContain('<!--HF_BGANIM-->')
     // 截图拷进 assets
     expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
   })
