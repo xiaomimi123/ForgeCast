@@ -34,6 +34,7 @@
       const tl = gsap.timeline({ paused: true });
       // 气泡逐条淡入（聊天场在前 60%）
       gsap.utils.toArray(".bubble").forEach((b, i) => { tl.from(b, { opacity: 0, y: 40, duration: .5 }, 0.4 + i * 0.9); });
+      <!--HF_ACCENTS-->
       window.__timelines["main"] = tl;
     </script>
   </body>

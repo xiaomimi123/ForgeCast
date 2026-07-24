@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
+import { injectBeatAccents } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -138,5 +139,14 @@ describe('mixAudio', () => {
     const run = vi.fn(async () => { throw new Error('ffmpeg 挂') })
     await expect(mixAudio('/tmp/x.mp4', { bgmPath: '/tmp/b.mp3', sfxPath: null, strongBeats: [], durationSec: 10, deps: { run } }))
       .rejects.toThrow(/ffmpeg 挂/)
+  })
+})
+
+describe('injectBeatAccents', () => {
+  it('每个强拍生成一个脉冲，替换标记', () => {
+    const html = injectBeatAccents('<script>tl;<!--HF_ACCENTS--></script>', [1.0, 2.5])
+    expect(html).toContain('1'); expect(html).toContain('2.5')
+    expect(html).not.toContain('<!--HF_ACCENTS-->')
+    expect((html.match(/gsap|tl\./g) || []).length).toBeGreaterThanOrEqual(2)
   })
 })

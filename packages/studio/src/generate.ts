@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { buildDemoSections, buildStorySections, fillTemplate, injectAudioCaptions, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildDemoSections, buildStorySections, injectAudioCaptions, injectBeatAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
 
@@ -14,6 +15,30 @@ export interface GenerateVideoInput {
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
+/** 传给 renderAndRegister，渲染后驱动 mixAudio 的参数（与 mixAudio 的 opts 对齐，去掉 deps）。 */
+type AudioMix = { bgmPath: string; sfxPath: string | null; strongBeats: number[]; durationSec: number }
+
+/**
+ * BGM 选曲 + 节拍分析，全程 fail-soft：
+ * - `video.bgm === 'none'`（`--no-bgm`）或曲库为空 → grid=null、audioMix=undefined，调用方完全跳过。
+ * - 节拍分析失败（analyzeBeats 返 null）→ 仍加 BGM，但不卡点（strongBeats 空），打 ⚠。
+ */
+async function selectBgm(ctx: CoreCtx, durationSec: number, onProgress: (m: string) => void): Promise<{ grid: BeatGrid | null; audioMix: AudioMix | undefined }> {
+  let grid: BeatGrid | null = null
+  let audioMix: AudioMix | undefined
+  if (ctx.config.video.bgm !== 'none') {
+    const bgmDir = path.join(ctx.config.paths.templates, 'bgm')
+    const bgmPath = pickBgm(bgmDir, ctx.config.video.bgm || undefined)
+    if (bgmPath && ctx.config.video.beatPython) {
+      grid = await analyzeBeats(bgmPath, ctx.config.video.beatPython)
+      if (!grid) onProgress('⚠ 节拍分析失败，加 BGM 但不卡点')
+      const sfxDir = path.join(ctx.config.paths.templates, 'sfx')
+      const sfxPath = pickBgm(sfxDir) // 复用：取 sfx 目录第一个
+      audioMix = { bgmPath, sfxPath, strongBeats: grid?.strongBeats ?? [], durationSec }
+    }
+  }
+  return { grid, audioMix }
+}
 
 /** 取 copy 素材 → 解析 → 按 tpl 组装参数（flash 三段文字 / story 气泡+TTS配音字幕）→ 写 props.json → 渲染 mp4 → 登记 video 素材 */
 export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Promise<GeneratedVideo> {
@@ -43,11 +68,15 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // 自适应时长：跟旁白末尾对齐（下限 12s），s2 吸收标题段之后的剩余
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(12, Math.ceil(lastEnd))
+    // BGM：选曲→分析节拍（fail-soft）。段边界 s1@0/s2@6 是模板里写死的 data-start，不做吸附
+    // （段少、边界靠旁白 cue 不靠 BGM，见任务说明；只做强拍脉冲 + 混音）
+    const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
     // 先 fillTemplate 填转义 slot，再注入音轨/字幕（注释标记，不被 {{}} 正则误吃）
     const filled = fillTemplate(readTemplate('changelog'), { ...slots, duration: String(duration), s2dur: String(duration - 6) })
-    const html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration)
+    let html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration)
+    html = injectBeatAccents(html, grid?.strongBeats ?? [])
     scaffoldHfProject(hfDir, html)
-    return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress)
+    return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress, audioMix)
   }
 
   // demo：产品截图轮播（HyperFrames）。读 shots/，无图报错退出（本模板无图即无意义）
@@ -63,23 +92,18 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // 时长自适应：跟旁白末尾对齐（下限 14s），避免旁白被截断
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(14, Math.ceil(lastEnd))
-    const sections = buildDemoSections({ ...s, shots, durationSec: duration })
+    // BGM：选曲→分析节拍（fail-soft）；截图轮播/段切换边界吸附强拍
+    const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
+    const sections = buildDemoSections({ ...s, shots, durationSec: duration, beats: grid?.beats })
     let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', sections)
     html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+    html = injectBeatAccents(html, grid?.strongBeats ?? [])
     // 截图拷进 hf/assets
     const shotAssets: Record<string, Buffer> = {}
     for (const sh of shots) shotAssets[sh.rel] = fs.readFileSync(path.join(ctx.config.paths.workspace, slug, 'shots', sh.rel))
     scaffoldHfProject(hfDir, html, shotAssets)
-    const stamp2 = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const relPath = path.join(slug, 'videos', `demo-${copy.hook ?? 'demo'}-${stamp2}-${randomUUID().slice(0, 6)}.mp4`)
-    onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
-    await renderHyperframes(hfDir, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
-    const info2 = ctx.db.prepare(
-      'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
-    ).run(project.id, 'video', copy.hook, relPath, '[]')
-    onProgress(`视频完成: ${relPath}`)
-    return { assetId: Number(info2.lastInsertRowid), filePath: relPath }
+    return renderAndRegister(ctx, hfDir, slug, 'demo', copy.hook, project.id, onProgress, audioMix)
   }
 
   // story：气泡对话（HyperFrames）
@@ -92,12 +116,15 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(14, Math.ceil(lastEnd))
-    const sections = buildStorySections({ ...s, durationSec: duration })
+    // BGM：选曲→分析节拍（fail-soft）；聊天场/卖点/CTA 段切换边界吸附强拍
+    const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
+    const sections = buildStorySections({ ...s, durationSec: duration, beats: grid?.beats })
     let html = fillTemplate(readTemplate('story'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', sections)
     html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+    html = injectBeatAccents(html, grid?.strongBeats ?? [])
     scaffoldHfProject(hfDir, html)
-    return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress)
+    return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress, audioMix)
   }
 
   // flash：纯文字快闪（HyperFrames）
@@ -109,21 +136,38 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
   const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
   const duration = Math.max(12, Math.ceil(lastEnd))
+  // BGM：选曲→分析节拍（fail-soft）。段边界 s1@0/s2@4/s3@8 是模板里写死的 data-start，不做吸附
+  // （段少、边界靠旁白 cue 不靠 BGM，见任务说明；只做强拍脉冲 + 混音）
+  const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
   let html = fillTemplate(readTemplate('flash'), { ...s, duration: String(duration) })
   html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
+  html = injectBeatAccents(html, grid?.strongBeats ?? [])
   scaffoldHfProject(hfDir, html)
-  return renderAndRegister(ctx, hfDir, slug, 'flash', copy.hook, project.id, onProgress)
+  return renderAndRegister(ctx, hfDir, slug, 'flash', copy.hook, project.id, onProgress, audioMix)
 }
 
-/** 渲染 hf 项目并登记 video 素材（各 HyperFrames 分支收尾共用） */
+/**
+ * 渲染 hf 项目并登记 video 素材（各 HyperFrames 分支收尾共用）。
+ * `audioMix` 可选：渲染后调 mixAudio 把 BGM/SFX 混进成片，失败 fail-soft（保留无背景乐版本，打 ⚠）。
+ * stub 模式下即便传了 audioMix 也不真跑 mixAudio（不 spawn ffmpeg）。
+ */
 async function renderAndRegister(
   ctx: CoreCtx, hfDir: string, slug: string, tpl: string, hook: string | null,
-  projectId: number, onProgress: (m: string) => void,
+  projectId: number, onProgress: (m: string) => void, audioMix?: AudioMix,
 ): Promise<GeneratedVideo> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const relPath = path.join(slug, 'videos', `${tpl}-${hook ?? tpl}-${stamp}-${randomUUID().slice(0, 6)}.mp4`)
+  const outAbs = path.join(ctx.config.paths.workspace, relPath)
   onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
-  await renderHyperframes(hfDir, path.join(ctx.config.paths.workspace, relPath), ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
+  await renderHyperframes(hfDir, outAbs, ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
+  if (audioMix && ctx.config.video.mode !== 'stub') {
+    try {
+      onProgress('混入 BGM/音效…')
+      await mixAudio(outAbs, audioMix)
+    } catch (e) {
+      onProgress(`⚠ BGM 混音失败，保留无背景乐版本：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
   ).run(projectId, 'video', hook, relPath, '[]')

@@ -182,11 +182,13 @@ export function readShots(shotsDir: string): Shot[] {
  */
 export function buildDemoSections(opts: {
   hookTitle: string; painPoints: string[]; priceAnchor: string; cta: string; brandName: string
-  shots: Shot[]; durationSec: number
+  shots: Shot[]; durationSec: number; beats?: number[]
 }): string {
-  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec } = opts
+  const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec, beats } = opts
+  // 有节拍网格时，段/截图切换点吸附到最近的拍（卡点）
+  const snap = (t: number) => (beats && beats.length ? snapToBeat(t, beats) : t)
   const clip = (start: number, dur: number, track: number, inner: string) =>
-    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+    `<div class="clip" data-start="${snap(start)}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
   const per = shots.length ? (carEnd - carStart) / shots.length : 0
   const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
@@ -213,11 +215,13 @@ export function buildDemoSections(opts: {
  */
 export function buildStorySections(opts: {
   bubbles: Array<{ who: 'them' | 'me'; text: string }>; sellingPoint: string; cta: string; brandName: string
-  durationSec: number
+  durationSec: number; beats?: number[]
 }): string {
-  const { bubbles, sellingPoint, cta, brandName, durationSec } = opts
+  const { bubbles, sellingPoint, cta, brandName, durationSec, beats } = opts
+  // 有节拍网格时，段切换点吸附到最近的拍（卡点）
+  const snap = (t: number) => (beats && beats.length ? snapToBeat(t, beats) : t)
   const clip = (start: number, dur: number, track: number, inner: string) =>
-    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+    `<div class="clip" data-start="${snap(start)}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const bubbleHtml = bubbles.map((b) => `<div class="bubble ${b.who}">${escapeHtml(b.text)}</div>`).join('')
   const chatDur = Math.max(1, durationSec - 6)
   return [
@@ -244,6 +248,18 @@ export function runKokoroTts(text: string, outWavAbs: string, voice: string, lan
   return spawnWithTimeout(['--yes', `hyperframes@${HF_VERSION}`, 'tts', text, '--voice', voice, '--lang', lang, '--output', outWavAbs], {
     timeoutMs: TTS_SPAWN_TIMEOUT_MS, label: 'hyperframes tts',
   })
+}
+
+/**
+ * 强拍脉冲：每个 strongBeat 给 #root 叠一个轻微 scale 弹跳（幅度小防晕）。填 <!--HF_ACCENTS-->。
+ * 必须挂在主时间线 `tl` 上（`tl.to(...)`）而非裸 `gsap.to`——HyperFrames 靠 seek 暂停的 tl 逐帧渲染，
+ * 裸 gsap.to 不受 tl 时间轴控制、页面加载时会立即实时跑完，脉冲渲不出来。
+ */
+export function injectBeatAccents(html: string, strongBeats: number[]): string {
+  const lines = strongBeats.map((t) =>
+    `tl.to("#root", { keyframes: [{ scale: 1.02, duration: 0.07 }, { scale: 1.0, duration: 0.08 }] }, ${t});`,
+  ).join('\n')
+  return html.replace('<!--HF_ACCENTS-->', () => lines)
 }
 
 /** ffmpeg filter_complex：BGM 裁/loop 到时长+压 -18dB+被旁白 sidechaincompress；SFX 各强拍 adelay 后并入；最后与旁白 amix。 */
