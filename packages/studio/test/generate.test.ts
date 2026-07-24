@@ -86,7 +86,7 @@ describe('generateVideo (stub)', () => {
     expect(html).toContain('data-composition-id="main"')
     // 音轨与字幕必须真注入产物（防 fillTemplate 把注释标记以外的 {{}} 吃掉的回归）
     expect(html).toContain('<audio id="narration"')
-    expect(html).toContain('class="cap clip"')
+    expect(html).toContain('class="cap clip"') // 字幕默认烧进片（不做逐字解码，保持整齐）
     // 注释标记应已被替换掉，不残留
     expect(html).not.toContain('<!--HF_AUDIO-->')
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
@@ -120,8 +120,11 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     expect(html).toContain('class="phone"')       // 竖图手机外框
     expect(html).toContain('class="wideBg"')       // 横图虚化背景
     expect(html).toContain('<audio id="narration"')
+    expect(html).toContain('id="techbg"')            // 科技背景已注入
     expect(html).not.toContain('<!--HF_SECTIONS-->')
     expect(html).not.toContain('<!--HF_ACCENTS-->')
+    expect(html).not.toContain('<!--HF_BG-->')       // 背景标记消费干净
+    expect(html).not.toContain('<!--HF_BGANIM-->')
     // 截图拷进 assets
     expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
   })

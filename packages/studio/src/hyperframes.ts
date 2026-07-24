@@ -77,6 +77,21 @@ export function snapToBeat(t: number, beats: number[]): number {
 }
 
 /**
+ * 用线性网格 t0+n·T 外推整条视频时长内的所有拍点（不止 BGM 检测到的那段）。
+ * BGM 短于视频时会 loop，检测到的 beats 只覆盖 BGM 长度；靠 t0/T 外推让卡点全程持续。
+ * 注：loop 边界（BGM 时长非整数拍倍数处）之后，外推拍与循环后的可闻拍会有相位差——
+ * 建议用 ≥ 视频时长的 BGM。T 非正时返回检测到的 beats 兜底。
+ */
+export function gridBeats(grid: BeatGrid, durationSec: number): number[] {
+  if (!(grid.T > 0)) return grid.beats
+  const out: number[] = []
+  for (let t = grid.t0 % grid.T; t <= durationSec + 1e-9; t += grid.T) {
+    if (t >= 0) out.push(+t.toFixed(4))
+  }
+  return out
+}
+
+/**
  * 顺序吸附一组 (start,dur) 段的 start 到最近拍：吸附后保证**不早于前一段结束**(prevStart+prevDur)，
  * 防止独立吸附把相邻段拉到同一拍/倒序，导致同 track 画面重叠或错序。段须已按时间先后排列。
  * 无网格时原样返回 start。
@@ -108,6 +123,41 @@ export function pickBgm(bgmDir: string, name?: string): string | null {
   return audio.length ? path.join(bgmDir, audio[0]) : null
 }
 
+/** 科技感背景变体名。CSS 定义在各模板 <style>（class bg-<name>），此处只出内层结构 + GSAP 微动。 */
+export const TECH_BGS = ['grid', 'aurora', 'matrix', 'synth', 'mesh'] as const
+
+/** 解析背景名：random/auto → 随机挑一套（内容池自然有变化）；其余原样返回。rand 可注入便于测试。 */
+export function resolveTechBg(name: string, rand: () => number = Math.random): string {
+  if (name === 'random' || name === 'auto') return TECH_BGS[Math.floor(rand() * TECH_BGS.length)]
+  return name
+}
+/**
+ * 组装科技背景：返回 #techbg 的 class、内层 HTML、GSAP 微动行（时长已烘进，供填 <!--HF_BGANIM-->）。
+ * 动画只用 GSAP 挂主线 tl（可 seek）——不用 CSS @keyframes（逐帧 seek 下不随帧走）。未知名回落 grid。
+ */
+export function buildTechBg(variant: string, durationSec: number): { cls: string; inner: string; anim: string } {
+  const v = (TECH_BGS as readonly string[]).includes(variant) ? variant : 'grid'
+  const d = durationSec
+  const vig = '<div class="vig"></div>'
+  switch (v) {
+    case 'aurora':
+      return { cls: 'bg-aurora', inner: `<div class="mv"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{xPercent:-6,yPercent:-4},{xPercent:6,yPercent:4,duration:${d},ease:"none"},0);` }
+    case 'matrix':
+      return { cls: 'bg-matrix', inner: `<div class="mv"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{y:-220},{y:220,duration:${d},ease:"none"},0);` }
+    case 'synth':
+      return { cls: 'bg-synth', inner: `<div class="sun"></div><div class="mv"></div>${vig}`,
+        anim: `tl.to("#techbg .mv",{backgroundPosition:"0px 70px",duration:${d},ease:"none"},0);` }
+    case 'mesh':
+      return { cls: 'bg-mesh', inner: `<div class="mv"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{y:0},{y:46,duration:${d},ease:"none"},0);` }
+    default:
+      return { cls: 'bg-grid', inner: `<div class="mv"></div><div class="sweep"></div>${vig}`,
+        anim: `tl.fromTo("#techbg .mv",{y:0},{y:80,duration:${d},ease:"none"},0);tl.fromTo("#techbg .sweep",{xPercent:0},{xPercent:320,duration:${d},ease:"none"},0);` }
+  }
+}
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -127,14 +177,18 @@ export function fillTemplate(tplHtml: string, slots: Record<string, string>): st
  * cue 文本经 escapeHtml 防注入。两个标记都在 body 内。四套模板共用此逻辑（DRY），
  * 模板须提供 .cap 定位样式（bottom 字幕条）。
  */
-export function injectAudioCaptions(html: string, audioRel: string | null, cues: Cue[], durationSec: number): string {
+export function injectAudioCaptions(html: string, audioRel: string | null, cues: Cue[], durationSec: number, captions = true): string {
   const audioTag = audioRel
     ? `<audio id="narration" class="clip" data-start="0" data-duration="${durationSec}" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>`
     : ''
-  const capClips = cues.map((c) => {
-    const dur = Math.max(0.5, c.end - c.start)
-    return `<div class="cap clip" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
-  }).join('\n')
+  // 字幕默认烧进片；captions=false 则不注入（用户在平台自配字幕，避免底部文字杂乱）。
+  // 字幕不做逐字解码（会显乱），保持整齐——解码只用于标题大字（见各模板 .tw）。
+  const capClips = captions
+    ? cues.map((c) => {
+        const dur = Math.max(0.5, c.end - c.start)
+        return `<div class="cap clip" data-start="${c.start}" data-duration="${dur}" data-track-index="9">${escapeHtml(c.text)}</div>`
+      }).join('\n')
+    : ''
   // 用函数 replacer：替换值含用户文案，直接传字符串会让 $& / $` 等被当替换模式解释
   return html.replace('<!--HF_AUDIO-->', () => audioTag).replace('<!--HF_CAPTIONS-->', () => capClips)
 }
@@ -194,45 +248,76 @@ export function readShots(shotsDir: string): Shot[] {
 }
 
 /**
- * 组装 demo 模板的分镜段 HTML（填进 <!--HF_SECTIONS-->）。五段：钩子→痛点→截图轮播→报价→CTA。
- * 时长自适应：碰头/痛点/报价/CTA 固定 3s，截图轮播吸收中段剩余、按图数均分。
+ * 组装 demo 模板的分镜段（填 <!--HF_SECTIONS-->）+ 图片强拍弹跳（填 <!--HF_ACCENTS-->）。
+ * 五段：钩子→痛点→截图轮播→报价→CTA。碰头/痛点/报价/CTA 固定 3s。
+ * **截图轮播卡点**：有节拍网格时每 4 拍切一张、图不够循环轮播（切点踩拍）；无网格退回按图数均分。
+ * 每张切进来时在拍点上轻微放大回落一下（`accents`，作用在图片 clip 上，读作卡点）。
  * 竖图套手机外框（.phone），横图居中缩放 + 同图虚化背景（.wide*）。文本全 escapeHtml。
  */
 export function buildDemoSections(opts: {
   hookTitle: string; painPoints: string[]; priceAnchor: string; cta: string; brandName: string
   shots: Shot[]; durationSec: number; beats?: number[]
-}): string {
+}): { html: string; accents: string } {
   const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec, beats } = opts
-  const clip = (start: number, dur: number, track: number, inner: string) =>
-    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+  const clip = (start: number, dur: number, track: number, inner: string, id?: string) =>
+    `<div class="clip"${id ? ` id="${id}"` : ''} data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
-  const per = shots.length ? (carEnd - carStart) / shots.length : 0
-  const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
-  // 段顺序：hook(0,3)→pain(3,3)→截图 i(carStart+i*per, per)→price(dur-6,3)→cta(dur-3,3)
-  // 有节拍网格时一次性顺序吸附（防止独立吸附把相邻段拉到同一拍/倒序）
+
+  // 轮播切点：有节拍网格→每 4 拍一刀（约 2s@120BPM）、图不够循环轮播（卡点）；否则退回按图数均分
+  const hasBeats = !!(beats && beats.length)
+  let cutStarts: number[] = []
+  if (hasBeats) {
+    const win = beats!.filter((b) => b >= carStart && b < carEnd)
+    cutStarts = win.filter((_, i) => i % 4 === 0) // 每 4 拍取一刀
+  }
+  if (cutStarts.length < 2) {
+    // 无 BGM / 窗口内拍太少：退回按图数均分（与原行为一致，保证有图能播）
+    const per = shots.length ? (carEnd - carStart) / shots.length : 0
+    cutStarts = shots.map((_, i) => carStart + i * per)
+  }
+  // 每刀循环取一张图；时长 = 到下一刀（末刀到 carEnd）
+  const carClips = cutStarts.map((start, k) => ({
+    id: `car${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
+  }))
+
+  const painHtml = painPoints.map((p) => `<div class="pain tw">· ${escapeHtml(p)}</div>`).join('')
+
+  // 段顺序（时间先后）：hook(0,3)→pain(3,3)→轮播各刀→price(dur-6,3)→cta(dur-3,3)
+  // 一次性顺序吸附（防相邻段吸到同一拍/倒序）
   const segs = [
     { start: 0, dur: 3 },
     { start: 3, dur: 3 },
-    ...shots.map((_, i) => ({ start: carStart + i * per, dur: per })),
+    ...carClips.map((c) => ({ start: c.start, dur: c.dur })),
     { start: durationSec - 6, dur: 3 },
     { start: durationSec - 3, dur: 3 },
   ]
   const st = snapStarts(segs, beats)
-  const shotHtml = shots.map((s, i) => {
+
+  const shotBody = (s: Shot) => {
     // 文件名由操作者放入，转义 + encodeURI 防属性/CSS url 破坏
     const src = escapeHtml(`assets/${encodeURI(s.rel)}`)
-    const body = s.orientation === 'portrait'
+    return s.orientation === 'portrait'
       ? `<div class="phoneWrap"><div class="phone"><img src="${src}"/></div></div>`
       : `<div class="wideWrap"><div class="wideBg" style="background-image:url('${src}')"></div><div class="wideFg"><img src="${src}"/></div></div>`
-    return clip(st[2 + i], per, 2, body)
-  }).join('\n')
-  return [
-    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
+  }
+  const nCar = carClips.length
+  const carHtml = carClips.map((c, k) => clip(st[2 + k], c.dur, 2, shotBody(c.shot), c.id)).join('\n')
+  const html = [
+    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT tw">${escapeHtml(hookTitle)}</div></div>`),
     clip(st[1], 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
-    shotHtml,
-    clip(st[2 + shots.length], 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
-    clip(st[2 + shots.length + 1], 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    carHtml,
+    clip(st[2 + nCar], 3, 1, `<div class="fill pad center"><div class="price tw">${escapeHtml(priceAnchor)}</div></div>`),
+    clip(st[2 + nCar + 1], 3, 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
+
+  // 图片弹跳：每张切进来时（吸附后的 start，与画面切同拍）scale 1→1.06→1.0 弹一下。
+  // 用 keyframes 不依赖 EasePack；挂主线 tl（HF seek 暂停 tl 逐帧渲）。无 BGM 不弹。
+  const accents = hasBeats
+    ? carClips.map((_, k) =>
+        `tl.to("#car${k}", { keyframes: [{ scale: 1.06, duration: 0.08 }, { scale: 1.0, duration: 0.12 }] }, ${st[2 + k]});`,
+      ).join('\n')
+    : ''
+  return { html, accents }
 }
 
 /**
@@ -281,15 +366,13 @@ export function runKokoroTts(text: string, outWavAbs: string, voice: string, lan
 }
 
 /**
- * 强拍脉冲：每个 strongBeat 给 #root 叠一个轻微 scale 弹跳（幅度小防晕）。填 <!--HF_ACCENTS-->。
- * 必须挂在主时间线 `tl` 上（`tl.to(...)`）而非裸 `gsap.to`——HyperFrames 靠 seek 暂停的 tl 逐帧渲染，
- * 裸 gsap.to 不受 tl 时间轴控制、页面加载时会立即实时跑完，脉冲渲不出来。
+ * 填 <!--HF_ACCENTS--> 标记为 GSAP 关键帧行（无强调则清空标记）。accentLines 由各模板自备：
+ * demo 传截图弹跳（见 buildDemoSections），story/flash/changelog 这类静态文字场传 '' 不加脉冲。
+ * 关键帧行必须挂主时间线 `tl`（`tl.to(...)`）——HyperFrames 靠 seek 暂停的 tl 逐帧渲染，
+ * 裸 gsap.to 不受 tl 时间轴控制、加载时就实时跑完，渲不出来。
  */
-export function injectBeatAccents(html: string, strongBeats: number[]): string {
-  const lines = strongBeats.map((t) =>
-    `tl.to("#root", { keyframes: [{ scale: 1.02, duration: 0.07 }, { scale: 1.0, duration: 0.08 }] }, ${t});`,
-  ).join('\n')
-  return html.replace('<!--HF_ACCENTS-->', () => lines)
+export function fillAccents(html: string, accentLines: string): string {
+  return html.replace('<!--HF_ACCENTS-->', () => accentLines)
 }
 
 /** ffmpeg filter_complex：BGM 裁/loop 到时长+压 -18dB+被旁白 sidechaincompress；SFX 各强拍 adelay 后并入；最后与旁白 amix。 */

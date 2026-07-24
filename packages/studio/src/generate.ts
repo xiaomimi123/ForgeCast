@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, buildDemoSections, buildStorySections, injectAudioCaptions, injectBeatAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildDemoSections, buildStorySections, buildTechBg, gridBeats, injectAudioCaptions, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, resolveTechBg, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
@@ -68,13 +68,12 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // 自适应时长：跟旁白末尾对齐（下限 12s），s2 吸收标题段之后的剩余
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(12, Math.ceil(lastEnd))
-    // BGM：选曲→分析节拍（fail-soft）。段边界 s1@0/s2@6 是模板里写死的 data-start，不做吸附
-    // （段少、边界靠旁白 cue 不靠 BGM，见任务说明；只做强拍脉冲 + 混音）
-    const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
+    // BGM：选曲→分析节拍（fail-soft）。段边界写死在模板、不吸附；静态文字场不加脉冲，只混音
+    const { audioMix } = await selectBgm(ctx, duration, onProgress)
     // 先 fillTemplate 填转义 slot，再注入音轨/字幕（注释标记，不被 {{}} 正则误吃）
     const filled = fillTemplate(readTemplate('changelog'), { ...slots, duration: String(duration), s2dur: String(duration - 6) })
-    let html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration)
-    html = injectBeatAccents(html, grid?.strongBeats ?? [])
+    let html = injectAudioCaptions(filled, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
+    html = fillAccents(html, '')
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress, audioMix)
   }
@@ -92,13 +91,16 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // 时长自适应：跟旁白末尾对齐（下限 14s），避免旁白被截断
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(14, Math.ceil(lastEnd))
-    // BGM：选曲→分析节拍（fail-soft）；截图轮播/段切换边界吸附强拍
+    // BGM：选曲→分析节拍（fail-soft）；截图轮播每 4 拍快切+图片弹跳（卡点）
     const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
-    const sections = buildDemoSections({ ...s, shots, durationSec: duration, beats: grid?.beats })
+    const demo = buildDemoSections({ ...s, shots, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
+    const bg = buildTechBg(resolveTechBg(ctx.config.video.bg), duration)
     let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
-    html = html.replace('<!--HF_SECTIONS-->', sections)
-    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
-    html = injectBeatAccents(html, grid?.strongBeats ?? [])
+    html = html.replace('<!--HF_SECTIONS-->', () => demo.html)
+    html = html.replace('<!--HF_BG-->', () => `<div id="techbg" class="${bg.cls}">${bg.inner}</div>`)
+    html = html.replace('<!--HF_BGANIM-->', () => bg.anim)
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
+    html = fillAccents(html, demo.accents)
     // 截图拷进 hf/assets
     const shotAssets: Record<string, Buffer> = {}
     for (const sh of shots) shotAssets[sh.rel] = fs.readFileSync(path.join(ctx.config.paths.workspace, slug, 'shots', sh.rel))
@@ -116,13 +118,13 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(14, Math.ceil(lastEnd))
-    // BGM：选曲→分析节拍（fail-soft）；聊天场/卖点/CTA 段切换边界吸附强拍
+    // BGM：选曲→分析节拍（fail-soft）；聊天场/卖点/CTA 段切换边界吸附节拍；静态文字场不加脉冲
     const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
-    const sections = buildStorySections({ ...s, durationSec: duration, beats: grid?.beats })
+    const sections = buildStorySections({ ...s, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
     let html = fillTemplate(readTemplate('story'), { duration: String(duration) })
-    html = html.replace('<!--HF_SECTIONS-->', sections)
-    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
-    html = injectBeatAccents(html, grid?.strongBeats ?? [])
+    html = html.replace('<!--HF_SECTIONS-->', () => sections)
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
+    html = fillAccents(html, '')
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress, audioMix)
   }
@@ -136,12 +138,11 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
   const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
   const duration = Math.max(12, Math.ceil(lastEnd))
-  // BGM：选曲→分析节拍（fail-soft）。段边界 s1@0/s2@4/s3@8 是模板里写死的 data-start，不做吸附
-  // （段少、边界靠旁白 cue 不靠 BGM，见任务说明；只做强拍脉冲 + 混音）
-  const { grid, audioMix } = await selectBgm(ctx, duration, onProgress)
+  // BGM：选曲→分析节拍（fail-soft）。段边界写死在模板、不吸附；静态文字场不加脉冲，只混音
+  const { audioMix } = await selectBgm(ctx, duration, onProgress)
   let html = fillTemplate(readTemplate('flash'), { ...s, duration: String(duration) })
-  html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration)
-  html = injectBeatAccents(html, grid?.strongBeats ?? [])
+  html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, ctx.config.video.captions)
+  html = fillAccents(html, '')
   scaffoldHfProject(hfDir, html)
   return renderAndRegister(ctx, hfDir, slug, 'flash', copy.hook, project.id, onProgress, audioMix)
 }

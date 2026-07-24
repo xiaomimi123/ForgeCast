@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { injectBeatAccents } from '../src/hyperframes'
+import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -161,11 +161,94 @@ describe('mixAudio', () => {
   })
 })
 
-describe('injectBeatAccents', () => {
-  it('每个强拍生成一个脉冲，替换标记', () => {
-    const html = injectBeatAccents('<script>tl;<!--HF_ACCENTS--></script>', [1.0, 2.5])
-    expect(html).toContain('1'); expect(html).toContain('2.5')
-    expect(html).not.toContain('<!--HF_ACCENTS-->')
-    expect((html.match(/gsap|tl\./g) || []).length).toBeGreaterThanOrEqual(2)
+describe('gridBeats（线性网格外推整条时长）', () => {
+  const g = (t0: number, T: number) => ({ t0, T, bpm: 60 / T, beats: [t0], strongBeats: [], duration: 24 })
+  it('按 t0 相位、T 间隔外推到 durationSec（覆盖检测 beats 之外）', () => {
+    const b = gridBeats(g(0.3, 0.5), 3)
+    expect(b[0]).toBeCloseTo(0.3, 4)
+    expect(b[1] - b[0]).toBeCloseTo(0.5, 4)
+    expect(b[b.length - 1]).toBeLessThanOrEqual(3 + 1e-6)
+    expect(b.length).toBe(6) // 0.3,0.8,1.3,1.8,2.3,2.8
+  })
+  it('T 非正时兜底返回检测 beats', () => {
+    expect(gridBeats({ t0: 0, T: 0, bpm: 0, beats: [1, 2], strongBeats: [], duration: 5 }, 10)).toEqual([1, 2])
+  })
+})
+
+describe('buildTechBg 科技背景变体', () => {
+  it('已知变体出对应 class + 内层 + 烘进时长的 GSAP 微动', () => {
+    const g = buildTechBg('synth', 30)
+    expect(g.cls).toBe('bg-synth')
+    expect(g.inner).toContain('class="sun"')
+    expect(g.inner).toContain('class="mv"')
+    expect(g.anim).toContain('duration:30')
+    expect(g.anim).not.toContain('{{') // 时长已烘进，不留模板 slot
+  })
+  it('未知变体回落 grid', () => {
+    expect(buildTechBg('nope', 10).cls).toBe('bg-grid')
+  })
+  it('resolveTechBg：random 按 rng 挑一套，具体名原样返回', () => {
+    expect(resolveTechBg('synth')).toBe('synth')
+    expect(resolveTechBg('random', () => 0)).toBe('grid')       // 索引 0
+    expect(resolveTechBg('auto', () => 0.99)).toBe('mesh')      // 索引 4（末位）
+  })
+})
+
+describe('injectAudioCaptions 字幕开关', () => {
+  const cues = [{ start: 0, end: 2, text: '你好' }, { start: 2, end: 4, text: '世界' }]
+  it('captions=true 注入字幕 div（不带 tw 解码）', () => {
+    const out = injectAudioCaptions('<!--HF_AUDIO--><!--HF_CAPTIONS-->', 'a.wav', cues, 10, true)
+    expect(out).toContain('class="cap clip"')
+    expect(out).not.toContain('cap clip tw')
+    expect(out).toContain('你好')
+  })
+  it('captions=false 不注入字幕，仍保留音轨', () => {
+    const out = injectAudioCaptions('<!--HF_AUDIO--><!--HF_CAPTIONS-->', 'a.wav', cues, 10, false)
+    expect(out).not.toContain('class="cap')
+    expect(out).not.toContain('你好')
+    expect(out).toContain('<audio id="narration"')
+  })
+})
+
+describe('fillAccents', () => {
+  it('填入关键帧行并消费标记', () => {
+    const out = fillAccents('<script>tl;<!--HF_ACCENTS--></script>', 'tl.to("#car0",{},1);')
+    expect(out).toContain('tl.to("#car0"')
+    expect(out).not.toContain('<!--HF_ACCENTS-->')
+  })
+  it('空强调则清空标记', () => {
+    const out = fillAccents('<script><!--HF_ACCENTS--></script>', '')
+    expect(out).not.toContain('<!--HF_ACCENTS-->')
+    expect(out).toBe('<script></script>')
+  })
+})
+
+describe('buildDemoSections（截图轮播卡点）', () => {
+  const base = {
+    hookTitle: '钩子', painPoints: ['痛1', '痛2'], priceAnchor: '¥99', cta: '扣1', brandName: 'demo',
+    shots: [{ rel: '01.png', orientation: 'portrait' as const }, { rel: '02.png', orientation: 'landscape' as const }],
+  }
+  it('有节拍网格：每 4 拍一刀、图不够循环、每张切进来弹跳', () => {
+    // T=0.5s 的密网格（0..29.5），窗口 [6, 24)，每 4 拍(=2s)一刀
+    const beats = Array.from({ length: 60 }, (_, i) => +(i * 0.5).toFixed(2))
+    const r = buildDemoSections({ ...base, durationSec: 30, beats })
+    // 多于图片数的切点（>2）→ 说明在快切而非按图数均分
+    const nCar = (r.html.match(/id="car\d+"/g) || []).length
+    expect(nCar).toBeGreaterThan(base.shots.length)
+    // 循环取图：两张图的 src 都出现（且 01 出现多次）
+    expect(r.html).toContain('01.png'); expect(r.html).toContain('02.png')
+    expect((r.html.match(/01\.png/g) || []).length).toBeGreaterThanOrEqual(2)
+    // 每刀一条图片弹跳，挂在对应 #carK 上、消费标记后可注入
+    expect(r.accents).toContain('tl.to("#car0"')
+    expect(r.accents.split('\n').length).toBe(nCar)
+    // 切点落在拍网格上（首刀 data-start 是 0.5 的整数倍）
+    const firstCar = r.html.match(/id="car0" data-start="([0-9.]+)"/)
+    expect(firstCar).toBeTruthy()
+    expect((Number(firstCar![1]) / 0.5) % 1).toBeCloseTo(0, 5)
+  })
+  it('无 BGM：退回按图数均分、不加弹跳', () => {
+    const r = buildDemoSections({ ...base, durationSec: 30 })
+    expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length) // 一图一段
+    expect(r.accents).toBe('') // 无 BGM 不卡点不弹
   })
 })

@@ -108,13 +108,15 @@ async function main() {
     }
     case 'video': {
       const slug = rest.find((a) => !a.startsWith('--'))
-      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>]'); process.exit(1) }
+      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--no-captions]'); process.exit(1) }
       const ctx = ctxWithNotes()
       const assetArg = arg('asset')
       // tpl 白名单：story/demo/changelog 显式放行，其余（含未传）回落 flash
       const tpl = (['story', 'demo', 'changelog'] as const).includes(arg('tpl') as any) ? (arg('tpl') as 'story' | 'demo' | 'changelog') : 'flash'
       if (rest.includes('--no-bgm')) ctx.config.video.bgm = 'none'
       else if (arg('bgm')) ctx.config.video.bgm = arg('bgm') as string
+      if (rest.includes('--no-captions')) ctx.config.video.captions = false
+      if (arg('bg')) ctx.config.video.bg = arg('bg') as string
       if (rest.includes('--cut') || arg('cut') !== undefined) {
         console.log('  ⚠ --cut：videocut 预处理占位，本版未实装（需装 videocut-skills + 火山 ASR key），继续常规渲染')
       }
