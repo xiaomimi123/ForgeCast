@@ -76,6 +76,24 @@ export function snapToBeat(t: number, beats: number[]): number {
   return beats.reduce((best, b) => (Math.abs(b - t) < Math.abs(best - t) ? b : best), beats[0])
 }
 
+/**
+ * 顺序吸附一组 (start,dur) 段的 start 到最近拍：吸附后保证**不早于前一段结束**(prevStart+prevDur)，
+ * 防止独立吸附把相邻段拉到同一拍/倒序，导致同 track 画面重叠或错序。段须已按时间先后排列。
+ * 无网格时原样返回 start。
+ */
+export function snapStarts(segs: Array<{ start: number; dur: number }>, beats?: number[]): number[] {
+  if (!beats || !beats.length) return segs.map((s) => s.start)
+  const out: number[] = []
+  let prevEnd = -Infinity
+  for (const { start, dur } of segs) {
+    let s = snapToBeat(start, beats)
+    if (s < prevEnd) s = prevEnd // 不早于前一段结束
+    out.push(s)
+    prevEnd = s + dur
+  }
+  return out
+}
+
 /** 曲库选曲：name 指定则补 .mp3/.wav 后缀命中；否则字典序第一个音频；无则 null。 */
 export function pickBgm(bgmDir: string, name?: string): string | null {
   if (!fs.existsSync(bgmDir)) return null
@@ -185,27 +203,35 @@ export function buildDemoSections(opts: {
   shots: Shot[]; durationSec: number; beats?: number[]
 }): string {
   const { hookTitle, painPoints, priceAnchor, cta, brandName, shots, durationSec, beats } = opts
-  // 有节拍网格时，段/截图切换点吸附到最近的拍（卡点）
-  const snap = (t: number) => (beats && beats.length ? snapToBeat(t, beats) : t)
   const clip = (start: number, dur: number, track: number, inner: string) =>
-    `<div class="clip" data-start="${snap(start)}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
   const per = shots.length ? (carEnd - carStart) / shots.length : 0
   const painHtml = painPoints.map((p) => `<div class="pain">· ${escapeHtml(p)}</div>`).join('')
+  // 段顺序：hook(0,3)→pain(3,3)→截图 i(carStart+i*per, per)→price(dur-6,3)→cta(dur-3,3)
+  // 有节拍网格时一次性顺序吸附（防止独立吸附把相邻段拉到同一拍/倒序）
+  const segs = [
+    { start: 0, dur: 3 },
+    { start: 3, dur: 3 },
+    ...shots.map((_, i) => ({ start: carStart + i * per, dur: per })),
+    { start: durationSec - 6, dur: 3 },
+    { start: durationSec - 3, dur: 3 },
+  ]
+  const st = snapStarts(segs, beats)
   const shotHtml = shots.map((s, i) => {
     // 文件名由操作者放入，转义 + encodeURI 防属性/CSS url 破坏
     const src = escapeHtml(`assets/${encodeURI(s.rel)}`)
     const body = s.orientation === 'portrait'
       ? `<div class="phoneWrap"><div class="phone"><img src="${src}"/></div></div>`
       : `<div class="wideWrap"><div class="wideBg" style="background-image:url('${src}')"></div><div class="wideFg"><img src="${src}"/></div></div>`
-    return clip(carStart + i * per, per, 2, body)
+    return clip(st[2 + i], per, 2, body)
   }).join('\n')
   return [
-    clip(0, 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
-    clip(3, 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
+    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT">${escapeHtml(hookTitle)}</div></div>`),
+    clip(st[1], 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
     shotHtml,
-    clip(durationSec - 6, 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
-    clip(durationSec - 3, 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[2 + shots.length], 3, 1, `<div class="fill pad center"><div class="price">${escapeHtml(priceAnchor)}</div></div>`),
+    clip(st[2 + shots.length + 1], 3, 1, `<div class="fill pad center"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
 }
 
@@ -218,16 +244,20 @@ export function buildStorySections(opts: {
   durationSec: number; beats?: number[]
 }): string {
   const { bubbles, sellingPoint, cta, brandName, durationSec, beats } = opts
-  // 有节拍网格时，段切换点吸附到最近的拍（卡点）
-  const snap = (t: number) => (beats && beats.length ? snapToBeat(t, beats) : t)
   const clip = (start: number, dur: number, track: number, inner: string) =>
-    `<div class="clip" data-start="${snap(start)}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
   const bubbleHtml = bubbles.map((b) => `<div class="bubble ${b.who}">${escapeHtml(b.text)}</div>`).join('')
   const chatDur = Math.max(1, durationSec - 6)
+  // 段顺序：chat(0, chatDur)→sell(dur-6,3)→cta(dur-3,3)。有节拍网格时一次性顺序吸附
+  const st = snapStarts([
+    { start: 0, dur: chatDur },
+    { start: durationSec - 6, dur: 3 },
+    { start: durationSec - 3, dur: 3 },
+  ], beats)
   return [
-    clip(0, chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
-    clip(durationSec - 6, 3, 1, `<div class="fill pad center sellFill"><div class="sell">${escapeHtml(sellingPoint)}</div></div>`),
-    clip(durationSec - 3, 3, 1, `<div class="fill pad center sellFill"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[0], chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
+    clip(st[1], 3, 1, `<div class="fill pad center sellFill"><div class="sell">${escapeHtml(sellingPoint)}</div></div>`),
+    clip(st[2], 3, 1, `<div class="fill pad center sellFill"><div class="cta">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
 }
 

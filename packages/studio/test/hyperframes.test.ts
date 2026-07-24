@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapToBeat } from '../src/hyperframes'
+import { analyzeBeats, escapeHtml, fillTemplate, pickBgm, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { injectBeatAccents } from '../src/hyperframes'
 
@@ -98,6 +98,19 @@ describe('snapToBeat', () => {
   })
   it('beats 空时原样返回', () => {
     expect(snapToBeat(3.1, [])).toBe(3.1)
+  })
+})
+
+describe('snapStarts（顺序吸附防重叠）', () => {
+  it('无网格原样返回 start', () => {
+    expect(snapStarts([{ start: 0, dur: 3 }, { start: 3, dur: 3 }], undefined)).toEqual([0, 3])
+  })
+  it('密集拍网格下吸附后仍单调、后段不早于前段结束', () => {
+    const beats = Array.from({ length: 40 }, (_, i) => +(i * 0.3).toFixed(2)) // T=0.3s 很密
+    const segs = [{ start: 0, dur: 3 }, { start: 3, dur: 3 }, { start: 6, dur: 3 }]
+    const st = snapStarts(segs, beats)
+    expect(st[1]).toBeGreaterThanOrEqual(st[0] + segs[0].dur) // pain 不早于 hook 结束
+    expect(st[2]).toBeGreaterThanOrEqual(st[1] + segs[1].dur) // price 不早于 pain 结束
   })
 })
 

@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { copyFixtures, createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as hyperframes from '../src/hyperframes'
 import { generateVideo } from '../src/generate'
 
 let ctx: CoreCtx
@@ -61,6 +62,18 @@ describe('generateVideo (stub)', () => {
     expect(out.filePath).toContain('flash-')
     // hf 项目仍产出，无 BGM 分支不抛错
     expect(fs.existsSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'))).toBe(true)
+  })
+  it('stub 模式即便配了 beatPython 且曲库有曲，也不跑节拍分析（不 spawn librosa）', async () => {
+    // 曲库放一首"曲子"、配上 beatPython——开发机常见组合（导出了 FORGECAST_MELO_PYTHON）
+    const bgmDir = path.join(root, 'templates/bgm')
+    fs.mkdirSync(bgmDir, { recursive: true })
+    fs.writeFileSync(path.join(bgmDir, 'tech.mp3'), 'fake')
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub', FORGECAST_BEAT_PYTHON: '/fake/py' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const spy = vi.spyOn(hyperframes, 'analyzeBeats')
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
   })
   it('tpl=changelog 走 HyperFrames stub，产出 asset 行与 hf 项目', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })

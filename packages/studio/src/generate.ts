@@ -29,7 +29,7 @@ async function selectBgm(ctx: CoreCtx, durationSec: number, onProgress: (m: stri
   if (ctx.config.video.bgm !== 'none') {
     const bgmDir = path.join(ctx.config.paths.templates, 'bgm')
     const bgmPath = pickBgm(bgmDir, ctx.config.video.bgm || undefined)
-    if (bgmPath && ctx.config.video.beatPython) {
+    if (bgmPath && ctx.config.video.beatPython && ctx.config.video.mode !== 'stub') {
       grid = await analyzeBeats(bgmPath, ctx.config.video.beatPython)
       if (!grid) onProgress('⚠ 节拍分析失败，加 BGM 但不卡点')
       const sfxDir = path.join(ctx.config.paths.templates, 'sfx')
