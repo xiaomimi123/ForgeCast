@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 
 export interface Lead {
@@ -31,6 +33,19 @@ export function registerClip(ctx: CoreCtx, input: { slug: string; file: string }
 export function approveAsset(ctx: CoreCtx, assetId: number): void {
   assertAsset(ctx, assetId)
   ctx.db.prepare("UPDATE assets SET status = 'approved' WHERE id = ? AND status != 'published'").run(assetId)
+}
+
+/** 硬删素材：删 DB 行 + 磁盘文件。有关联询单则拦下（保护归因数据）。文件缺失不报错。 */
+export function deleteAsset(ctx: CoreCtx, assetId: number): void {
+  const row = ctx.db.prepare('SELECT id, file_path FROM assets WHERE id = ?').get(assetId) as { id: number; file_path: string } | undefined
+  if (!row) throw new Error(`素材不存在: ${assetId}`)
+  const lead = ctx.db.prepare('SELECT COUNT(*) AS n FROM leads WHERE asset_id = ?').get(assetId) as { n: number }
+  if (lead.n > 0) throw new Error('该素材有关联询单，不能删除')
+  // 删文件：解析后必须落在 workspace 内（防 file_path 里的 ../ 穿越），且文件存在才删
+  const ws = path.resolve(ctx.config.paths.workspace)
+  const abs = path.resolve(ws, row.file_path)
+  if (abs.startsWith(ws + path.sep) && fs.existsSync(abs)) fs.rmSync(abs)
+  ctx.db.prepare('DELETE FROM assets WHERE id = ?').run(assetId)
 }
 
 /** 回填发布：状态置 published，记发布时间/平台/链接 */
