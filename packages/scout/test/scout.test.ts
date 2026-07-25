@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addRepo, scoutCandidates } from '../src/scout'
+import { addRepo, candidatesNeedingRescore, scoutCandidates } from '../src/scout'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -50,5 +50,19 @@ describe('description 采集', () => {
     await scoutCandidates(ctx)
     const row: any = ctx.db.prepare('SELECT description FROM candidates WHERE repo = ?').get('chatwoot/chatwoot')
     expect(row.description).toBe('开源多渠道在线客服平台')
+  })
+})
+
+describe('candidatesNeedingRescore', () => {
+  it('只返回 targetBuyer 为空/缺/坏JSON/NULL 的候选 id', () => {
+    const ins = ctx.db.prepare("INSERT INTO candidates (repo,url,license_ok,score,score_detail,status) VALUES (?,?,1,50,?, 'candidate')")
+    ins.run('a/done', 'u1', JSON.stringify({ rebrandCost: 10, targetBuyer: '律所老板' })) // 已真评
+    ins.run('a/empty', 'u2', JSON.stringify({ rebrandCost: 10, targetBuyer: '' }))          // 空串→需评
+    ins.run('a/missing', 'u3', JSON.stringify({ rebrandCost: 10 }))                          // 缺字段→需评
+    ins.run('a/bad', 'u4', '{坏json')                                                        // 坏JSON→需评
+    ins.run('a/null', 'u5', null)                                                            // NULL→需评
+    const need = candidatesNeedingRescore(ctx)
+    const repos = need.map((id) => (ctx.db.prepare('SELECT repo FROM candidates WHERE id=?').get(id) as any).repo).sort()
+    expect(repos).toEqual(['a/bad', 'a/empty', 'a/missing', 'a/null']) // 不含 a/done
   })
 })
