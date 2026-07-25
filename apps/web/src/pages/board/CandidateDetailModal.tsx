@@ -25,7 +25,7 @@ export default function CandidateDetailModal({ candidate, onClose }: { candidate
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
 
-  const intro = res && res.mode === 'live' ? res.intro : null
+  const live = res && res.mode === 'live' ? res : null
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
@@ -54,29 +54,29 @@ export default function CandidateDetailModal({ candidate, onClose }: { candidate
           </div>
         )}
 
-        {!loading && intro && (
+        {!loading && live && (
           <div className="space-y-4 py-3 text-sm">
             <section>
               <h3 className="mb-1 font-medium text-neutral-800">产品简介</h3>
-              <p className="text-neutral-600">{intro.summary}</p>
+              <p className="text-neutral-600">{live.intro.summary}</p>
             </section>
             <section>
               <h3 className="mb-1 font-medium text-neutral-800">核心功能</h3>
               <ul className="list-disc space-y-0.5 pl-5 text-neutral-600">
-                {intro.features.map((f, i) => <li key={i}>{f}</li>)}
+                {live.intro.features.map((f, i) => <li key={i}>{f}</li>)}
               </ul>
             </section>
             <section>
               <h3 className="mb-1 font-medium text-neutral-800">目标用户</h3>
-              <p className="text-neutral-600">{intro.targetUser}</p>
+              <p className="text-neutral-600">{live.intro.targetUser}</p>
             </section>
             <section>
               <h3 className="mb-1 font-medium text-neutral-800">行业痛点</h3>
-              <p className="text-neutral-600">{intro.painPoint}</p>
+              <p className="text-neutral-600">{live.intro.painPoint}</p>
             </section>
             <section>
               <h3 className="mb-1 font-medium text-neutral-800">换皮卖点</h3>
-              <p className="text-neutral-600">{intro.rebrandIdea}</p>
+              <p className="text-neutral-600">{live.intro.rebrandIdea}</p>
             </section>
             {d && (
               <section className="border-t pt-3">
@@ -88,7 +88,7 @@ export default function CandidateDetailModal({ candidate, onClose }: { candidate
               </section>
             )}
             <div className="flex items-center gap-3 border-t pt-2 text-xs text-neutral-400">
-              <span>生成于 {new Date(intro.generatedAt).toLocaleString()}{res.cached ? '（缓存）' : ''}</span>
+              <span>生成于 {new Date(live.intro.generatedAt).toLocaleString()}{live.cached ? '（缓存）' : ''}</span>
               <button className="ml-auto rounded border px-2 py-1 text-neutral-600" onClick={() => load(true)}>重新生成</button>
             </div>
           </div>
