@@ -77,7 +77,7 @@ export default function BoardPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={scanning} onClick={scout}>
+        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={scanning || rescoringAll} onClick={scout}>
           {scanning ? '抓取中…' : '抓取候选'}
         </button>
         <button className="rounded border px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={rescoreAll}>
