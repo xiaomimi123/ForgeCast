@@ -71,9 +71,23 @@ export default function BoardPage() {
     } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setRescoringAll(false) }
   }
 
+  const [cat, setCat] = useState<string | null>(null)
+  const catOf = (c: { score_detail: string | null }): string => {
+    try { return (c.score_detail && (JSON.parse(c.score_detail) as any)?.category) || '' } catch { return '' }
+  }
+  async function backfillCats() {
+    try {
+      const r = await api<{ updated: number }>('/api/candidates/backfill-categories', { method: 'POST' })
+      alert(`已回填 ${r.updated} 个候选的领域分类`); qc.invalidateQueries({ queryKey: ['candidates'] })
+    } catch (e) { alert('回填失败：' + (e instanceof Error ? e.message : String(e))) }
+  }
+
   const rows = candidates.data ?? []
   const ok = rows.filter((c) => c.license_ok === 1)
   const blocked = rows.filter((c) => c.license_ok !== 1)
+  const catCounts = new Map<string, number>()
+  for (const c of ok) { const k = catOf(c); if (k) catCounts.set(k, (catCounts.get(k) ?? 0) + 1) }
+  const okShown = cat ? ok.filter((c) => catOf(c) === cat) : ok
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -83,8 +97,19 @@ export default function BoardPage() {
         <button className="rounded border px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={rescoreAll}>
           {rescoringAll ? '评分中…' : '全部重新评分'}
         </button>
+        <button className="rounded border px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={backfillCats}>
+          分类回填
+        </button>
         <span className="text-sm text-neutral-500">共 {rows.length} 个候选</span>
       </div>
+      {catCounts.size > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button className={`rounded-full border px-3 py-1 ${cat === null ? 'bg-blue-600 text-white' : 'bg-white'}`} onClick={() => setCat(null)}>全部 ({ok.length})</button>
+          {[...catCounts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => (
+            <button key={k} className={`rounded-full border px-3 py-1 ${cat === k ? 'bg-blue-600 text-white' : 'bg-white'}`} onClick={() => setCat(k)}>{k} ({n})</button>
+          ))}
+        </div>
+      )}
       {logs.length > 0 && (
         <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-32 overflow-y-auto space-y-1">
           {logs.map((l, i) => <div key={i}>{l}</div>)}
@@ -92,7 +117,7 @@ export default function BoardPage() {
       )}
       {/* 候选卡片：协议可商用的排前面，不可商用的折叠到底部 */}
       <div className="grid gap-3 md:grid-cols-2">
-        {ok.map((c, i) => (
+        {okShown.map((c, i) => (
           <CandidateCard key={c.id} c={c} rank={i + 1}
             onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
             picking={pickingRepos.has(c.repo)} rescoring={rescoringIds.has(c.id)} />

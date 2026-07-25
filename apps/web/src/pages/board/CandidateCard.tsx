@@ -10,6 +10,7 @@ const DIMS = [
 interface Detail {
   rebrandCost: number; buyerClarity: number; visualAppeal: number
   rationale: string; targetBuyer: string; painPoint: string
+  category: string
 }
 /** 数值字段兜底：非 number 或 NaN/Infinity 一律按 0 处理，避免脏数据渲染出 NaN% 的色条 */
 function num(x: unknown): number {
@@ -27,6 +28,7 @@ function parseDetail(sd: string | null): Detail | null {
     return {
       rebrandCost: num(o.rebrandCost), buyerClarity: num(o.buyerClarity), visualAppeal: num(o.visualAppeal),
       rationale: str(o.rationale), targetBuyer: str(o.targetBuyer), painPoint: str(o.painPoint),
+      category: str(o.category),
     }
   } catch { return null }
 }
@@ -69,6 +71,9 @@ export default function CandidateCard({ c, rank, onPick, onRescore, picking, res
         <a className="font-medium text-blue-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
         <span className="text-xs text-neutral-400">★{num(c.stars).toLocaleString()}</span>
         <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">{c.license ?? '—'}</span>
+        {d?.category && d.category !== '其它' && (
+          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700">{d.category}</span>
+        )}
         <span className="ml-auto text-sm font-semibold">{c.score ?? '—'}</span>
       </div>
 
