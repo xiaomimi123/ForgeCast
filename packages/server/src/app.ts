@@ -4,7 +4,7 @@ import path from 'node:path'
 import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
 import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
-import { addLead, calendarSuggestions, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
+import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
@@ -374,6 +374,18 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
 
   // —— M6 运营辅助 ——
   const assetExists = (id: string) => !!ctx.db.prepare('SELECT id FROM assets WHERE id = ?').get(id)
+
+  app.delete('/api/assets/:id', (c) => {
+    const id = c.req.param('id')
+    if (!assetExists(id)) return c.json({ error: '素材不存在' }, 404)
+    try {
+      deleteAsset(ctx, Number(id))
+      return c.json({ ok: true })
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      return c.json({ error: m }, m.includes('询单') ? 409 : 500) // 询单护栏→409，其它→500
+    }
+  })
 
   app.post('/api/assets/:id/publish', async (c) => {
     const id = c.req.param('id')

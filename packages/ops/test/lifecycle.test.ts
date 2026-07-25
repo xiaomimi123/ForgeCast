@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addLead, approveAsset, listLeads, publishAsset, recordPerf, registerClip } from '../src/lifecycle'
+import { addLead, approveAsset, deleteAsset, listLeads, publishAsset, recordPerf, registerClip } from '../src/lifecycle'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -82,5 +82,38 @@ describe('addLead / listLeads', () => {
   })
   it('素材不存在抛错', () => {
     expect(() => addLead(ctx, { assetId: 999 })).toThrow(/素材不存在/)
+  })
+})
+
+describe('deleteAsset', () => {
+  it('删 DB 行 + 磁盘文件', () => {
+    // 建一个 video 素材 + 真文件
+    const rel = 'demo/videos/x.mp4'
+    const abs = path.join(ctx.config.paths.workspace, rel)
+    fs.mkdirSync(path.dirname(abs), { recursive: true }); fs.writeFileSync(abs, 'fake')
+    const info = ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (1,'video','pain',?, 'draft')").run(rel)
+    const id = Number(info.lastInsertRowid)
+    deleteAsset(ctx, id)
+    expect(ctx.db.prepare('SELECT id FROM assets WHERE id = ?').get(id)).toBeUndefined() // 行没了
+    expect(fs.existsSync(abs)).toBe(false)                                                // 文件没了
+  })
+  it('文件已不在仍删行不崩', () => {
+    const info = ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (1,'video','pain','demo/videos/gone.mp4','draft')").run()
+    const id = Number(info.lastInsertRowid)
+    expect(() => deleteAsset(ctx, id)).not.toThrow()
+    expect(ctx.db.prepare('SELECT id FROM assets WHERE id = ?').get(id)).toBeUndefined()
+  })
+  it('有关联询单 → 抛错，行与文件都不动', () => {
+    const rel = 'demo/videos/y.mp4'; const abs = path.join(ctx.config.paths.workspace, rel)
+    fs.mkdirSync(path.dirname(abs), { recursive: true }); fs.writeFileSync(abs, 'fake')
+    const info = ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path, status) VALUES (1,'video','pain',?, 'draft')").run(rel)
+    const id = Number(info.lastInsertRowid)
+    ctx.db.prepare('INSERT INTO leads (asset_id, wechat) VALUES (?, ?)').run(id, 'wx1')
+    expect(() => deleteAsset(ctx, id)).toThrow(/询单/)
+    expect(ctx.db.prepare('SELECT id FROM assets WHERE id = ?').get(id)).toBeDefined() // 行还在
+    expect(fs.existsSync(abs)).toBe(true)                                              // 文件还在
+  })
+  it('不存在的 id → 抛错', () => {
+    expect(() => deleteAsset(ctx, 99999)).toThrow(/不存在/)
   })
 })
