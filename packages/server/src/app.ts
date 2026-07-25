@@ -6,7 +6,7 @@ import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, ty
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, candidatesNeedingRescore, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, backfillCategories, candidatesNeedingRescore, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -270,6 +270,10 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
     }
+  })
+
+  app.post('/api/candidates/backfill-categories', (c) => {
+    return c.json({ updated: backfillCategories(ctx) })
   })
 
   app.post('/api/candidates/rescore-all', (c) => {
