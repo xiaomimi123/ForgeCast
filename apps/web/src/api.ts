@@ -9,6 +9,11 @@ export interface Asset {
   file_path: string; status: 'draft' | 'approved' | 'published'; warnings: string | null
 }
 export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string }
+export interface IntroDetail {
+  summary: string; features: string[]; targetUser: string
+  painPoint: string; rebrandIdea: string; generatedAt: string
+}
+export type IntroResponse = { mode: 'mock' } | { mode: 'live'; cached: boolean; intro: IntroDetail }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   // 默认 content-type，但允许调用方经 init.headers 覆盖（原写法 ...init 会整体丢掉默认头）

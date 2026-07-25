@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { api, subscribeTask, type Candidate, type Project } from '../api'
 import CandidateCard from './board/CandidateCard'
+import CandidateDetailModal from './board/CandidateDetailModal'
 import StageLanes from './board/StageLanes'
 
 export default function BoardPage() {
@@ -72,6 +73,7 @@ export default function BoardPage() {
   }
 
   const [cat, setCat] = useState<string | null>(null)
+  const [detailOf, setDetailOf] = useState<Candidate | null>(null)
   const catOf = (c: { score_detail: string | null }): string => {
     try { return (c.score_detail && (JSON.parse(c.score_detail) as any)?.category) || '' } catch { return '' }
   }
@@ -120,6 +122,7 @@ export default function BoardPage() {
         {okShown.map((c, i) => (
           <CandidateCard key={c.id} c={c} rank={i + 1}
             onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
+            onOpenDetail={setDetailOf}
             picking={pickingRepos.has(c.repo)} rescoring={rescoringIds.has(c.id)} />
         ))}
       </div>
@@ -139,6 +142,8 @@ export default function BoardPage() {
       )}
 
       <StageLanes projects={projects.data ?? []} loaded={projects.isSuccess} onMove={(slug, stage) => moveStage.mutate({ slug, stage })} />
+
+      {detailOf && <CandidateDetailModal candidate={detailOf} onClose={() => setDetailOf(null)} />}
     </div>
   )
 }

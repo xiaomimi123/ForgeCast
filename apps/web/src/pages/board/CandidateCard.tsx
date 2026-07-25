@@ -1,13 +1,13 @@
 import type { Candidate } from '../../api'
 
 // 三个评分维度各自的满分（§3 四维模型，协议为一票否决不计分）
-const DIMS = [
+export const DIMS = [
   { key: 'rebrandCost', label: '换皮', max: 30 },
   { key: 'buyerClarity', label: '买家', max: 40 },
   { key: 'visualAppeal', label: '可视', max: 30 },
 ] as const
 
-interface Detail {
+export interface Detail {
   rebrandCost: number; buyerClarity: number; visualAppeal: number
   rationale: string; targetBuyer: string; painPoint: string
   category: string
@@ -21,7 +21,7 @@ function str(x: unknown): string {
   return typeof x === 'string' ? x : ''
 }
 /** 旧行可能没有 targetBuyer/painPoint，一律按空串兜底 */
-function parseDetail(sd: string | null): Detail | null {
+export function parseDetail(sd: string | null): Detail | null {
   if (!sd) return null
   try {
     const o = JSON.parse(sd)
@@ -33,7 +33,7 @@ function parseDetail(sd: string | null): Detail | null {
   } catch { return null }
 }
 
-function Bar({ label, value, max }: { label: string; value: number; max: number }) {
+export function Bar({ label, value, max }: { label: string; value: number; max: number }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100))
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -56,9 +56,9 @@ function Row({ icon, label, value, muted }: { icon: string; label: string; value
   )
 }
 
-export default function CandidateCard({ c, rank, onPick, onRescore, picking, rescoring }: {
+export default function CandidateCard({ c, rank, onPick, onRescore, onOpenDetail, picking, rescoring }: {
   c: Candidate; rank: number
-  onPick: (repo: string) => void; onRescore: (id: number) => void
+  onPick: (repo: string) => void; onRescore: (id: number) => void; onOpenDetail: (c: Candidate) => void
   picking: boolean; rescoring: boolean
 }) {
   const d = parseDetail(c.score_detail)
@@ -98,6 +98,8 @@ export default function CandidateCard({ c, rank, onPick, onRescore, picking, res
               disabled={picking} onClick={() => onPick(c.repo)}>立项</button>}
         <button className="rounded border px-2 py-1 text-xs text-neutral-500 disabled:opacity-50"
           disabled={rescoring} onClick={() => onRescore(c.id)}>{rescoring ? '评分中…' : '重新评分'}</button>
+        <button className="rounded border px-2 py-1 text-xs text-blue-600 disabled:opacity-50"
+          onClick={() => onOpenDetail(c)}>详情</button>
       </div>
     </div>
   )
