@@ -76,5 +76,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
   ensureColumn(db, 'assets', 'published_url', 'TEXT')
   // 迁移：给候选表补 GitHub 仓库简介列（新库已含，此为兼容旧库）
   ensureColumn(db, 'candidates', 'description', 'TEXT')
+  // 迁移：候选详情/产品说明书缓存列（新库已含，此为兼容旧库）
+  ensureColumn(db, 'candidates', 'intro_detail', 'TEXT')
   return db
 }

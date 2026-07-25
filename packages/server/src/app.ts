@@ -6,7 +6,7 @@ import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, ty
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, backfillCategories, candidatesNeedingRescore, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, backfillCategories, candidatesNeedingRescore, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -257,7 +257,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
 
   app.get('/api/candidates', (c) => {
     return c.json(ctx.db.prepare(
-      'SELECT * FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
+      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
     ).all())
   })
 
@@ -306,6 +306,26 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       return c.json({ ok: true, mode: ctx.config.llm.mode })
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
+  app.post('/api/candidates/:id/intro', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!Number.isInteger(id)) return c.json({ error: '非法 id' }, 400)
+    const row = ctx.db.prepare('SELECT intro_detail FROM candidates WHERE id = ?').get(id) as { intro_detail: string | null } | undefined
+    if (!row) return c.json({ error: '候选不存在' }, 404)
+    // mock 模式不生成（详情需 live 大模型），前端据此提示切 live
+    if (ctx.config.llm.mode === 'mock') return c.json({ mode: 'mock' })
+    const { force } = await c.req.json().catch(() => ({}))
+    if (row.intro_detail && !force) {
+      try { return c.json({ mode: 'live', cached: true, intro: JSON.parse(row.intro_detail) }) } catch { /* 坏缓存 → 落到重生成 */ }
+    }
+    try {
+      const intro = await generateCandidateIntro(ctx, id)
+      ctx.db.prepare('UPDATE candidates SET intro_detail = ? WHERE id = ?').run(JSON.stringify(intro), id)
+      return c.json({ mode: 'live', cached: false, intro })
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
     }
   })
 
