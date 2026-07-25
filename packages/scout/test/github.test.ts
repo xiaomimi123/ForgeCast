@@ -47,4 +47,40 @@ describe('createGithubClient live', () => {
     expect(url).toContain('topic%3Acrm')
     expect(init.headers.authorization).toBe('Bearer t1')
   })
+
+  it('fetchReadme：raw 命中直接返回，不打 API', async () => {
+    const fetchImpl = vi.fn(async () => new Response('# raw 内容'))
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    expect(await gh.fetchReadme('acme/widget')).toBe('# raw 内容')
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('raw.githubusercontent.com')
+  })
+
+  it('fetchReadme：raw 抛错（主机不可达）→ 回退 api.github.com readme 端点，带 Bearer + raw Accept', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('raw.githubusercontent.com')) throw new TypeError('fetch failed')
+      return new Response('# 真实 README 内容')
+    })
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    expect(await gh.fetchReadme('acme/widget')).toBe('# 真实 README 内容')
+    const apiCall = fetchImpl.mock.calls.find((c: any) => String(c[0]).includes('api.github.com/repos/acme/widget/readme'))
+    expect(apiCall, '应回退到 API readme 端点').toBeTruthy()
+    expect((apiCall![1] as any).headers.authorization).toBe('Bearer t1')
+    expect((apiCall![1] as any).headers.accept).toBe('application/vnd.github.raw')
+  })
+
+  it('fetchReadme：raw 非 200（404）也回退 API', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('raw.githubusercontent.com')) return new Response('Not Found', { status: 404 })
+      return new Response('# API 拿到的 README')
+    })
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    expect(await gh.fetchReadme('acme/widget')).toBe('# API 拿到的 README')
+  })
+
+  it('fetchReadme：raw 与 API 都失败 → 返空串（不阻断上层）', async () => {
+    const fetchImpl = vi.fn(async () => { throw new TypeError('fetch failed') })
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    expect(await gh.fetchReadme('acme/widget')).toBe('')
+  })
 })

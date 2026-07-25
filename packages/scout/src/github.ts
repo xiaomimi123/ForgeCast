@@ -47,8 +47,20 @@ export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: ty
       return [...seen.values()]
     },
     async fetchReadme(repo) {
-      const res = await fetchImpl(`https://raw.githubusercontent.com/${repo}/HEAD/README.md`)
-      return res.ok ? await res.text() : ''
+      // 先试 raw（快、免鉴权、无 API 限额）；网络失败或非 200 → 回退 GitHub API readme 端点。
+      // raw.githubusercontent.com 在受限网络（如国内）常不可达而抛 "fetch failed"，
+      // 而 api.github.com（带 token）更稳、限额更高；两者都拿不到 → 返空串，不阻断上层。
+      try {
+        const res = await fetchImpl(`https://raw.githubusercontent.com/${repo}/HEAD/README.md`)
+        if (res.ok) return await res.text()
+      } catch { /* raw 主机不可达 → 落到 API 回退 */ }
+      try {
+        const res = await fetchImpl(`https://api.github.com/repos/${repo}/readme`, {
+          headers: { ...headers, accept: 'application/vnd.github.raw' },
+        })
+        if (res.ok) return await res.text()
+      } catch { /* API 也失败 → 返空串 */ }
+      return ''
     },
     async fetchTree(repo) {
       const res = await fetchImpl(`https://api.github.com/repos/${repo}/git/trees/HEAD?recursive=1`, { headers })
