@@ -27,11 +27,26 @@ export default function AssetCard({ asset, onRegenerate, onVideo }: {
     mutationFn: (status: string) => api(`/api/assets/${asset.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
   })
+  const del = useMutation({
+    mutationFn: () => api(`/api/assets/${asset.id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
+    onError: (e) => {
+      const m = e instanceof Error ? e.message : String(e)
+      const i = m.indexOf('{'); let text = m
+      if (i >= 0) { try { const j = JSON.parse(m.slice(i)); if (j?.error) text = j.error } catch { /* 非 JSON */ } }
+      alert('删除失败：' + text)
+    },
+  })
 
   if (asset.type === 'video') {
     return (
       <div className="rounded-lg border bg-white p-3 space-y-2">
-        <div className="text-sm text-neutral-500">视频 · {asset.hook} · {asset.status}</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-neutral-500">视频 · {asset.hook} · {asset.status}</div>
+          <button className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-600 disabled:opacity-50"
+            disabled={del.isPending}
+            onClick={() => { if (window.confirm('删除这个视频？文件和记录都会删掉，不可恢复')) del.mutate() }}>删除</button>
+        </div>
         <video src={`/files/${asset.file_path}`} controls className="w-full max-h-96 rounded border bg-black" />
       </div>
     )
