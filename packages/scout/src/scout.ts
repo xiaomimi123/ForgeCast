@@ -1,7 +1,7 @@
 import type { CoreCtx } from '@forgecast/core'
 import { createGithubClient, type GithubClient } from './github'
 import { isLicenseOk } from './license'
-import { scoreCandidate } from './score'
+import { CATEGORIES, categorizeHeuristic, scoreCandidate } from './score'
 import type { RepoMeta } from './types'
 
 export const DEFAULT_TOPICS = [
@@ -99,4 +99,20 @@ export async function rescoreCandidate(ctx: CoreCtx, id: number): Promise<void> 
     repo: row.repo, url: row.url, description: row.description,
     license: row.license, stars: row.stars, lastCommit: row.last_commit, topics: [],
   }, true)
+}
+
+/** 回填现有候选的领域标签：score_detail 里 category 缺/非法的，用 categorizeHeuristic 算并写回。无 score_detail 跳过。返回更新条数。 */
+export function backfillCategories(ctx: CoreCtx): number {
+  const rows = ctx.db.prepare('SELECT id, repo, description, score_detail FROM candidates').all() as Array<{ id: number; repo: string; description: string | null; score_detail: string | null }>
+  const upd = ctx.db.prepare('UPDATE candidates SET score_detail = ? WHERE id = ?')
+  let n = 0
+  for (const r of rows) {
+    if (!r.score_detail) continue
+    let d: any
+    try { d = JSON.parse(r.score_detail) } catch { continue }
+    if (d.category && (CATEGORIES as readonly string[]).includes(d.category)) continue
+    d.category = categorizeHeuristic(r.repo, r.description ?? '', Array.isArray(d.techStack) ? d.techStack : [])
+    upd.run(JSON.stringify(d), r.id); n++
+  }
+  return n
 }

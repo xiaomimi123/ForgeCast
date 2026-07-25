@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addRepo, candidatesNeedingRescore, scoutCandidates } from '../src/scout'
+import { addRepo, backfillCategories, candidatesNeedingRescore, scoutCandidates } from '../src/scout'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -64,5 +64,22 @@ describe('candidatesNeedingRescore', () => {
     const need = candidatesNeedingRescore(ctx)
     const repos = need.map((id) => (ctx.db.prepare('SELECT repo FROM candidates WHERE id=?').get(id) as any).repo).sort()
     expect(repos).toEqual(['a/bad', 'a/empty', 'a/missing', 'a/null']) // 不含 a/done
+  })
+})
+
+describe('backfillCategories', () => {
+  it('给缺/非法 category 的候选写启发式类；已有合法的不动；无 score_detail 跳过；返回更新数', () => {
+    const ins = ctx.db.prepare("INSERT INTO candidates (repo,url,description,license_ok,score,score_detail,status) VALUES (?,?,?,1,50,?, 'candidate')")
+    ins.run('a/chat', 'u1', 'live chat helpdesk', JSON.stringify({ rebrandCost: 10, techStack: [] }))       // 缺 category → 回填
+    ins.run('a/inv', 'u2', 'invoice billing', JSON.stringify({ category: '不在表内', techStack: [] }))       // 非法 → 回填
+    ins.run('a/keep', 'u3', 'whatever', JSON.stringify({ category: 'CRM/销售', techStack: [] }))             // 合法 → 不动
+    ins.run('a/none', 'u4', 'x', null)                                                                        // 无 detail → 跳过
+    const n = backfillCategories(ctx)
+    expect(n).toBe(2)
+    const cat = (repo: string) => JSON.parse((ctx.db.prepare('SELECT score_detail FROM candidates WHERE repo=?').get(repo) as any).score_detail).category
+    expect(cat('a/chat')).toBe('客服/IM')
+    expect(cat('a/inv')).toBe('财务/发票')
+    expect(cat('a/keep')).toBe('CRM/销售') // 未被改
+    expect((ctx.db.prepare("SELECT score_detail FROM candidates WHERE repo='a/none'").get() as any).score_detail).toBeNull()
   })
 })
