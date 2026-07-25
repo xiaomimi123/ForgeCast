@@ -21,6 +21,7 @@ export interface ScoreDetail {
   rationale: string
   targetBuyer: string // 什么老板会掏钱，一句话；mock 下为空串（不编造）
   painPoint: string // 解决的行业痛点，一句话；mock 下为空串
+  category: string // 领域标签，取自 CATEGORIES
 }
 
 export interface SearchOpts { minStars: number; pushedAfter: string; perTopic: number }

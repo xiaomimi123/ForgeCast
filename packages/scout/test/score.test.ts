@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { scoreCandidate } from '../src/score'
+import { categorizeHeuristic, scoreCandidate } from '../src/score'
 
 let ctx: CoreCtx
 let root: string
@@ -45,7 +45,8 @@ describe('scoreCandidate live', () => {
     const llm = { complete: vi.fn(async () => '```json\n{"rebrandCost":24,"buyerClarity":34,"visualAppeal":21,"techStack":["react"],"rationale":"ok"}\n```') }
     const ctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
     const d = await scoreCandidate(ctx, meta, 'readme')
-    expect(d).toEqual({ rebrandCost: 24, buyerClarity: 34, visualAppeal: 21, techStack: ['react'], rationale: 'ok', targetBuyer: '', painPoint: '' })
+    // LLM 未返回 category，且启发式在 'a/b'/'readme'/['react'] 中也无命中 → 兜底"其它"
+    expect(d).toEqual({ rebrandCost: 24, buyerClarity: 34, visualAppeal: 21, techStack: ['react'], rationale: 'ok', targetBuyer: '', painPoint: '', category: '其它' })
     expect(llm.complete).toHaveBeenCalledOnce()
   })
 })
@@ -81,5 +82,23 @@ describe('targetBuyer / painPoint', () => {
     const d = await scoreCandidate(lctx, meta, 'readme')
     expect(d.targetBuyer).toBe('')
     expect(d.painPoint).toBe('')
+  })
+})
+
+describe('categorizeHeuristic 领域分类', () => {
+  it('关键词→领域；无命中→其它；领域优先于 AI', () => {
+    expect(categorizeHeuristic('foo/chatwoot', 'live chat helpdesk support', [])).toBe('客服/IM')
+    expect(categorizeHeuristic('foo/x', 'invoice billing accounting', [])).toBe('财务/发票')
+    expect(categorizeHeuristic('foo/x', 'admin dashboard analytics', [])).toBe('仪表盘/BI')
+    expect(categorizeHeuristic('foo/x', 'llm agent assistant rag', [])).toBe('AI助手/Agent')
+    expect(categorizeHeuristic('foo/x', 'just some random utility', [])).toBe('其它')
+    expect(categorizeHeuristic('foo/x', 'ai powered crm for sales', [])).toBe('CRM/销售') // 领域先于 AI
+  })
+})
+
+describe('scoreCandidate category（mock 走启发式）', () => {
+  it('mock 评分产出启发式 category', async () => {
+    const d = await scoreCandidate(ctx, { repo: 'x/chat', url: 'u', description: null, license: 'MIT', stars: 1, lastCommit: '2026-01-01', topics: [] }, 'live chat helpdesk')
+    expect(d.category).toBe('客服/IM')
   })
 })
