@@ -6,7 +6,7 @@ import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, ty
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, candidatesNeedingRescore, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -270,6 +270,23 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
     }
+  })
+
+  app.post('/api/candidates/rescore-all', (c) => {
+    const taskId = queue.enqueue(async (log) => {
+      if (ctx.config.llm.mode === 'mock') { log('⚠ 当前为 mock 模式，真评分不生效；请先到「设置」把大模型切 live 并填 key'); return }
+      const need = candidatesNeedingRescore(ctx)
+      if (!need.length) { log('无需评分：候选都已真评过'); return }
+      log(`共 ${need.length} 个候选需真评分，开始…`)
+      let ok = 0, fail = 0
+      for (const [i, id] of need.entries()) {
+        const repo = (ctx.db.prepare('SELECT repo FROM candidates WHERE id = ?').get(id) as any)?.repo ?? id
+        log(`评分中 ${i + 1}/${need.length}：${repo}`)
+        try { await rescoreCandidate(ctx, id); ok++ } catch (e) { fail++; log(`⚠ ${repo} 评分失败：${e instanceof Error ? e.message : String(e)}`) }
+      }
+      log(`完成：真评 ${ok} 个，失败跳过 ${fail} 个`)
+    })
+    return c.json({ taskId })
   })
 
   app.post('/api/candidates/:id/rescore', async (c) => {

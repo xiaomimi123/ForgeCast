@@ -77,6 +77,15 @@ function normalizeRepo(input: string): string {
   return (m ? m[1] : input).replace(/\.git$/, '').replace(/\/$/, '')
 }
 
+/** 返回"还没真评过"的候选 id：score_detail 里 targetBuyer 为空（空串/缺字段/坏JSON/NULL 都算需评）。 */
+export function candidatesNeedingRescore(ctx: CoreCtx): number[] {
+  const rows = ctx.db.prepare('SELECT id, score_detail FROM candidates').all() as Array<{ id: number; score_detail: string | null }>
+  return rows.filter((r) => {
+    if (!r.score_detail) return true
+    try { return !(JSON.parse(r.score_detail) as any)?.targetBuyer } catch { return true }
+  }).map((r) => r.id)
+}
+
 /** 重新评分单个候选：按 id 取回元数据 → 重抓 README → 重跑评分 → upsert 回写 */
 export async function rescoreCandidate(ctx: CoreCtx, id: number): Promise<void> {
   const row = ctx.db.prepare(

@@ -52,14 +52,36 @@ export default function BoardPage() {
     } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setScanning(false) }
   }
 
+  const [rescoringAll, setRescoringAll] = useState(false)
+  async function rescoreAll() {
+    if (rescoringAll || scanning) return
+    // 估算未评数：score_detail 里没有非空 targetBuyer 的
+    const n = (candidates.data ?? []).filter((c) => {
+      try { return !(c.score_detail && (JSON.parse(c.score_detail) as any)?.targetBuyer) } catch { return true }
+    }).length
+    if (n === 0) { alert('候选都已真评过，无需批量评分'); return }
+    if (!window.confirm(`将对 ${n} 个未评候选真评分，消耗 key 额度、耗时较长（每个几秒），继续？`)) return
+    setRescoringAll(true); setLogs([])
+    try {
+      const { taskId } = await api<{ taskId: string }>('/api/candidates/rescore-all', { method: 'POST' })
+      subscribeTask(taskId, (e) => {
+        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
+        if (e.type === 'done' || e.type === 'error') { setRescoringAll(false); qc.invalidateQueries({ queryKey: ['candidates'] }) }
+      })
+    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setRescoringAll(false) }
+  }
+
   const rows = candidates.data ?? []
   const ok = rows.filter((c) => c.license_ok === 1)
   const blocked = rows.filter((c) => c.license_ok !== 1)
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={scanning} onClick={scout}>
+        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={scanning || rescoringAll} onClick={scout}>
           {scanning ? '抓取中…' : '抓取候选'}
+        </button>
+        <button className="rounded border px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={rescoreAll}>
+          {rescoringAll ? '评分中…' : '全部重新评分'}
         </button>
         <span className="text-sm text-neutral-500">共 {rows.length} 个候选</span>
       </div>
