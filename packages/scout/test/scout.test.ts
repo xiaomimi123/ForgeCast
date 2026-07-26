@@ -24,6 +24,8 @@ describe('scoutCandidates (mock)', () => {
     expect(gpl.score).toBeNull()
     const scored = rows.filter((x) => x.license_ok === 1)
     expect(scored.every((x) => x.score > 0 && JSON.parse(x.score_detail).rationale)).toBe(true)
+    // 评分写库须带 category（否则看板分类缺失，需再回填）
+    expect(scored.every((x) => typeof JSON.parse(x.score_detail).category === 'string' && JSON.parse(x.score_detail).category.length > 0)).toBe(true)
     // 排序：第一名 score 不低于第二名
     expect(scored[0].score).toBeGreaterThanOrEqual(scored[1].score)
 
