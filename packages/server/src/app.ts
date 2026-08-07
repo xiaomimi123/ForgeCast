@@ -8,6 +8,10 @@ import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, rec
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCategories, candidatesNeedingRescore, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
+import {
+  addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
+  getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
+} from '@forgecast/tailor'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -484,6 +488,86 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       return indexRes() // SPA 回落
     })
   }
+
+  // —— 定制项目板块（tailor）——
+  const tailorExists = (id: number) => !!ctx.db.prepare('SELECT id FROM tailor_requests WHERE id = ?').get(id)
+  const DECISIONS = ['pending', 'wheel', 'self_build', 'dropped']
+
+  app.get('/api/tailor', (c) => c.json(listRequests(ctx)))
+  app.post('/api/tailor', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    if (typeof body.title !== 'string' || !body.title.trim()) return c.json({ error: '缺少 title' }, 400)
+    if (typeof body.rawNeed !== 'string' || !body.rawNeed.trim()) return c.json({ error: '缺少 rawNeed' }, 400)
+    return c.json(addRequest(ctx, { title: body.title, rawNeed: body.rawNeed }))
+  })
+  app.get('/api/tailor/:id', (c) => {
+    const id = Number(c.req.param('id'))
+    if (!tailorExists(id)) return c.json({ error: '需求不存在' }, 404)
+    return c.json(getRequestDetail(ctx, id))
+  })
+  app.post('/api/tailor/:id/decompose', (c) => {
+    const id = Number(c.req.param('id'))
+    if (!tailorExists(id)) return c.json({ error: '需求不存在' }, 404)
+    return c.json({ taskId: queue.enqueue((log) => decomposeRequest(ctx, id, { onProgress: log })) })
+  })
+  app.post('/api/tailor/:id/search', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!tailorExists(id)) return c.json({ error: '需求不存在' }, 404)
+    const st = (ctx.db.prepare('SELECT status FROM tailor_requests WHERE id = ?').get(id) as any).status
+    if (st === 'draft') return c.json({ error: '先拆解需求再搜轮子' }, 400)
+    const body = await c.req.json().catch(() => ({}))
+    const capabilityId = typeof body.capabilityId === 'number' ? body.capabilityId : undefined
+    return c.json({ taskId: queue.enqueue((log) => searchWheels(ctx, id, { capabilityId, onProgress: log })) })
+  })
+  app.post('/api/tailor/:id/proposal', (c) => {
+    const id = Number(c.req.param('id'))
+    if (!tailorExists(id)) return c.json({ error: '需求不存在' }, 404)
+    // 决策门禁在路由层同步拦（同样的检查 generateProposal 内部还有一道，双保险）——用户要的是 400 而不是任务失败
+    const total = (ctx.db.prepare('SELECT COUNT(*) AS n FROM tailor_capabilities WHERE request_id = ?').get(id) as any).n
+    if (!total) return c.json({ error: '没有能力清单，先拆解需求' }, 400)
+    const pending = (ctx.db.prepare("SELECT COUNT(*) AS n FROM tailor_capabilities WHERE request_id = ? AND decision = 'pending'").get(id) as any).n
+    if (pending) return c.json({ error: `还有 ${pending} 项能力未决策，决策完才能出方案书` }, 400)
+    return c.json({ taskId: queue.enqueue((log) => generateProposal(ctx, id, { onProgress: log })) })
+  })
+  app.get('/api/tailor/:id/proposal', (c) => {
+    const id = Number(c.req.param('id'))
+    const row = ctx.db.prepare('SELECT proposal_path FROM tailor_requests WHERE id = ?').get(id) as { proposal_path: string | null } | undefined
+    if (!row) return c.json({ error: '需求不存在' }, 404)
+    if (!row.proposal_path) return c.json({ error: '方案书未生成' }, 404)
+    return c.json({ md: readFileSafe(path.join(ctx.config.paths.workspace, row.proposal_path)) })
+  })
+  app.post('/api/tailor/:id/capabilities', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!tailorExists(id)) return c.json({ error: '需求不存在' }, 404)
+    const body = await c.req.json().catch(() => ({}))
+    if (typeof body.name !== 'string' || !body.name.trim()) return c.json({ error: '缺少 name' }, 400)
+    const keywords = Array.isArray(body.keywords) ? body.keywords.filter((x: unknown): x is string => typeof x === 'string') : []
+    return c.json(addCapability(ctx, id, { name: body.name, detail: body.detail, keywords }))
+  })
+  app.patch('/api/tailor/capabilities/:capId', async (c) => {
+    const capId = Number(c.req.param('capId'))
+    const body = await c.req.json().catch(() => ({}))
+    if (body.decision !== undefined && !DECISIONS.includes(body.decision)) return c.json({ error: `decision 须为 ${DECISIONS.join('/')}` }, 400)
+    try {
+      updateCapability(ctx, capId, body)
+      return c.json({ ok: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, msg.includes('不存在') ? 404 : 400)
+    }
+  })
+  app.delete('/api/tailor/capabilities/:capId', (c) => {
+    deleteCapability(ctx, Number(c.req.param('capId')))
+    return c.json({ ok: true })
+  })
+  app.post('/api/leads/:id/to-tailor', (c) => {
+    try {
+      return c.json(requestFromLead(ctx, Number(c.req.param('id'))))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, msg.includes('不存在') ? 404 : 400)
+    }
+  })
 
   return app
 }

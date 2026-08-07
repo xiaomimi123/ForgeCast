@@ -202,6 +202,9 @@ importers:
       '@forgecast/studio':
         specifier: workspace:*
         version: link:../studio
+      '@forgecast/tailor':
+        specifier: workspace:*
+        version: link:../tailor
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.30)
