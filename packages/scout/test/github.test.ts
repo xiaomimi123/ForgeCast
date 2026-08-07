@@ -84,3 +84,32 @@ describe('createGithubClient live', () => {
     expect(await gh.fetchReadme('acme/widget')).toBe('')
   })
 })
+
+describe('searchByKeywords', () => {
+  it('mock 返回 fixture，条数受 perPage 限制', async () => {
+    const gh = createGithubClient({ mode: 'mock', token: '' })
+    const r = await gh.searchByKeywords(['whatever'], { perPage: 2 })
+    expect(r.length).toBe(2)
+    expect(r[0].repo).toBeTruthy()
+  })
+  it('live 拼关键词 q 并映射字段', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      items: [{ full_name: 'a/b', html_url: 'u', description: 'd', license: { spdx_id: 'MIT' }, stargazers_count: 5, pushed_at: '2026-01-01T00:00:00Z', topics: [] }],
+    })))
+    const gh = createGithubClient({ mode: 'live', token: '' }, fetchImpl as any)
+    const r = await gh.searchByKeywords(['wechat login', 'oauth'], { perPage: 8 })
+    expect(String(fetchImpl.mock.calls[0][0])).toContain(encodeURIComponent('wechat login oauth'))
+    expect(r[0]).toMatchObject({ repo: 'a/b', license: 'MIT', stars: 5 })
+  })
+  it('live 403 抛错（带限流提示）', async () => {
+    const fetchImpl = vi.fn(async () => new Response('rate limited', { status: 403 }))
+    const gh = createGithubClient({ mode: 'live', token: '' }, fetchImpl as any)
+    await expect(gh.searchByKeywords(['x'], { perPage: 8 })).rejects.toThrow(/403/)
+  })
+  it('空 keywords 返回空数组且不发请求', async () => {
+    const fetchImpl = vi.fn()
+    const gh = createGithubClient({ mode: 'live', token: '' }, fetchImpl as any)
+    expect(await gh.searchByKeywords([], { perPage: 8 })).toEqual([])
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
