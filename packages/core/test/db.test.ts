@@ -41,4 +41,13 @@ describe('openDb', () => {
     db.close()
     expect(() => openDb(p)).not.toThrow()
   })
+  it('tailor 三表存在且可重开（幂等）', () => {
+    const db = openDb(tmpDbPath())
+    for (const t of ['tailor_requests', 'tailor_capabilities', 'tailor_wheels']) {
+      const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(t)
+      expect(row, t).toBeTruthy()
+    }
+    const r = db.prepare("INSERT INTO tailor_requests (title, raw_need) VALUES ('t','n')").run()
+    expect(db.prepare('SELECT status FROM tailor_requests WHERE id=?').get(r.lastInsertRowid)).toEqual({ status: 'draft' })
+  })
 })

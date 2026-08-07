@@ -66,6 +66,33 @@ CREATE TABLE IF NOT EXISTS knowledge_atoms (
   topic TEXT, content TEXT NOT NULL,
   meta TEXT
 );
+CREATE TABLE IF NOT EXISTS tailor_requests (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  raw_need TEXT NOT NULL,
+  lead_id INTEGER REFERENCES leads(id),
+  status TEXT DEFAULT 'draft',
+  proposal_path TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS tailor_capabilities (
+  id INTEGER PRIMARY KEY,
+  request_id INTEGER REFERENCES tailor_requests(id),
+  name TEXT NOT NULL,
+  detail TEXT,
+  keywords TEXT,
+  decision TEXT DEFAULT 'pending',
+  chosen_repo TEXT,
+  sort INTEGER
+);
+CREATE TABLE IF NOT EXISTS tailor_wheels (
+  id INTEGER PRIMARY KEY,
+  capability_id INTEGER REFERENCES tailor_capabilities(id),
+  repo TEXT NOT NULL, url TEXT NOT NULL,
+  license TEXT, license_ok INTEGER,
+  stars INTEGER, last_commit TEXT, description TEXT,
+  score REAL, score_detail TEXT
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
