@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api, type Lead, type WeeklyReport } from '../api'
 
 export default function ReviewPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const report = useQuery({ queryKey: ['report'], queryFn: () => api<WeeklyReport>('/api/report') })
   const leads = useQuery({ queryKey: ['leads'], queryFn: () => api<Lead[]>('/api/leads') })
 
@@ -23,6 +25,12 @@ export default function ReviewPage() {
       await api('/api/leads', { method: 'POST', body: JSON.stringify({ assetId: Number(lead.id), wechat: lead.wechat, intent: lead.intent }) })
       setLead({ id: '', wechat: '', intent: '' }); qc.invalidateQueries({ queryKey: ['leads'] }); qc.invalidateQueries({ queryKey: ['report'] })
     } catch (e) { alert(`登记失败: ${e instanceof Error ? e.message : String(e)}`) }
+  }
+  async function toTailor(leadId: number) {
+    try {
+      const r = await api<{ id: number }>(`/api/leads/${leadId}/to-tailor`, { method: 'POST', body: '{}' })
+      navigate(`/tailor/${r.id}`)
+    } catch (e) { alert(`转入失败: ${e instanceof Error ? e.message : String(e)}`) }
   }
 
   const r = report.data
@@ -44,7 +52,7 @@ export default function ReviewPage() {
         <div className="rounded-lg border bg-white p-4">
           <div className="mb-2 font-semibold">询单列表（{leads.data?.length ?? 0}）</div>
           <ul className="space-y-1 text-sm">
-            {leads.data?.map((l) => <li key={l.id} className="border-t py-1">[{l.hook ?? '—'}·{l.slug ?? '—'}] {l.wechat ?? '—'} · {l.intent ?? '—'} · {l.status} · {l.created_at}</li>)}
+            {leads.data?.map((l) => <li key={l.id} className="border-t py-1">[{l.hook ?? '—'}·{l.slug ?? '—'}] {l.wechat ?? '—'} · {l.intent ?? '—'} · {l.status} · {l.created_at}<button className="ml-2 rounded border px-2 py-0.5 text-xs" onClick={() => toTailor(l.id)}>转定制</button></li>)}
             {leads.data?.length === 0 && <li className="text-neutral-400">暂无询单</li>}
           </ul>
         </div>

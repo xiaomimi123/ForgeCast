@@ -56,6 +56,7 @@ forgecast calendar                                          # 今日排期建议
 forgecast report [--since=YYYY-MM-DD]                       # 各钩子转化周报
 forgecast knowledge sync [--source=<dir>] [--repo=<url>]     # 拉取 dbskill 上游 → atoms.jsonl 入库（喂文案生成）
 forgecast knowledge list                                    # 列出已入库知识原子
+forgecast tailor add|list|decompose|search|proposal   # 定制项目：需求拆解→GitHub 找轮子→拼装方案书
 ```
 
 ### 知识层（knowledge sync，§5.6）
@@ -64,8 +65,8 @@ forgecast knowledge list                                    # 列出已入库知
 `--source=<本地 dbskill checkout 或普通 md 目录>` 可跳过克隆（普通 md 目录走 parseAtoms 回退）。**合规**：dbskill 为 CC BY-NC 4.0，仅内部创作提效；`.cache/` 与 `templates/knowledge/dbskill/` 已 gitignore，其内容不提交进本仓、不打包进对外产品（§5.6 边界）。
 
 ## 目录结构
-- `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/server` 本地 API
-- `apps/web` Web 控制台（按业务流分五板块：找项目 `/scout` / 拆解需求 `/projects` / 做内容 `/workshop` / 分发营销 `/market` / 定制项目 `/tailor`）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物
+- `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/server` 本地 API
+- `apps/web` Web 控制台（按业务流分五板块：找项目 `/scout` / 拆解需求 `/projects` / 做内容 `/workshop` / 分发营销 `/market` / 定制项目 `/tailor`）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
 
 ## Docker（可选）
 ```bash
