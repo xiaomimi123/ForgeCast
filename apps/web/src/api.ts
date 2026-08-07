@@ -68,3 +68,20 @@ export interface SettingsView {
   /** 选了 live 却缺 key 时的降级说明（服务端会把模式改回 mock/stub） */
   mode_notes: string[]
 }
+export interface TailorRequest {
+  id: number; title: string; raw_need: string; lead_id: number | null
+  status: 'draft' | 'decomposed' | 'searched' | 'proposed'
+  proposal_path: string | null; created_at: string
+}
+export interface TailorWheel {
+  id: number; capability_id: number; repo: string; url: string
+  license: string | null; license_ok: number
+  stars: number; last_commit: string | null; description: string | null
+  score: number; score_detail: string
+}
+export interface TailorCapability {
+  id: number; request_id: number; name: string; detail: string | null
+  keywords: string[]; decision: 'pending' | 'wheel' | 'self_build' | 'dropped'
+  chosen_repo: string | null; sort: number; wheels: TailorWheel[]
+}
+export interface TailorDetail { request: TailorRequest; capabilities: TailorCapability[] }
