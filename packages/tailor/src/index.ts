@@ -2,3 +2,4 @@
 export * from './types'
 export * from './requests'
 export * from './decompose'
+export * from './score'
