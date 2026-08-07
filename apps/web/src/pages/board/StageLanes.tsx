@@ -55,7 +55,7 @@ export default function StageLanes({ projects, onMove, loaded }: {
           )
         })}
       </div>
-      {loaded && projects.length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先在候选卡片点「立项」</div>}
+      {loaded && projects.length === 0 && <div className="mt-1 text-xs text-neutral-400">暂无立项项目，先到「找项目」板块在候选卡片点「立项」</div>}
     </div>
   )
 }

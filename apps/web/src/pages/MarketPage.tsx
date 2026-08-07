@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import CalendarPage from './CalendarPage'
 import ReviewPage from './ReviewPage'
 
@@ -9,8 +9,13 @@ const TABS = [
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
+function normalizeTab(v: string | null): TabKey {
+  return v === 'review' ? 'review' : 'calendar'
+}
+
 export default function MarketPage() {
-  const [tab, setTab] = useState<TabKey>('calendar')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = normalizeTab(searchParams.get('tab'))
   return (
     <div className="space-y-4">
       <div className="flex gap-2 text-sm">
@@ -18,7 +23,7 @@ export default function MarketPage() {
           <button
             key={t.key}
             className={`rounded-full border px-4 py-1.5 ${tab === t.key ? 'bg-blue-600 text-white' : 'bg-white text-neutral-600'}`}
-            onClick={() => setTab(t.key)}
+            onClick={() => setSearchParams({ tab: t.key }, { replace: true })}
           >
             {t.label}
           </button>

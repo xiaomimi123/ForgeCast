@@ -35,8 +35,8 @@ export default function App() {
           <Route path="/projects/:slug" element={<ProjectDetailPage />} />
           {/* 旧路由重定向：书签/肌肉记忆兼容 */}
           <Route path="/board" element={<Navigate to="/scout" replace />} />
-          <Route path="/calendar" element={<Navigate to="/market" replace />} />
-          <Route path="/review" element={<Navigate to="/market" replace />} />
+          <Route path="/calendar" element={<Navigate to="/market?tab=calendar" replace />} />
+          <Route path="/review" element={<Navigate to="/market?tab=review" replace />} />
         </Routes>
       </main>
     </div>
