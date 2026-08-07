@@ -56,7 +56,10 @@ export async function decomposeRequest(ctx: CoreCtx, requestId: number, opts: { 
     let lastErr: unknown
     for (let attempt = 0; attempt <= 1 && !parsed; attempt++) {
       try {
-        parsed = parseDecomposeJson(await ctx.llm.complete({ model: ctx.config.llm.models.analysis, system, prompt }))
+        const p = parseDecomposeJson(await ctx.llm.complete({ model: ctx.config.llm.models.analysis, system, prompt }))
+        const bad = validateDecompose(p)
+        if (bad.length) throw new Error(`拆解结果不合格: ${bad.join('、')}`)
+        parsed = p
       } catch (err) {
         lastErr = err
         if (attempt === 0) log('拆解 JSON 解析失败，重试一次…')

@@ -74,6 +74,25 @@ describe('decomposeRequest', () => {
     expect(calls).toBe(2)
     expect(r.count).toBe(1)
   })
+  it('live 首次返回合法 JSON 但结构不合格（缺 keywords）也会重试一次', async () => {
+    const { id } = addRequest(ctx, { title: 'A', rawNeed: 'x需求x' })
+    fs.mkdirSync(path.join(ctx.config.paths.templates, 'prompts'), { recursive: true })
+    fs.writeFileSync(path.join(ctx.config.paths.templates, 'prompts', 'tailor-decompose.md'), 'tpl')
+    ctx.config.llm.mode = 'live'
+    let calls = 0
+    ctx.llm = {
+      complete: async () =>
+        ++calls === 1
+          ? '[{"name":"登录","detail":"d","keywords":[]}]'
+          : '[{"name":"登录","detail":"d","keywords":["oauth"]}]',
+    }
+    const r = await decomposeRequest(ctx, id)
+    expect(calls).toBe(2)
+    expect(r.count).toBe(1)
+    const d = getRequestDetail(ctx, id)
+    expect(d.request.status).toBe('decomposed')
+    expect(d.capabilities.length).toBe(1)
+  })
   it('需求不存在抛错', async () => {
     await expect(decomposeRequest(ctx, 999)).rejects.toThrow(/不存在/)
   })

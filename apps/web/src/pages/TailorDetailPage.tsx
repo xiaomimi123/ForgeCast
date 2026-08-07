@@ -43,8 +43,10 @@ export default function TailorDetailPage() {
   }
   async function removeCap(capId: number) {
     if (!window.confirm('删除该能力项及其轮子候选？')) return
-    await api(`/api/tailor/capabilities/${capId}`, { method: 'DELETE' })
-    qc.invalidateQueries({ queryKey: ['tailor', id] })
+    try {
+      await api(`/api/tailor/capabilities/${capId}`, { method: 'DELETE' })
+      qc.invalidateQueries({ queryKey: ['tailor', id] })
+    } catch (e) { alert(e instanceof Error ? e.message : String(e)) }
   }
   const [newCap, setNewCap] = useState({ name: '', keywords: '' })
   async function addCap() {
