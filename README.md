@@ -14,7 +14,7 @@ pnpm --filter @forgecast/copywriter exec playwright install chromium  # 封面�
 cp .env.example .env    # 默认 mock 模式，无需任何 key
 pnpm dev                # API :4321 + Web :5173
 ```
-打开 http://localhost:5173 → 素材工坊 → 选 demo-project → 生成。
+打开 http://localhost:5173 → 默认进「找项目」板块；做素材在「做内容」板块选 demo-project → 生成。
 
 ## 环境变量（.env）
 | 变量 | 说明 |
@@ -65,7 +65,7 @@ forgecast knowledge list                                    # 列出已入库知
 
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/server` 本地 API
-- `apps/web` Web 控制台；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物
+- `apps/web` Web 控制台（按业务流分五板块：找项目 `/scout` / 拆解需求 `/projects` / 做内容 `/workshop` / 分发营销 `/market` / 定制项目 `/tailor`）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物
 
 ## Docker（可选）
 ```bash
