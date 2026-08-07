@@ -7,6 +7,7 @@ import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, r
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
+import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -191,6 +192,38 @@ async function main() {
       console.log(`已登记开发过程碎片 #${id}（${file}），forgecast approve ${id} 后进入排期`)
       break
     }
+    case 'tailor': {
+      const sub = rest[0]
+      const usage = '用法: forgecast tailor add "<客户需求>" [--title=<标题>] | list | decompose <id> | search <id> [--cap=<capId>] | proposal <id>'
+      const ctx = ctxWithNotes()
+      if (sub === 'add') {
+        const need = rest[1]
+        if (!need || need.startsWith('--')) { console.error(usage); process.exit(1) }
+        const { id } = addRequest(ctx, { title: arg('title') ?? need.slice(0, 20), rawNeed: need })
+        console.log(`已录入定制需求 #${id}（接着 forgecast tailor decompose ${id}）`)
+      } else if (sub === 'list') {
+        console.log('id  状态         标题')
+        for (const r of listRequests(ctx)) console.log(`${String(r.id).padStart(2)}  ${r.status.padEnd(10)}  ${r.title}`)
+      } else if (sub === 'decompose' || sub === 'search' || sub === 'proposal') {
+        const id = Number(rest[1])
+        if (!id) { console.error(usage); process.exit(1) }
+        if (sub === 'decompose') {
+          const { count } = await decomposeRequest(ctx, id, { onProgress: (m) => console.log(`  ${m}`) })
+          console.log(`拆解完成：${count} 项能力（编辑确认后 forgecast tailor search ${id}）`)
+        } else if (sub === 'search') {
+          const cap = arg('cap') ? Number(arg('cap')) : undefined
+          const r = await searchWheels(ctx, id, { capabilityId: cap, onProgress: (m) => console.log(`  ${m}`) })
+          console.log(`搜索完成：成功 ${r.ok} 项，失败 ${r.failed.length} 项${r.failed.length ? '（可 --cap=<id> 单项重搜）' : ''}`)
+        } else {
+          const { path: rel } = await generateProposal(ctx, id, { onProgress: (m) => console.log(`  ${m}`) })
+          console.log(`方案书完成: workspace/${rel}`)
+        }
+      } else {
+        console.error(usage)
+        process.exit(1)
+      }
+      break
+    }
     case 'knowledge': {
       const sub = rest.find((a) => !a.startsWith('--'))
       const ctx = ctxWithNotes()
@@ -232,6 +265,11 @@ async function main() {
   calendar                              今日排期建议 + 库存 + 配比缺口(60/20/20)
   clip add <slug> --file=<相对路径>     登记开发过程碎片(录屏)为 process 素材
   report [--since=YYYY-MM-DD]           各钩子转化周报
+  tailor add <需求> [--title=<标题>]    录入定制需求
+  tailor list                           列出所有需求 + 状态
+  tailor decompose <id>                 拆解需求为能力清单
+  tailor search <id> [--cap=<capId>]    搜索轮子、评分入库（可单项重搜）
+  tailor proposal <id>                  生成拼装方案书（需完成决策）
   knowledge sync [--source=<dir>] [--repo=<url>]  拉取 dbskill 上游→atoms.jsonl 入库（--source 指本地checkout/md目录跳过克隆）
   knowledge list                        列出已入库知识原子`)
   }
