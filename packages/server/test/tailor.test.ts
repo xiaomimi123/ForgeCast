@@ -84,4 +84,18 @@ describe('tailor API (mock)', () => {
     const detail = await (await app.request(`/api/tailor/${r.id}`)).json() as any
     expect(detail.request.lead_id).toBe(2)
   })
+  it('生产构建场景（apps/web/dist 存在）下，tailor 路由不被 SPA 兜底遮蔽', async () => {
+    // 复现 Docker 单容器部署形态：webDist = path.join(ctx.config.root, 'apps/web/dist') 真实存在，
+    // app.ts 会注册 app.get('/*', ...) 兜底路由。若 tailor 路由段注册在其之后，会被短路成 404。
+    const distDir = path.join(ctx.config.root, 'apps/web/dist')
+    fs.mkdirSync(distDir, { recursive: true })
+    fs.writeFileSync(path.join(distDir, 'index.html'), '<html></html>')
+    const appWithDist = createApp(ctx, queue)
+
+    const res = await appWithDist.request('/api/tailor')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    const list = await res.json()
+    expect(Array.isArray(list)).toBe(true)
+  })
 })
