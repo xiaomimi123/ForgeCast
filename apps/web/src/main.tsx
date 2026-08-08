@@ -9,7 +9,8 @@ const qc = new QueryClient()
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={qc}>
-      <BrowserRouter><App /></BrowserRouter>
+      {/* v7 future flag 提前打开：消掉控制台升级警告，行为与未来 v7 对齐 */}
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App /></BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,
 )
