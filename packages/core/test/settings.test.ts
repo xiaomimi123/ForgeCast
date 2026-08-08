@@ -27,6 +27,14 @@ describe('setSettings / getAllSettings', () => {
     expect(getAllSettings(db).llm_key).toBe('b')
     expect((db.prepare('SELECT COUNT(*) c FROM settings').get() as any).c).toBe(1)
   })
+  it('auto_scout 系列 key 在白名单内可往返', () => {
+    setSettings(db, { auto_scout: 'off', auto_scout_time: '09:30', auto_scout_last_run: '2026-08-09', auto_scout_last_result: '{"added":3}' })
+    const s = getAllSettings(db)
+    expect(s.auto_scout).toBe('off')
+    expect(s.auto_scout_time).toBe('09:30')
+    expect(s.auto_scout_last_run).toBe('2026-08-09')
+    expect(s.auto_scout_last_result).toBe('{"added":3}')
+  })
 })
 
 describe('applyStoredSettings', () => {

@@ -50,4 +50,10 @@ describe('openDb', () => {
     const r = db.prepare("INSERT INTO tailor_requests (title, raw_need) VALUES ('t','n')").run()
     expect(db.prepare('SELECT status FROM tailor_requests WHERE id=?').get(r.lastInsertRowid)).toEqual({ status: 'draft' })
   })
+  it('candidates.favorite 列存在且默认 0', () => {
+    const db = openDb(tmpDbPath())
+    db.prepare("INSERT INTO candidates (repo, url) VALUES ('a/b', 'u')").run()
+    const row = db.prepare("SELECT favorite FROM candidates WHERE repo = 'a/b'").get() as any
+    expect(row.favorite).toBe(0)
+  })
 })
