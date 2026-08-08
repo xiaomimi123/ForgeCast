@@ -1,36 +1,66 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { api, subscribeTask, type Candidate } from '../api'
+import { api, subscribeTask, type AutoScoutStatus, type Candidate } from '../api'
 import CandidateCard from './board/CandidateCard'
-import CandidateDetailModal from './board/CandidateDetailModal'
+import CandidateDrawer from './board/CandidateDrawer'
+
+type Tab = 'all' | 'fav' | 'daily'
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: 'all', label: '全部' }, { key: 'fav', label: '已收藏' }, { key: 'daily', label: '每日新增' },
+]
+
+/** SQLite datetime('now') 存的是无时区 UTC 串（YYYY-MM-DD HH:MM:SS）→ 本地日期 YYYY-MM-DD */
+function localDay(utc: string | null): string {
+  if (!utc) return ''
+  const d = new Date(utc.includes('T') ? utc : utc.replace(' ', 'T') + 'Z')
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('sv-SE')
+}
+function dayLabel(day: string, today: string): string {
+  if (day === today) return '今天'
+  const t = new Date(today + 'T00:00:00')
+  t.setDate(t.getDate() - 1)
+  if (day === t.toLocaleDateString('sv-SE')) return '昨天'
+  const [, m, dd] = day.split('-')
+  return `${Number(m)}月${Number(dd)}日`
+}
 
 export default function ScoutPage() {
   const qc = useQueryClient()
   const [logs, setLogs] = useState<string[]>([])
   const [scanning, setScanning] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
+  const [tab, setTab] = useState<Tab>('all')
+  const [detailId, setDetailId] = useState<number | null>(null)
 
   const candidates = useQuery({ queryKey: ['candidates'], queryFn: () => api<Candidate[]>('/api/candidates') })
-  // 并发跟踪：用集合记录"哪些 id/repo 正在请求中"，每次 mutate 只增删自己那一个，
-  // 避免共享单值 state 被先完成的请求提前清空、误伤仍在飞行中的其他卡片
+  const autoStatus = useQuery({ queryKey: ['auto-scout'], queryFn: () => api<AutoScoutStatus>('/api/scout/auto-status') })
+
   const [pickingRepos, setPickingRepos] = useState<Set<string>>(new Set())
   const pick = useMutation({
     mutationFn: (repo: string) => api('/api/candidates/pick', { method: 'POST', body: JSON.stringify({ repo }) }),
     onMutate: (repo) => setPickingRepos((prev) => new Set(prev).add(repo)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['candidates'] }),
     onError: (e) => alert(`立项失败: ${e instanceof Error ? e.message : String(e)}`),
-    onSettled: (_data, _error, repo) => setPickingRepos((prev) => { const next = new Set(prev); next.delete(repo); return next }),
+    onSettled: (_d, _e, repo) => setPickingRepos((prev) => { const next = new Set(prev); next.delete(repo); return next }),
   })
   const [rescoringIds, setRescoringIds] = useState<Set<number>>(new Set())
   const rescore = useMutation({
     mutationFn: (id: number) => api<{ ok: boolean; mode: string }>(`/api/candidates/${id}/rescore`, { method: 'POST' }),
-    onMutate: (id) => setRescoringIds((prev) => new Set(prev).add(id)),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['candidates'] })
       if (r.mode === 'mock') alert('当前是 mock 模式，评分不会产生目标群体/行业痛点。去「设置」把大模型切到 live 并填 key。')
     },
+    onMutate: (id) => setRescoringIds((prev) => new Set(prev).add(id)),
     onError: (e) => alert(`重新评分失败: ${e instanceof Error ? e.message : String(e)}`),
-    onSettled: (_data, _error, id) => setRescoringIds((prev) => { const next = new Set(prev); next.delete(id); return next }),
+    onSettled: (_d, _e, id) => setRescoringIds((prev) => { const next = new Set(prev); next.delete(id); return next }),
+  })
+  const [favPendingIds, setFavPendingIds] = useState<Set<number>>(new Set())
+  const favorite = useMutation({
+    mutationFn: (c: Candidate) => api(`/api/candidates/${c.id}/favorite`, { method: 'POST', body: JSON.stringify({ favorite: !c.favorite }) }),
+    onMutate: (c) => setFavPendingIds((prev) => new Set(prev).add(c.id)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+    onError: (e) => alert(`收藏失败: ${e instanceof Error ? e.message : String(e)}`),
+    onSettled: (_d, _e, c) => setFavPendingIds((prev) => { const next = new Set(prev); next.delete(c.id); return next }),
   })
 
   async function scout() {
@@ -44,11 +74,9 @@ export default function ScoutPage() {
       })
     } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setScanning(false) }
   }
-
   const [rescoringAll, setRescoringAll] = useState(false)
   async function rescoreAll() {
     if (rescoringAll || scanning) return
-    // 估算未评数：score_detail 里没有非空 targetBuyer 的
     const n = (candidates.data ?? []).filter((c) => {
       try { return !(c.score_detail && (JSON.parse(c.score_detail) as any)?.targetBuyer) } catch { return true }
     }).length
@@ -63,9 +91,7 @@ export default function ScoutPage() {
       })
     } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setRescoringAll(false) }
   }
-
   const [cat, setCat] = useState<string | null>(null)
-  const [detailOf, setDetailOf] = useState<Candidate | null>(null)
   const catOf = (c: { score_detail: string | null }): string => {
     try { return (c.score_detail && (JSON.parse(c.score_detail) as any)?.category) || '' } catch { return '' }
   }
@@ -77,11 +103,36 @@ export default function ScoutPage() {
   }
 
   const rows = candidates.data ?? []
+  const today = new Date().toLocaleDateString('sv-SE')
   const ok = rows.filter((c) => c.license_ok === 1)
   const blocked = rows.filter((c) => c.license_ok !== 1)
   const catCounts = new Map<string, number>()
   for (const c of ok) { const k = catOf(c); if (k) catCounts.set(k, (catCounts.get(k) ?? 0) + 1) }
-  const okShown = cat ? ok.filter((c) => catOf(c) === cat) : ok
+  const byCat = (list: Candidate[]) => (cat ? list.filter((c) => catOf(c) === cat) : list)
+  const byScore = (a: Candidate, b: Candidate) => (b.score ?? -1) - (a.score ?? -1)
+  // 全部：收藏置顶（收藏内部与其余各按分数降序）
+  const allShown = byCat(ok).sort((a, b) => (b.favorite - a.favorite) || byScore(a, b))
+  const favShown = ok.filter((c) => c.favorite === 1).sort(byScore)
+  // 每日新增：近 14 天入库的可商用候选，按本地日期倒序分组
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 14)
+  const dailyGroups = [...byCat(ok)
+    .map((c) => ({ c, day: localDay(c.created_at) }))
+    .filter((x) => x.day && new Date(x.day) >= cutoff)
+    .reduce((m, x) => { (m.get(x.day) ?? m.set(x.day, []).get(x.day)!).push(x.c); return m }, new Map<string, Candidate[]>())
+    .entries()].sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([day, list]) => [day, list.sort(byScore)] as const)
+
+  const detail = detailId == null ? null : rows.find((c) => c.id === detailId) ?? null
+  const auto = autoStatus.data
+  const lastText = !auto?.lastRun ? '尚未运行'
+    : auto.lastResult && 'error' in (auto.lastResult) && auto.lastResult.error ? `${auto.lastRun} 失败：${auto.lastResult.error}`
+    : `${auto.lastRun} 新增 ${auto.lastResult?.added ?? 0} 个`
+  const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+  const card = (c: Candidate) => (
+    <CandidateCard key={c.id} c={c} isNew={localDay(c.created_at) === today}
+      onOpenDetail={(x) => setDetailId(x.id)} onToggleFavorite={(x) => favorite.mutate(x)}
+      favPending={favPendingIds.has(c.id)} />
+  )
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -95,8 +146,22 @@ export default function ScoutPage() {
           分类回填
         </button>
         <span className="text-sm text-neutral-500">共 {rows.length} 个候选</span>
+        <span className="ml-auto text-xs text-neutral-400">
+          {auto ? (auto.enabled ? `每日 ${auto.time} 自动抓取 · 上次：${lastText}` : '自动抓取已关（设置页可开）') : ''}
+        </span>
       </div>
-      {catCounts.size > 0 && (
+
+      <div className="flex items-center gap-2">
+        {TABS.map((t) => (
+          <button key={t.key}
+            className={`rounded-full border px-4 py-1.5 text-sm ${tab === t.key ? 'bg-blue-600 text-white' : 'bg-white text-neutral-600'}`}
+            onClick={() => setTab(t.key)}>
+            {t.label}{t.key === 'fav' ? ` (${favShown.length})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {tab !== 'fav' && catCounts.size > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
           <button className={`rounded-full border px-3 py-1 ${cat === null ? 'bg-blue-600 text-white' : 'bg-white'}`} onClick={() => setCat(null)}>全部 ({ok.length})</button>
           {[...catCounts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => (
@@ -104,36 +169,55 @@ export default function ScoutPage() {
           ))}
         </div>
       )}
+
       {logs.length > 0 && (
-        <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-32 overflow-y-auto space-y-1">
+        <div ref={logRef} className="h-32 space-y-1 overflow-y-auto rounded-lg border bg-neutral-900 p-3 font-mono text-xs text-green-400">
           {logs.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
-      {/* 候选卡片：协议可商用的排前面，不可商用的折叠到底部 */}
-      <div className="grid gap-3 md:grid-cols-2">
-        {okShown.map((c, i) => (
-          <CandidateCard key={c.id} c={c} rank={i + 1}
-            onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
-            onOpenDetail={setDetailOf}
-            picking={pickingRepos.has(c.repo)} rescoring={rescoringIds.has(c.id)} />
-        ))}
-      </div>
-      {rows.length === 0 && <div className="rounded-lg border p-6 text-center text-neutral-400">暂无候选，点「抓取候选」</div>}
-      {blocked.length > 0 && (
-        <details className="rounded-lg border bg-neutral-50 p-3 text-sm text-neutral-500">
-          <summary className="cursor-pointer">另有 {blocked.length} 个协议不可商用（GPL/AGPL 系），点开查看</summary>
-          <div className="mt-2 space-y-1">
-            {blocked.map((c) => (
-              <div key={c.id} className="flex gap-2 text-xs">
-                <a className="text-neutral-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
-                <span className="text-neutral-400">{c.license ?? '无协议'}</span>
+
+      {tab === 'all' && (
+        <>
+          <div className={grid}>{allShown.map(card)}</div>
+          {rows.length === 0 && <div className="rounded-lg border p-6 text-center text-neutral-400">暂无候选，点「抓取候选」</div>}
+          {blocked.length > 0 && (
+            <details className="rounded-lg border bg-neutral-50 p-3 text-sm text-neutral-500">
+              <summary className="cursor-pointer">另有 {blocked.length} 个协议不可商用（GPL/AGPL 系），点开查看</summary>
+              <div className="mt-2 space-y-1">
+                {blocked.map((c) => (
+                  <div key={c.id} className="flex gap-2 text-xs">
+                    <a className="text-neutral-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
+                    <span className="text-neutral-400">{c.license ?? '无协议'}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </details>
+            </details>
+          )}
+        </>
+      )}
+      {tab === 'fav' && (
+        favShown.length
+          ? <div className={grid}>{favShown.map(card)}</div>
+          : <div className="rounded-lg border p-6 text-center text-neutral-400">还没有收藏，点卡片上的 ☆ 收藏感兴趣的项目</div>
+      )}
+      {tab === 'daily' && (
+        dailyGroups.length
+          ? dailyGroups.map(([day, list]) => (
+              <div key={day}>
+                <div className="mb-2 text-sm font-medium text-neutral-600">{dayLabel(day, today)} <span className="text-neutral-400">({list.length})</span></div>
+                <div className={grid}>{list.map(card)}</div>
+              </div>
+            ))
+          : <div className="rounded-lg border p-6 text-center text-neutral-400">近 14 天没有新入库的候选（每日自动抓取会把新发现的项目归到这里）</div>
       )}
 
-      {detailOf && <CandidateDetailModal candidate={detailOf} onClose={() => setDetailOf(null)} />}
+      {detail && (
+        <CandidateDrawer candidate={detail} onClose={() => setDetailId(null)}
+          onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
+          onToggleFavorite={(c) => favorite.mutate(c)}
+          picking={pickingRepos.has(detail.repo)} rescoring={rescoringIds.has(detail.id)}
+          favPending={favPendingIds.has(detail.id)} />
+      )}
     </div>
   )
 }

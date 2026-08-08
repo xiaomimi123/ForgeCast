@@ -74,6 +74,8 @@ DOCKER_BUILDKIT=0 docker compose build   # 本机路径含中文，必须禁 Bui
 docker compose up -d
 ```
 
+找项目板块（`/scout`）支持收藏候选 / 每日自动抓取（server 内置调度，设置页配置开关与时间）/ 每日新增视图（按入库日期分组，14 天内）/ 点卡片打开右侧抽屉查看评分明细与产品说明书。
+
 ## 路线图
 见 `开源变现内容工厂-开发文档.md` §10。M5 视频引擎已从 Remotion 全面替换为 HyperFrames（四模板 + Kokoro 离线中文配音，见 docs/hyperframes-deploy.md），并支持 BGM 背景乐 + 节拍卡点 + 强拍音效（librosa 节拍网格 + ffmpeg ducking 混音）。
 videocut 剪辑集成仍为脚手架（见 docs/m5-videocut.md）。renderer 镜像见 Dockerfile.renderer + docs/hyperframes-deploy.md。

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, type SettingsView } from '../api'
+import { api, type AutoScoutStatus, type SettingsView } from '../api'
 
 // 可编辑草稿：key 字段留空=不改（占位显示已存打码值）
 interface Draft {
@@ -143,6 +143,42 @@ export default function SettingsPage() {
         <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
         {saved && <span className="text-sm text-green-600">已保存，立即生效</span>}
       </div>
+
+      <AutoScoutSection />
+    </div>
+  )
+}
+
+/** 每日自动抓取设置：读 auto-status，写 PUT /api/settings（auto_scout / auto_scout_time） */
+function AutoScoutSection() {
+  const qc = useQueryClient()
+  const status = useQuery({ queryKey: ['auto-scout'], queryFn: () => api<AutoScoutStatus>('/api/scout/auto-status') })
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [time, setTime] = useState<string | null>(null)
+  const en = enabled ?? status.data?.enabled ?? true
+  const tm = time ?? status.data?.time ?? '08:00'
+  async function save() {
+    try {
+      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ auto_scout: en ? 'on' : 'off', auto_scout_time: tm }) })
+      qc.invalidateQueries({ queryKey: ['auto-scout'] })
+      alert('已保存（server 每分钟检查一次，到点自动抓取；当天错过启动时会补跑）')
+    } catch (e) { alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`) }
+  }
+  return (
+    <div className="rounded-lg border bg-white p-4 space-y-3">
+      <div className="font-semibold">每日自动抓取</div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={en} onChange={(e) => setEnabled(e.target.checked)} />
+        每天自动抓取候选（只给新项目评分，不覆盖已有评分）
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        每日时间
+        <input type="time" className="rounded border px-2 py-1 text-sm" value={tm} onChange={(e) => setTime(e.target.value)} />
+      </label>
+      {status.data?.lastRun && (
+        <div className="text-xs text-neutral-400">上次运行：{status.data.lastRun}</div>
+      )}
+      <button className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white" onClick={save}>保存</button>
     </div>
   )
 }
