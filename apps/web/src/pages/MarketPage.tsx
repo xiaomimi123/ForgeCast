@@ -18,11 +18,11 @@ export default function MarketPage() {
   const tab = normalizeTab(searchParams.get('tab'))
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 text-sm">
+      <div className="seg-tabs">
         {TABS.map((t) => (
           <button
             key={t.key}
-            className={`rounded-full border px-4 py-1.5 ${tab === t.key ? 'bg-blue-600 text-white' : 'bg-white text-neutral-600'}`}
+            className={tab === t.key ? 'on' : ''}
             onClick={() => setSearchParams({ tab: t.key }, { replace: true })}
           >
             {t.label}

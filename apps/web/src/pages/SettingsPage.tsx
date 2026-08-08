@@ -17,12 +17,12 @@ const emptyDraft: Draft = {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="mb-1 text-xs font-medium text-neutral-600">{label}{hint && <span className="ml-1 font-normal text-neutral-400">{hint}</span>}</div>
+      <div className="mb-1 text-xs font-medium text-sub">{label}{hint && <span className="ml-1 font-normal text-faint">{hint}</span>}</div>
       {children}
     </label>
   )
 }
-const inputCls = 'w-full rounded border px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none'
+const inputCls = 'w-full rounded-md border-[1.5px] border-ink bg-card px-2 py-1.5 text-sm'
 
 export default function SettingsPage() {
   const qc = useQueryClient()
@@ -62,28 +62,28 @@ export default function SettingsPage() {
   })
 
   const s = settings.data
-  if (!s) return <div className="text-neutral-400">加载中…</div>
+  if (!s) return <div className="text-faint">加载中…</div>
   const keyPlaceholder = (set_: boolean, masked: string) => (set_ ? `已设置 ${masked}（留空不改）` : '未设置')
 
   return (
     <div className="max-w-2xl space-y-4">
       <div className="flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">设置</h2>
-        <span className="text-xs text-neutral-400">🔒 key 只存本地 db、随服务器绑 127.0.0.1，不上传、不进代码仓库</span>
+        <span className="text-xs text-faint">🔒 key 只存本地 db、随服务器绑 127.0.0.1，不上传、不进代码仓库</span>
       </div>
 
-      {/* 降级提示：否则选了 live 保存后模式莫名跳回 mock，无从判断为什么 */}
+      {/* 降级提示：否则选了 live 保存后模式莫名跳回 mock，无从判断为什么（功能性警示，保留琥珀语义） */}
       {s.mode_notes?.length > 0 && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="rounded-lg border-[1.5px] border-amber-600 bg-amber-50 p-3 text-sm text-amber-800">
           {s.mode_notes.map((n) => <div key={n}>⚠ {n}</div>)}
         </div>
       )}
 
       {/* LLM */}
-      <section className="space-y-3 rounded-lg border bg-white p-4">
+      <section className="space-y-3 card-forge p-4">
         <div className="flex items-center justify-between">
           <h3 className="font-medium">大模型（文案 / 分析 / 评分）</h3>
-          <select className="rounded border px-2 py-1 text-sm" value={d.llm_mode} onChange={(e) => set({ llm_mode: e.target.value })}>
+          <select className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" value={d.llm_mode} onChange={(e) => set({ llm_mode: e.target.value })}>
             <option value="mock">mock（免 key）</option>
             <option value="live">live（用 key）</option>
           </select>
@@ -96,16 +96,16 @@ export default function SettingsPage() {
           <Field label="模型·评分"><input className={inputCls} value={d.model_scoring} onChange={(e) => set({ model_scoring: e.target.value })} /></Field>
         </div>
         <div className="flex items-center gap-3">
-          <button className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={runTest.isPending} onClick={() => runTest.mutate()}>测试连接</button>
-          {test && <span className="text-xs text-neutral-600">{test}</span>}
+          <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={runTest.isPending} onClick={() => runTest.mutate()}>测试连接</button>
+          {test && <span className="text-xs text-sub">{test}</span>}
         </div>
       </section>
 
       {/* TTS */}
-      <section className="space-y-3 rounded-lg border bg-white p-4">
+      <section className="space-y-3 card-forge p-4">
         <div className="flex items-center justify-between">
           <h3 className="font-medium">配音 TTS（视频旁白）</h3>
-          <select className="rounded border px-2 py-1 text-sm" value={d.tts_mode} onChange={(e) => set({ tts_mode: e.target.value })}>
+          <select className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" value={d.tts_mode} onChange={(e) => set({ tts_mode: e.target.value })}>
             <option value="kokoro">kokoro（离线，机器味重）</option>
             <option value="melo">melo（离线中文，更自然，需 venv）</option>
             <option value="cosy">cosy（CosyVoice2 克隆，男声/多音色，慢）</option>
@@ -122,16 +122,16 @@ export default function SettingsPage() {
         <Field label="MeloTTS venv python" hint="melo 模式用；MeloTTS venv 的 python 绝对路径"><input className={inputCls} value={d.melo_python} onChange={(e) => set({ melo_python: e.target.value })} /></Field>
         <Field label="CosyVoice2 目录" hint="cosy 模式用；含 venv/CosyVoice/model/prompt.wav 的 FORGECAST_COSY_HOME"><input className={inputCls} value={d.cosy_home} onChange={(e) => set({ cosy_home: e.target.value })} /></Field>
         <div className="flex items-center gap-3">
-          <button className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={runTtsTest.isPending} onClick={() => runTtsTest.mutate()}>测试连接</button>
-          {ttsTest && <span className="text-xs text-neutral-600">{ttsTest}</span>}
+          <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={runTtsTest.isPending} onClick={() => runTtsTest.mutate()}>测试连接</button>
+          {ttsTest && <span className="text-xs text-sub">{ttsTest}</span>}
         </div>
       </section>
 
       {/* GitHub */}
-      <section className="space-y-3 rounded-lg border bg-white p-4">
+      <section className="space-y-3 card-forge p-4">
         <div className="flex items-center justify-between">
           <h3 className="font-medium">GitHub 抓取（scout）</h3>
-          <select className="rounded border px-2 py-1 text-sm" value={d.github_mode} onChange={(e) => set({ github_mode: e.target.value })}>
+          <select className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" value={d.github_mode} onChange={(e) => set({ github_mode: e.target.value })}>
             <option value="mock">mock（fixture）</option>
             <option value="live">live（真实 API）</option>
           </select>
@@ -140,7 +140,7 @@ export default function SettingsPage() {
       </section>
 
       <div className="flex items-center gap-3">
-        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
         {saved && <span className="text-sm text-green-600">已保存，立即生效</span>}
       </div>
 
@@ -165,7 +165,7 @@ function AutoScoutSection() {
     } catch (e) { alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`) }
   }
   return (
-    <div className="rounded-lg border bg-white p-4 space-y-3">
+    <div className="card-forge p-4 space-y-3">
       <div className="font-semibold">每日自动抓取</div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={en} onChange={(e) => setEnabled(e.target.checked)} />
@@ -173,12 +173,12 @@ function AutoScoutSection() {
       </label>
       <label className="flex items-center gap-2 text-sm">
         每日时间
-        <input type="time" className="rounded border px-2 py-1 text-sm" value={tm} onChange={(e) => setTime(e.target.value)} />
+        <input type="time" className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" value={tm} onChange={(e) => setTime(e.target.value)} />
       </label>
       {status.data?.lastRun && (
-        <div className="text-xs text-neutral-400">上次运行：{status.data.lastRun}</div>
+        <div className="text-xs text-faint">上次运行：{status.data.lastRun}</div>
       )}
-      <button className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white" onClick={save}>保存</button>
+      <button className="btn-fire px-4 py-1.5 text-sm" onClick={save}>保存</button>
     </div>
   )
 }

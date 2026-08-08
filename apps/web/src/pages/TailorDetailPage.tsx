@@ -62,18 +62,18 @@ export default function TailorDetailPage() {
   }
 
   const d = detail.data
-  if (!d) return <div className="text-neutral-400">{detail.isError ? '需求不存在' : '加载中…'}</div>
+  if (!d) return <div className="text-faint">{detail.isError ? '需求不存在' : '加载中…'}</div>
   const caps = d.capabilities
   const pendingCount = caps.filter((c) => c.decision === 'pending').length
-  const btn = 'rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50'
+  const btn = 'btn-fire px-4 py-2 text-sm disabled:opacity-50'
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border bg-white p-4">
+      <div className="card-forge p-4">
         <div className="flex items-center justify-between">
           <div className="font-semibold">#{d.request.id} {d.request.title}</div>
-          <span className="text-xs text-neutral-500">{d.request.status}</span>
+          <span className="text-xs text-sub">{d.request.status}</span>
         </div>
-        <div className="mt-2 whitespace-pre-wrap text-sm text-neutral-600">{d.request.raw_need}</div>
+        <div className="mt-2 whitespace-pre-wrap text-sm text-sub">{d.request.raw_need}</div>
         <div className="mt-3 flex gap-2">
           <button className={btn} disabled={!!running} onClick={() => runAction('decompose')}>
             {running === 'decompose' ? '拆解中…' : caps.length ? '重新拆解' : '拆解需求'}
@@ -85,7 +85,7 @@ export default function TailorDetailPage() {
             title={pendingCount ? `还有 ${pendingCount} 项未决策` : ''} onClick={() => runAction('proposal')}>
             {running === 'proposal' ? '生成中…' : '生成方案书'}
           </button>
-          {pendingCount > 0 && caps.length > 0 && <span className="self-center text-xs text-neutral-400">每项能力选「轮子/自研/不做」后才能出方案书</span>}
+          {pendingCount > 0 && caps.length > 0 && <span className="self-center text-xs text-faint">每项能力选「轮子/自研/不做」后才能出方案书</span>}
         </div>
       </div>
       {logs.length > 0 && (
@@ -96,15 +96,15 @@ export default function TailorDetailPage() {
       {caps.map((c) => <CapabilityCard key={c.id} cap={c} onPatch={patchCap} onRemove={removeCap} />)}
       {caps.length > 0 && (
         <div className="flex gap-2">
-          <input className="rounded border px-2 py-1 text-sm" placeholder="能力名" value={newCap.name}
+          <input className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="能力名" value={newCap.name}
             onChange={(e) => setNewCap((s) => ({ ...s, name: e.target.value }))} />
-          <input className="w-64 rounded border px-2 py-1 text-sm" placeholder="GitHub 搜索关键词，逗号分隔" value={newCap.keywords}
+          <input className="w-64 rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="GitHub 搜索关键词，逗号分隔" value={newCap.keywords}
             onChange={(e) => setNewCap((s) => ({ ...s, keywords: e.target.value }))} />
-          <button className="rounded border px-3 py-1 text-sm" onClick={addCap}>+ 加能力项</button>
+          <button className="btn-ink px-3 py-1 text-sm" onClick={addCap}>+ 加能力项</button>
         </div>
       )}
       {proposal.data?.md && (
-        <div className="rounded-lg border bg-white p-6 text-sm leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:font-semibold [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2">
+        <div className="card-forge p-6 text-sm leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:font-semibold [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2">
           <ReactMarkdown>{proposal.data.md}</ReactMarkdown>
         </div>
       )}
@@ -122,45 +122,45 @@ function CapabilityCard({ cap, onPatch, onRemove }: {
   const badge = cap.decision === 'wheel' ? `✔ ${cap.chosen_repo}`
     : cap.decision === 'self_build' ? '自研' : cap.decision === 'dropped' ? '不做' : '待决策'
   return (
-    <div className={`rounded-lg border bg-white p-4 ${cap.decision === 'dropped' ? 'opacity-50' : ''}`}>
+    <div className={`rounded-lg border-[1.5px] border-ink bg-card p-4 shadow-[2px_2px_0_rgba(28,23,18,0.85)] ${cap.decision === 'dropped' ? 'opacity-50' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="font-medium">
           {cap.name}
-          <span className="ml-2 rounded-full border px-2 py-0.5 text-xs text-neutral-500">{badge}</span>
+          <span className="ml-2 rounded border-[1.5px] border-ink px-2 py-0.5 text-[10px] font-extrabold tracking-widest">{badge}</span>
         </div>
         <div className="flex gap-2 text-xs">
-          <button className="rounded border px-2 py-1" onClick={() => onPatch(cap.id, { decision: 'self_build' })}>标自研</button>
-          <button className="rounded border px-2 py-1" onClick={() => onPatch(cap.id, { decision: 'dropped' })}>不做</button>
-          <button className="rounded border px-2 py-1 text-red-500" onClick={() => onRemove(cap.id)}>删除</button>
+          <button className="rounded-md border-[1.5px] border-ink px-2 py-1 text-xs" onClick={() => onPatch(cap.id, { decision: 'self_build' })}>标自研</button>
+          <button className="rounded-md border-[1.5px] border-ink px-2 py-1 text-xs" onClick={() => onPatch(cap.id, { decision: 'dropped' })}>不做</button>
+          <button className="rounded-md border-[1.5px] border-danger px-2 py-1 text-xs text-danger" onClick={() => onRemove(cap.id)}>删除</button>
         </div>
       </div>
-      {cap.detail && <div className="mt-1 text-sm text-neutral-500">{cap.detail}</div>}
-      <div className="mt-1 text-xs text-neutral-400">关键词: {cap.keywords.join(', ') || '—'}</div>
+      {cap.detail && <div className="mt-1 text-sm text-sub">{cap.detail}</div>}
+      <div className="mt-1 text-xs text-faint">关键词: {cap.keywords.join(', ') || '—'}</div>
       {okWheels.length > 0 && (
         <div className="mt-2 grid gap-2 md:grid-cols-2">
           {okWheels.map((w) => (
-            <label key={w.id} className={`flex cursor-pointer items-start gap-2 rounded border p-2 text-sm ${cap.decision === 'wheel' && cap.chosen_repo === w.repo ? 'border-blue-500 bg-blue-50' : ''}`}>
+            <label key={w.id} className={`flex cursor-pointer items-start gap-2 rounded-md border-[1.5px] p-2 text-sm ${cap.decision === 'wheel' && cap.chosen_repo === w.repo ? 'border-fire bg-fire-soft' : 'border-ink bg-card'}`}>
               <input type="radio" className="mt-1" checked={cap.decision === 'wheel' && cap.chosen_repo === w.repo}
                 onChange={() => onPatch(cap.id, { decision: 'wheel', chosenRepo: w.repo })} />
               <span>
-                <a className="font-medium text-blue-600" href={w.url} target="_blank" rel="noreferrer"
+                <a className="font-medium text-fire" href={w.url} target="_blank" rel="noreferrer"
                   onClick={(e) => e.stopPropagation()}>{w.repo}</a>
-                <span className="ml-2 text-xs text-neutral-400">{w.score} 分 · ⭐{w.stars} · {w.license ?? '无协议'}</span>
-                {w.description && <span className="block text-xs text-neutral-500">{w.description}</span>}
+                <span className="ml-2 text-xs text-faint">{w.score} 分 · ⭐{w.stars} · {w.license ?? '无协议'}</span>
+                {w.description && <span className="block text-xs text-sub">{w.description}</span>}
               </span>
             </label>
           ))}
         </div>
       )}
       {badWheels.length > 0 && (
-        <details className="mt-2 text-xs text-neutral-500">
+        <details className="mt-2 text-xs text-sub">
           <summary className="cursor-pointer">另有 {badWheels.length} 个协议非白名单轮子（GPL 系等，仅客户内部部署可考虑）</summary>
           <div className="mt-1 space-y-1">
             {badWheels.map((w) => (
               <label key={w.id} className="flex items-center gap-2">
                 <input type="radio" checked={cap.decision === 'wheel' && cap.chosen_repo === w.repo}
                   onChange={() => onPatch(cap.id, { decision: 'wheel', chosenRepo: w.repo })} />
-                <a className="text-neutral-600" href={w.url} target="_blank" rel="noreferrer">{w.repo}</a>
+                <a className="text-sub" href={w.url} target="_blank" rel="noreferrer">{w.repo}</a>
                 <span>⚠ {w.license ?? '无协议'} · {w.score} 分</span>
               </label>
             ))}
