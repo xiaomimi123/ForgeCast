@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ForgeCast 视觉方向 · 三选一</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; }
+  body { font-family: -apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif; }
+
+  /* ========== 方向 A · 晨雾工作台（现状精修，克制的蓝） ========== */
+  .va { --bg:#f6f7f9; --card:#fff; --line:#e5e8ee; --ink:#191d24; --sub:#6b7280; --faint:#9aa1ac;
+        --accent:#2f6bff; --accent-soft:#eef3ff; --gold:#f59e0b;
+        background:var(--bg); color:var(--ink); width:100%; height:100%; font-size:13px; line-height:1.7; }
+  .va-nav { display:flex; align-items:center; gap:28px; background:#fff; border-bottom:1px solid var(--line); padding:0 28px; height:54px; }
+  .va-logo { display:flex; align-items:center; gap:8px; font-size:16px; font-weight:700; letter-spacing:.2px; }
+  .va-logomark { width:18px; height:18px; border-radius:5px; background:linear-gradient(135deg,var(--accent),#7aa2ff); display:inline-block; }
+  .va-nav nav { display:flex; gap:4px; }
+  .va-nav nav a { padding:6px 12px; border-radius:8px; color:var(--sub); font-size:13px; }
+  .va-nav nav a.on { color:var(--accent); background:var(--accent-soft); font-weight:600; }
+  .va-auto { margin-left:auto; font-size:12px; color:var(--faint); }
+  .va-main { padding:22px 28px; }
+  .va-toprow { display:flex; align-items:center; gap:16px; }
+  .va-toprow h1 { font-size:20px; font-weight:700; }
+  .va-topacts { display:flex; align-items:center; gap:10px; margin-left:auto; }
+  .va-primary { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:8px 16px; font-size:13px; font-weight:600; }
+  .va-ghost { background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:8px 14px; font-size:13px; }
+  .va-count { font-size:12px; color:var(--faint); }
+  .va-tabs { display:flex; gap:22px; margin-top:18px; border-bottom:1px solid var(--line); }
+  .va-tabs button { background:none; border:none; padding:0 2px 10px; font-size:14px; color:var(--sub); border-bottom:2px solid transparent; }
+  .va-tabs button.on { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+  .va-chips { display:flex; gap:8px; margin:14px 0 18px; flex-wrap:wrap; }
+  .va-chips button { background:#fff; border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:12px; color:var(--sub); }
+  .va-chips button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .va-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .va-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:10px;
+             box-shadow:0 1px 2px rgba(20,24,35,.04); }
+  .va-cardtop { display:flex; align-items:flex-start; gap:8px; }
+  .va-owner { font-size:11px; color:var(--faint); display:flex; align-items:center; gap:6px; }
+  .va-new { background:var(--accent); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; letter-spacing:.5px; }
+  .va-name { font-size:17px; font-weight:700; letter-spacing:-.2px; }
+  .va-score { margin-left:auto; text-align:right; color:var(--accent); }
+  .va-score b { font-size:22px; font-weight:800; }
+  .va-score i { font-style:normal; font-size:10px; margin-left:1px; color:var(--faint); }
+  .va-desc { font-size:12px; color:var(--sub); line-height:1.65; min-height:40px; }
+  .va-meta { display:flex; gap:8px; align-items:center; font-size:11px; color:var(--sub); }
+  .va-lic { background:#f0fdf4; color:#15803d; padding:1px 7px; border-radius:5px; }
+  .va-cat { background:var(--accent-soft); color:var(--accent); padding:1px 7px; border-radius:5px; }
+  .va-insight { border-top:1px dashed var(--line); padding-top:8px; display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--sub); }
+  .va-insight em { font-style:normal; color:var(--faint); margin-right:8px; }
+  .va-insight div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .va-foot { display:flex; align-items:center; margin-top:auto; }
+  .va-days { font-size:11px; color:var(--faint); }
+  .va-acts { display:flex; gap:6px; margin-left:auto; }
+  .va-acts button { border:1px solid var(--line); background:#fff; border-radius:8px; font-size:12px; padding:5px 10px; color:var(--sub); }
+  .va-fav.on { color:var(--gold); border-color:#fde68a; background:#fffbeb; }
+  .va-detail { color:var(--accent) !important; font-weight:600; }
+
+  /* ========== 方向 B · 终端指挥台（深色，信号绿） ========== */
+  .vb { --bg:#0e1116; --panel:#151a21; --line:#242c37; --ink:#dbe4ee; --sub:#8b98a9; --faint:#5b6878;
+        --accent:#3ddc97; --accent-dim:rgba(61,220,151,.12); --warn:#ffb454;
+        --mono:"SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+        background:var(--bg); color:var(--ink); width:100%; height:100%; font-size:13px; line-height:1.7; }
+  .vb-nav { display:flex; align-items:center; gap:28px; background:#0a0d11; border-bottom:1px solid var(--line); padding:0 28px; height:54px; }
+  .vb-logo { font-family:var(--mono); font-size:14px; font-weight:700; letter-spacing:1px; color:var(--accent); }
+  .vb-nav nav { display:flex; gap:2px; }
+  .vb-nav nav a { padding:6px 12px; color:var(--sub); font-size:13px; border-radius:6px; }
+  .vb-nav nav a.on { color:var(--accent); background:var(--accent-dim); }
+  .vb-auto { margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--faint); display:flex; align-items:center; gap:6px; }
+  .vb-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .vb-main { padding:22px 28px; }
+  .vb-toprow { display:flex; align-items:center; gap:16px; }
+  .vb-toprow h1 { font-size:20px; font-weight:700; }
+  .vb-sub { font-family:var(--mono); font-size:13px; color:var(--faint); font-weight:400; }
+  .vb-topacts { display:flex; align-items:center; gap:10px; margin-left:auto; }
+  .vb-primary { background:var(--accent); color:#08110c; border:none; border-radius:7px; padding:8px 16px; font-size:13px; font-weight:700; }
+  .vb-ghost { background:transparent; color:var(--sub); border:1px solid var(--line); border-radius:7px; padding:8px 14px; font-size:13px; }
+  .vb-count { font-family:var(--mono); font-size:11px; color:var(--faint); }
+  .vb-tabs { display:inline-flex; margin-top:18px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .vb-tabs button { background:transparent; border:none; padding:7px 18px; font-size:13px; color:var(--sub); border-right:1px solid var(--line); }
+  .vb-tabs button:last-child { border-right:none; }
+  .vb-tabs button.on { background:var(--panel); color:var(--accent); font-weight:600; }
+  .vb-chips { display:flex; gap:8px; margin:14px 0 18px; flex-wrap:wrap; }
+  .vb-chips button { background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 11px; font-size:12px; color:var(--sub); }
+  .vb-chips button.on { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+  .vb-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  .vb-card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:9px; }
+  .vb-cardtop { display:flex; align-items:flex-start; }
+  .vb-owner { font-family:var(--mono); font-size:11px; color:var(--faint); }
+  .vb-new { color:var(--accent); font-weight:700; }
+  .vb-name { font-size:17px; font-weight:700; letter-spacing:-.2px; }
+  .vb-score { margin-left:auto; font-family:var(--mono); font-size:24px; font-weight:700; color:var(--accent); }
+  .vb-meter { font-family:var(--mono); font-size:10px; letter-spacing:1px; color:var(--accent); opacity:.85; }
+  .vb-desc { font-size:12px; color:var(--sub); line-height:1.65; min-height:40px; }
+  .vb-meta { display:flex; gap:10px; font-family:var(--mono); font-size:10.5px; color:var(--faint); }
+  .vb-cat { color:var(--warn); }
+  .vb-insight { border-top:1px solid var(--line); padding-top:8px; display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--sub); }
+  .vb-insight em { font-style:normal; font-family:var(--mono); font-size:9px; color:var(--faint); margin-right:8px; letter-spacing:1px; }
+  .vb-insight div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .vb-foot { display:flex; align-items:center; margin-top:auto; }
+  .vb-days { font-family:var(--mono); font-size:10.5px; color:var(--faint); }
+  .vb-acts { display:flex; gap:6px; margin-left:auto; }
+  .vb-acts button { border:1px solid var(--line); background:transparent; border-radius:6px; font-size:12px; padding:5px 10px; color:var(--sub); }
+  .vb-fav.on { color:var(--warn); border-color:rgba(255,180,84,.4); }
+  .vb-detail { color:var(--accent) !important; border-color:rgba(61,220,151,.35) !important; }
+
+  /* ========== 方向 C · 锻造车间（暖纸 + 粗墨线 + 炉火橙） ========== */
+  .vc { --paper:#f7f2ea; --card:#fffdf8; --ink:#1c1712; --line:#1c1712; --sub:#5f574c; --faint:#989083;
+        --fire:#d9481c; --fire-soft:#fbe9e2;
+        background:var(--paper); color:var(--ink); width:100%; height:100%; font-size:13px; line-height:1.7; }
+  .vc-nav { display:flex; align-items:center; gap:28px; background:var(--paper); border-bottom:2px solid var(--ink); padding:0 28px; height:56px; }
+  .vc-logo { font-size:17px; font-weight:900; letter-spacing:-.3px; }
+  .vc-logo span { color:var(--fire); }
+  .vc-logo i { font-style:normal; font-size:10px; font-weight:400; color:var(--faint); margin-left:8px; letter-spacing:2px; }
+  .vc-nav nav { display:flex; gap:2px; }
+  .vc-nav nav a { padding:17px 13px 14px; color:var(--sub); font-size:13.5px; border-bottom:3px solid transparent; }
+  .vc-nav nav a.on { color:var(--ink); font-weight:700; border-bottom-color:var(--fire); }
+  .vc-auto { margin-left:auto; font-size:11.5px; color:var(--faint); }
+  .vc-main { padding:24px 28px; }
+  .vc-toprow { display:flex; align-items:baseline; gap:16px; }
+  .vc-toprow h1 { font-size:26px; font-weight:900; letter-spacing:-.5px; }
+  .vc-h1sub { font-size:12px; font-weight:400; color:var(--faint); margin-left:12px; }
+  .vc-topacts { display:flex; gap:10px; margin-left:auto; }
+  .vc-primary { background:var(--fire); color:#fff; border:2px solid var(--fire); border-radius:6px; padding:8px 18px; font-size:13px; font-weight:700; box-shadow:3px 3px 0 rgba(28,23,18,.9); }
+  .vc-ghost { background:var(--card); color:var(--ink); border:2px solid var(--ink); border-radius:6px; padding:8px 14px; font-size:13px; font-weight:600; }
+  .vc-tabrow { display:flex; align-items:center; margin-top:20px; }
+  .vc-tabs { display:inline-flex; border:2px solid var(--ink); border-radius:8px; overflow:hidden; background:var(--card); }
+  .vc-tabs button { background:transparent; border:none; padding:8px 20px; font-size:13.5px; font-weight:600; color:var(--sub); border-right:2px solid var(--ink); }
+  .vc-tabs button:last-child { border-right:none; }
+  .vc-tabs button.on { background:var(--ink); color:var(--paper); }
+  .vc-count { margin-left:auto; font-size:12px; color:var(--faint); }
+  .vc-chips { display:flex; gap:8px; margin:16px 0 20px; flex-wrap:wrap; }
+  .vc-chips button { background:transparent; border:1.5px solid #cfc6b8; border-radius:999px; padding:4px 13px; font-size:12px; color:var(--sub); font-weight:500; }
+  .vc-chips button.on { border-color:var(--fire); color:var(--fire); background:var(--fire-soft); font-weight:700; }
+  .vc-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .vc-card { position:relative; background:var(--card); border:2px solid var(--ink); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:10px;
+             box-shadow:4px 4px 0 rgba(28,23,18,.85); }
+  .vc-newtag { position:absolute; top:-11px; right:12px; background:var(--fire); color:#fff; font-size:10px; font-weight:800; padding:2px 9px; border-radius:4px; letter-spacing:1px; box-shadow:2px 2px 0 rgba(28,23,18,.85); }
+  .vc-cardtop { display:flex; align-items:flex-start; }
+  .vc-owner { font-size:11px; color:var(--faint); }
+  .vc-name { font-size:18px; font-weight:900; letter-spacing:-.4px; }
+  .vc-stamp { margin-left:auto; border:1.5px solid var(--ink); border-radius:4px; font-size:10px; font-weight:800; padding:2px 7px; letter-spacing:2px; }
+  .vc-desc { font-size:12px; color:var(--sub); line-height:1.65; min-height:40px; }
+  .vc-scorebar { display:flex; align-items:baseline; gap:6px; border-top:2px solid var(--ink); padding-top:9px; }
+  .vc-scorenum { font-size:26px; font-weight:900; color:var(--fire); letter-spacing:-1px; }
+  .vc-scorelabel { font-size:10px; color:var(--faint); font-weight:700; letter-spacing:2px; }
+  .vc-metas { margin-left:auto; font-size:10.5px; color:var(--faint); }
+  .vc-insight { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--sub); }
+  .vc-insight em { font-style:normal; font-weight:800; color:var(--ink); margin-right:8px; }
+  .vc-insight div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .vc-foot { display:flex; gap:8px; margin-top:auto; }
+  .vc-foot button { border:1.5px solid var(--ink); background:var(--card); border-radius:6px; font-size:12px; font-weight:600; padding:6px 10px; color:var(--ink); }
+  .vc-fav.on { background:var(--fire-soft); border-color:var(--fire); color:var(--fire); }
+  .vc-detail { flex:1; background:var(--ink) !important; color:var(--paper) !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="direction-a.jsx"></script>
+<script type="text/babel" src="direction-b.jsx"></script>
+<script type="text/babel" src="direction-c.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
