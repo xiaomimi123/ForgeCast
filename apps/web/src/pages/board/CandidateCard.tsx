@@ -56,50 +56,70 @@ function Row({ icon, label, value, muted }: { icon: string; label: string; value
   )
 }
 
-export default function CandidateCard({ c, rank, onPick, onRescore, onOpenDetail, picking, rescoring }: {
-  c: Candidate; rank: number
-  onPick: (repo: string) => void; onRescore: (id: number) => void; onOpenDetail: (c: Candidate) => void
-  picking: boolean; rescoring: boolean
+// 领域分类 → 图标底色（无真实 logo 数据，用色块 + 分类短名替代）
+const CAT_COLORS: Record<string, string> = {
+  '客服/IM': 'bg-sky-500', 'CRM/销售': 'bg-emerald-500', '电商/商城': 'bg-orange-500',
+  '仪表盘/BI': 'bg-violet-500', '表单/问卷': 'bg-pink-500', '文档/知识库': 'bg-amber-500',
+  '建站/CMS': 'bg-teal-500', '项目/协作': 'bg-indigo-500', '财务/发票': 'bg-lime-600',
+  '预约/排期': 'bg-cyan-600', 'AI助手/Agent': 'bg-fuchsia-500', '其它': 'bg-neutral-400',
+}
+
+function daysAgoText(iso: string | null): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  const days = Math.floor((Date.now() - t) / 86400000)
+  return days <= 0 ? '今天更新' : `${days} 天前更新`
+}
+
+export default function CandidateCard({ c, isNew, onOpenDetail, onToggleFavorite, favPending }: {
+  c: Candidate; isNew: boolean
+  onOpenDetail: (c: Candidate) => void
+  onToggleFavorite: (c: Candidate) => void
+  favPending: boolean
 }) {
   const d = parseDetail(c.score_detail)
-  const empty = '未生成 — 配好 key 后点「重新评分」'
-
+  const [owner, name] = c.repo.split('/')
+  const cat = d?.category || '其它'
+  const empty = '未生成 — 详情里点「重新评分」'
   return (
-    <div className="rounded-lg border bg-white p-3 hover:border-blue-300">
-      <div className="flex items-baseline gap-2">
-        <span className="text-xs text-neutral-400">#{rank}</span>
-        <a className="font-medium text-blue-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
-        <span className="text-xs text-neutral-400">★{num(c.stars).toLocaleString()}</span>
-        <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">{c.license ?? '—'}</span>
-        {d?.category && d.category !== '其它' && (
-          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700">{d.category}</span>
-        )}
-        <span className="ml-auto text-sm font-semibold">{c.score ?? '—'}</span>
-      </div>
-
-      {c.description && <div className="mt-1 text-xs text-neutral-500">{c.description}</div>}
-
-      {d && (
-        <div className="mt-2 space-y-1">
-          {DIMS.map((dim) => <Bar key={dim.key} label={dim.label} value={d[dim.key]} max={dim.max} />)}
+    <div className="flex cursor-pointer flex-col rounded-xl border bg-white p-4 shadow-sm hover:border-blue-300"
+      onClick={() => onOpenDetail(c)}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs text-neutral-400">
+            {owner}/{isNew && <span className="ml-1 rounded bg-red-500 px-1 py-0.5 text-[10px] font-semibold text-white">NEW</span>}
+          </div>
+          <div className="truncate text-lg font-bold leading-tight">{name}</div>
         </div>
-      )}
-
-      <div className="mt-2 space-y-1">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xs font-medium text-white ${CAT_COLORS[cat] ?? CAT_COLORS['其它']}`}>
+          {cat === '其它' ? (name?.[0] ?? '?').toUpperCase() : cat.split('/')[0].slice(0, 2)}
+        </div>
+      </div>
+      <div className="mt-1 line-clamp-2 min-h-[2rem] text-xs text-neutral-500">{c.description ?? ''}</div>
+      <div className="mt-2 flex items-center gap-2 text-xs">
+        <span className="text-neutral-500">⭐ {num(c.stars).toLocaleString()}</span>
+        <span className="rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700">{c.score ?? '—'} 分</span>
+        <span className="rounded bg-green-50 px-1.5 py-0.5 text-green-700">{c.license ?? '—'}</span>
+        {d?.category && d.category !== '其它' && (
+          <span className="truncate rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-700">{d.category}</span>
+        )}
+      </div>
+      <div className="mt-2 flex-1 space-y-1">
         <Row icon="👤" label="目标群体" value={d?.targetBuyer || empty} muted={!d?.targetBuyer} />
         <Row icon="💢" label="行业痛点" value={d?.painPoint || empty} muted={!d?.painPoint} />
-        {d?.rationale && <Row icon="💡" label="评分说明" value={d.rationale} />}
       </div>
-
-      <div className="mt-2 flex items-center gap-2">
-        {c.status === 'picked'
-          ? <span className="text-xs text-green-600">已立项</span>
-          : <button className="rounded border px-2 py-1 text-xs disabled:opacity-50"
-              disabled={picking} onClick={() => onPick(c.repo)}>立项</button>}
-        <button className="rounded border px-2 py-1 text-xs text-neutral-500 disabled:opacity-50"
-          disabled={rescoring} onClick={() => onRescore(c.id)}>{rescoring ? '评分中…' : '重新评分'}</button>
-        <button className="rounded border px-2 py-1 text-xs text-blue-600 disabled:opacity-50"
+      <div className="mt-1 text-right text-xs text-neutral-400">{daysAgoText(c.last_commit)}</div>
+      <div className="mt-2 flex items-center gap-2 border-t pt-2" onClick={(e) => e.stopPropagation()}>
+        <button title={c.favorite ? '取消收藏' : '收藏'} disabled={favPending}
+          className={`rounded-lg border px-2.5 py-1.5 text-sm disabled:opacity-50 ${c.favorite ? 'border-amber-400 bg-amber-50 text-amber-500' : 'text-neutral-400 hover:text-amber-500'}`}
+          onClick={() => onToggleFavorite(c)}>
+          {c.favorite ? '★' : '☆'}
+        </button>
+        <button className="flex-1 rounded-lg border py-1.5 text-sm hover:border-blue-400 hover:text-blue-600"
           onClick={() => onOpenDetail(c)}>详情</button>
+        <a className="rounded-lg border px-2.5 py-1.5 text-sm text-neutral-500 hover:text-blue-600"
+          title="打开 GitHub" href={c.url} target="_blank" rel="noreferrer">↗</a>
       </div>
     </div>
   )

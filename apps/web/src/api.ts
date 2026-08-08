@@ -45,6 +45,12 @@ export interface Candidate {
   id: number; repo: string; url: string; description: string | null
   license: string | null; license_ok: number
   stars: number; tech_stack: string | null; score: number | null; score_detail: string | null; status: string
+  favorite: number; last_commit: string | null; created_at: string
+}
+export interface AutoScoutStatus {
+  enabled: boolean; time: string
+  lastRun: string | null
+  lastResult: { at: string; found?: number; scored?: number; rejected?: number; added?: number; error?: string } | null
 }
 export interface CalendarView {
   date: string; publishedToday: number; remainingToday: number
