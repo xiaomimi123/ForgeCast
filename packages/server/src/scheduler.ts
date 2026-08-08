@@ -15,7 +15,8 @@ export function readAutoScoutCfg(db: Database.Database): AutoScoutCfg {
   const s = getAllSettings(db)
   return {
     enabled: (s.auto_scout ?? 'on') !== 'off',
-    time: /^\d{1,2}:\d{2}$/.test(s.auto_scout_time ?? '') ? s.auto_scout_time! : '08:00',
+    // 小时 0-23、分钟 0-59；越界（如 25:00 / 12:99）会让 setHours 滚到次日导致永不触发，需回落默认值
+    time: /^([01]?\d|2[0-3]):[0-5]\d$/.test(s.auto_scout_time ?? '') ? s.auto_scout_time! : '08:00',
     lastRunDate: s.auto_scout_last_run ?? '',
   }
 }
@@ -46,7 +47,7 @@ export async function runAutoScout(ctx: CoreCtx, scout: ScoutFn = scoutCandidate
       auto_scout_last_run: localDate(started),
       auto_scout_last_result: JSON.stringify({ at: started.toISOString(), error: msg }),
     })
-    console.log(`[forgecast] ⚠ 每日自动抓取失败：${msg}（明天自动重试）`)
+    console.error(`[forgecast] ⚠ 每日自动抓取失败：${msg}（明天自动重试）`)
   }
 }
 
@@ -55,9 +56,16 @@ export function startAutoScout(ctx: CoreCtx, opts: { intervalMs?: number; scout?
   let running = false
   const tick = async () => {
     if (running) return
-    if (!shouldAutoScout(new Date(), readAutoScoutCfg(ctx.db))) return
-    running = true
-    try { await runAutoScout(ctx, opts.scout) } finally { running = false }
+    // 整个 tick 体包一层 try/catch：readAutoScoutCfg（DB 读取）和 runAutoScout 失败分支里的
+    // setSettings 都可能抛错，任一处抛出都会变成 unhandled rejection，Node 22 默认直接崩掉整个进程。
+    // 每 60s 一次 interval，这里必须兜住，绝不向外抛。
+    try {
+      if (!shouldAutoScout(new Date(), readAutoScoutCfg(ctx.db))) return
+      running = true
+      try { await runAutoScout(ctx, opts.scout) } finally { running = false }
+    } catch (err) {
+      console.error('[forgecast] ⚠ 自动抓取调度异常:', err)
+    }
   }
   void tick()
   const timer = setInterval(() => { void tick() }, opts.intervalMs ?? 60_000)

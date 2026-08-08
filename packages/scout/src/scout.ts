@@ -60,6 +60,9 @@ export async function scoutCandidates(
   const existing = new Set(
     (ctx.db.prepare('SELECT repo FROM candidates').all() as Array<{ repo: string }>).map((r) => r.repo),
   )
+  // 取舍说明：spec 原文的保护条件是「repo 已存在且已有 score_detail」，这里简化为「repo 已存在」——
+  // 曾入库但从未评分的 repo（score_detail 为 NULL）在每日自动抓取里不会补评分，需靠「全部重新评分」按钮兜底。
+  // 现实现对 LLM 额度更保守，属已知偏差，非 bug。
   const isNew = (m: RepoMeta) => !existing.has(m.repo)
   const scorePool = found
     .filter((m) => isLicenseOk(m.license) && (!opts.onlyNew || isNew(m)))

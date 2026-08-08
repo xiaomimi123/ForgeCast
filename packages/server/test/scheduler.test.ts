@@ -39,6 +39,14 @@ describe('readAutoScoutCfg', () => {
     setSettings(ctx.db, { auto_scout_time: '21:30' })
     expect(readAutoScoutCfg(ctx.db).time).toBe('21:30')
   })
+  it('小时/分钟越界（25:00、12:99）回落 08:00；23:59 合法放行', () => {
+    setSettings(ctx.db, { auto_scout_time: '25:00' })
+    expect(readAutoScoutCfg(ctx.db).time).toBe('08:00')
+    setSettings(ctx.db, { auto_scout_time: '12:99' })
+    expect(readAutoScoutCfg(ctx.db).time).toBe('08:00')
+    setSettings(ctx.db, { auto_scout_time: '23:59' })
+    expect(readAutoScoutCfg(ctx.db).time).toBe('23:59')
+  })
 })
 
 describe('runAutoScout', () => {
@@ -76,5 +84,25 @@ describe('startAutoScout', () => {
     await new Promise((r) => setTimeout(r, 50))
     expect(spy).not.toHaveBeenCalled()
     stop()
+  })
+  it('tick 内部异常（DB 已关闭，readAutoScoutCfg 抛错）不逃逸为 unhandled rejection，只打日志继续存活', async () => {
+    setSettings(ctx.db, { auto_scout_time: '00:00' })
+    let unhandledCount = 0
+    const onUnhandled = () => { unhandledCount++ }
+    process.on('unhandledRejection', onUnhandled)
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ctx.db.close() // 之后 readAutoScoutCfg(ctx.db) 必抛错，模拟 T3 场景
+    const spy = vi.fn(async () => { throw new Error('不该跑到这里') })
+    try {
+      const stop = startAutoScout(ctx, { intervalMs: 3600_000, scout: spy })
+      await new Promise((r) => setTimeout(r, 50))
+      stop()
+      expect(unhandledCount).toBe(0)
+      expect(errSpy).toHaveBeenCalled()
+      expect(spy).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+      errSpy.mockRestore()
+    }
   })
 })
