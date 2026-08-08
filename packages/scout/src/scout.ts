@@ -15,6 +15,13 @@ ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.descripti
   stars=excluded.stars, last_commit=excluded.last_commit, tech_stack=excluded.tech_stack,
   score=excluded.score, score_detail=excluded.score_detail`
 
+// onlyNew 模式下已存在候选只刷元数据：score/score_detail/tech_stack/favorite/status 保持旧值
+// （保护 live 真评分不被 mock 启发式洗掉，也不重复烧 LLM 额度）
+const UPSERT_META = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, status)
+VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, 'candidate')
+ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=excluded.license_ok,
+  stars=excluded.stars, last_commit=excluded.last_commit`
+
 /** 抓 README + 评分（仅协议过关者）后 upsert 入池；rejected 者不评分只登记 */
 async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean): Promise<void> {
   const ok = isLicenseOk(meta.license)
@@ -38,28 +45,46 @@ async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: b
   })
 }
 
-/** 搜索 topic 白名单 → 去重 → 协议 gate → 过关者按 star 取 Top-limit 抓 README 评分 → 入池 */
+/** 搜索 topic 白名单 → 去重 → 协议 gate → 过关者按 star 取 Top-limit 抓 README 评分 → 入池。
+ *  onlyNew：已存在的 repo 只刷元数据（不评分不覆盖旧评分），只有新 repo 进入评分池。 */
 export async function scoutCandidates(
   ctx: CoreCtx,
-  opts: { topics?: string[]; limit?: number; pushedAfter?: string } = {},
-): Promise<{ found: number; scored: number; rejected: number }> {
+  opts: { topics?: string[]; limit?: number; pushedAfter?: string; onlyNew?: boolean } = {},
+): Promise<{ found: number; scored: number; rejected: number; added: number }> {
   const gh = createGithubClient(ctx.config.github)
   const topics = opts.topics ?? DEFAULT_TOPICS
   const limit = opts.limit ?? 30
   const pushedAfter = opts.pushedAfter ?? new Date(Date.now() - 183 * 864e5).toISOString().slice(0, 10)
   const found = await gh.searchRepos(topics, { minStars: 300, pushedAfter, perTopic: 20 })
 
-  const passing = found.filter((m) => isLicenseOk(m.license)).sort((a, b) => b.stars - a.stars)
-  const toScore = new Set(passing.slice(0, limit).map((m) => m.repo))
+  const existing = new Set(
+    (ctx.db.prepare('SELECT repo FROM candidates').all() as Array<{ repo: string }>).map((r) => r.repo),
+  )
+  const isNew = (m: RepoMeta) => !existing.has(m.repo)
+  const scorePool = found
+    .filter((m) => isLicenseOk(m.license) && (!opts.onlyNew || isNew(m)))
+    .sort((a, b) => b.stars - a.stars)
+  const toScore = new Set(scorePool.slice(0, limit).map((m) => m.repo))
+
   let scored = 0
   let rejected = 0
+  let added = 0
   for (const m of found) {
-    const willScore = toScore.has(m.repo)
-    await ingest(ctx, gh, m, willScore)
-    if (!isLicenseOk(m.license)) rejected++
-    else if (willScore) scored++
+    const ok = isLicenseOk(m.license)
+    if (opts.onlyNew && !isNew(m)) {
+      ctx.db.prepare(UPSERT_META).run({
+        repo: m.repo, url: m.url, description: m.description, license: m.license,
+        license_ok: ok ? 1 : 0, stars: m.stars, last_commit: m.lastCommit,
+      })
+    } else {
+      const willScore = toScore.has(m.repo)
+      await ingest(ctx, gh, m, willScore)
+      if (willScore) scored++
+      if (isNew(m) && ok) added++
+    }
+    if (!ok) rejected++
   }
-  return { found: found.length, scored, rejected }
+  return { found: found.length, scored, rejected, added }
 }
 
 /** 手动投喂单个 repo（URL 或 owner/name）：抓元数据+评分入池 */
