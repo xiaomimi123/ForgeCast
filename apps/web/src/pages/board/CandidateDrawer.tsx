@@ -39,7 +39,7 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
       <div
         className={`absolute right-0 top-0 h-full w-full max-w-[480px] overflow-y-auto bg-paper border-l-2 border-ink p-5 shadow-xl transition-transform duration-200 ${entered ? 'translate-x-0' : 'translate-x-full'}`}
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-baseline gap-2 border-b pb-2">
+        <div className="flex items-baseline gap-2 border-b border-hairline pb-2">
           <a className="font-black text-fire" href={candidate.url} target="_blank" rel="noreferrer">{candidate.repo}</a>
           <span className="text-xs text-sub">{candidate.license ?? '—'}</span>
           {d?.category && d.category !== '其它' && (
@@ -80,7 +80,7 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
         {!loading && error && (
           <div className="py-8 text-center">
             <div className="text-sm text-danger">生成失败：{error}</div>
-            <button className="mt-3 rounded border px-3 py-1 text-sm" onClick={() => load(false)}>重试</button>
+            <button className="btn-ink mt-3 px-3 py-1 text-sm" onClick={() => load(false)}>重试</button>
           </div>
         )}
 
@@ -114,7 +114,7 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
               <h3 className="mb-1 font-medium text-ink">换皮卖点</h3>
               <p className="text-sub">{live.intro.rebrandIdea}</p>
             </section>
-            <div className="flex items-center gap-3 border-t pt-2 text-xs text-faint">
+            <div className="flex items-center gap-3 border-t border-hairline pt-2 text-xs text-faint">
               <span>生成于 {new Date(live.intro.generatedAt).toLocaleString()}{live.cached ? '（缓存）' : ''}</span>
               <button className="btn-ink ml-auto px-2 py-1 text-xs" onClick={() => load(true)}>重新生成</button>
             </div>
