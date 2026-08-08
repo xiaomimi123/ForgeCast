@@ -69,20 +69,20 @@ export default function CutPlanEditor({ slug }: { slug: string }) {
   }
 
   return (
-    <section className="space-y-3 rounded-lg border bg-white p-4">
+    <section className="space-y-3 card-forge p-4">
       <div className="flex items-center justify-between">
         <h3 className="font-medium">卡点编辑（demo）</h3>
-        <button className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={busy} onClick={analyze}>{plan ? '重新分析' : '分析卡点'}</button>
+        <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={busy} onClick={analyze}>{plan ? '重新分析' : '分析卡点'}</button>
       </div>
-      {msg && <div className="text-xs text-neutral-600">{msg}</div>}
+      {msg && <div className="text-xs text-sub">{msg}</div>}
       {plan && (
         <>
-          <div className="text-xs text-neutral-500">曲子：{plan.bgm}</div>
+          <div className="text-xs text-sub">曲子：{plan.bgm}</div>
           {/* busy（分析/保存/清除在途）时禁用细控件，避免请求返回后 setPlan 覆盖掉这期间的本地编辑 */}
           <fieldset disabled={busy} className="space-y-3 disabled:opacity-60">
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <label>每几拍切
-                <select className="ml-1 rounded border px-2 py-1" value={plan.cadence} onChange={(e) => setCadence(Number(e.target.value))}>
+                <select className="ml-1 rounded-md border-[1.5px] border-ink bg-card px-2 py-1" value={plan.cadence} onChange={(e) => setCadence(Number(e.target.value))}>
                   <option value={2}>2 拍</option><option value={4}>4 拍</option><option value={8}>8 拍</option>
                 </select>
               </label>
@@ -90,7 +90,7 @@ export default function CutPlanEditor({ slug }: { slug: string }) {
                 <input type="range" min={-0.3} max={0.3} step={0.02} value={plan.offsetSec} onChange={(e) => setPlan({ ...plan, offsetSec: Number(e.target.value) })} />
               </label>
             </div>
-            {/* 节拍刻度条：每刀落点按时间比例定位 */}
+            {/* 节拍刻度条：每刀落点按时间比例定位（功能性可视化，配色不动） */}
             <div className="relative h-8 rounded bg-neutral-100">
               {plan.cuts.map((c, i) => (
                 <div key={i} title={`#${i + 1} ${cutTime(plan, c).toFixed(2)}s 图${c.shot + 1}`}
@@ -102,20 +102,20 @@ export default function CutPlanEditor({ slug }: { slug: string }) {
             <div className="max-h-72 space-y-1 overflow-auto text-sm">
               {plan.cuts.map((c, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-8 text-neutral-400">#{i + 1}</span>
+                  <span className="w-8 text-faint">#{i + 1}</span>
                   <span className="w-16 tabular-nums">{cutTime(plan, c).toFixed(2)}s</span>
-                  <select className="rounded border px-1 py-0.5" value={c.shot} onChange={(e) => setShot(i, Number(e.target.value))}>
+                  <select className="rounded-md border-[1.5px] border-ink bg-card px-1 py-0.5" value={c.shot} onChange={(e) => setShot(i, Number(e.target.value))}>
                     {(plan.shots || []).map((s, si) => <option key={si} value={si}>图{si + 1}</option>)}
                   </select>
-                  <button className="rounded border px-2" onClick={() => nudge(i, -1)}>←</button>
-                  <button className="rounded border px-2" onClick={() => nudge(i, 1)}>→</button>
+                  <button className="rounded-md border-[1.5px] border-ink bg-card px-2" onClick={() => nudge(i, -1)}>←</button>
+                  <button className="rounded-md border-[1.5px] border-ink bg-card px-2" onClick={() => nudge(i, 1)}>→</button>
                 </div>
               ))}
             </div>
           </fieldset>
           <div className="flex gap-2">
-            <button className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white disabled:opacity-50" disabled={busy} onClick={save}>保存方案</button>
-            <button className="rounded border px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={clear}>清除(回自动)</button>
+            <button className="btn-fire px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={save}>保存方案</button>
+            <button className="btn-ink px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={clear}>清除(回自动)</button>
           </div>
         </>
       )}

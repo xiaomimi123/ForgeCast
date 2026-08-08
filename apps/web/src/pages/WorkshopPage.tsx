@@ -76,30 +76,30 @@ export default function WorkshopPage() {
     <div className="grid grid-cols-[320px_1fr] gap-6">
       {/* 左侧：生成面板 */}
       <div className="space-y-4">
-        <div className="rounded-lg border bg-white p-4 space-y-3">
+        <div className="card-forge p-4 space-y-3">
           <div>
-            <label className="text-sm text-neutral-500">项目</label>
-            <select className="mt-1 w-full rounded border p-2" value={selected} onChange={(e) => setSlug(e.target.value)}>
+            <label className="text-sm text-sub">项目</label>
+            <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2" value={selected} onChange={(e) => setSlug(e.target.value)}>
               {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
             </select>
-            {selected && <Link to={`/projects/${selected}`} className="text-xs text-blue-600">查看项目详情 →</Link>}
+            {selected && <Link to={`/projects/${selected}`} className="text-xs text-fire">查看项目详情 →</Link>}
           </div>
           <div>
-            <label className="text-sm text-neutral-500">钩子类型</label>
+            <label className="text-sm text-sub">钩子类型</label>
             <div className="mt-1 grid grid-cols-2 gap-2">
               {HOOKS.map((h) => (
                 <button key={h.value}
-                  className={`rounded border px-2 py-1.5 text-sm ${hook === h.value ? 'border-blue-600 bg-blue-50 text-blue-700' : ''}`}
+                  className={`rounded-md border-[1.5px] px-2 py-1.5 text-sm ${hook === h.value ? 'border-fire bg-fire-soft text-fire font-bold' : 'border-hairline bg-transparent text-sub'}`}
                   onClick={() => setHook(h.value)}>{h.label}</button>
               ))}
             </div>
           </div>
           <div>
-            <label className="text-sm text-neutral-500">篇数</label>
-            <input type="number" min={1} max={5} className="mt-1 w-full rounded border p-2"
+            <label className="text-sm text-sub">篇数</label>
+            <input type="number" min={1} max={5} className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2"
               value={n} onChange={(e) => setN(Number(e.target.value))} />
           </div>
-          <button className="w-full rounded bg-blue-600 py-2 text-white disabled:opacity-50"
+          <button className="btn-fire w-full py-2 disabled:opacity-50"
             disabled={!selected || running} onClick={() => generate()}>
             {running ? '生成中…' : '生成'}
           </button>
@@ -112,7 +112,7 @@ export default function WorkshopPage() {
       </div>
       {/* 右侧：素材列表 */}
       <div className="space-y-4">
-        {assets.data?.length === 0 && <div className="text-neutral-400 text-sm">暂无素材，点左侧「生成」</div>}
+        {assets.data?.length === 0 && <div className="text-faint text-sm">暂无素材，点左侧「生成」</div>}
         {assets.data?.map((a) => (
           <AssetCard key={a.id} asset={a} onRegenerate={(fb) => generate(fb)} onVideo={(id) => makeVideo(id)} />
         ))}
