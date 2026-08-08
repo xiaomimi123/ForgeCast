@@ -8,14 +8,21 @@ import TailorPage from './pages/TailorPage'
 import TailorDetailPage from './pages/TailorDetailPage'
 import WorkshopPage from './pages/WorkshopPage'
 
-const nav = ({ isActive }: { isActive: boolean }) => (isActive ? 'font-semibold text-blue-600' : 'text-neutral-500')
+/* 锻造车间导航：激活项 3px 炉火橙底边，文字加粗（C 稿 .vc-nav） */
+const nav = ({ isActive }: { isActive: boolean }) =>
+  `px-3 pb-[14px] pt-[17px] text-[13.5px] border-b-[3px] -mb-[2px] ${
+    isActive ? 'font-bold text-ink border-fire' : 'text-sub border-transparent'
+  }`
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="border-b bg-white px-6 py-3 flex items-center gap-6">
-        <span className="font-bold text-lg">ForgeCast</span>
-        <nav className="flex gap-4 text-sm">
+    <div className="min-h-screen bg-paper text-ink">
+      <header className="flex h-14 items-center gap-7 border-b-2 border-ink bg-paper px-6">
+        <span className="text-[17px] font-black tracking-tight">
+          Forge<span className="text-fire">Cast</span>
+          <i className="ml-2 text-[10px] font-normal not-italic tracking-[2px] text-faint">开源变现内容工厂</i>
+        </span>
+        <nav className="flex self-stretch">
           <NavLink to="/scout" className={nav}>找项目</NavLink>
           <NavLink to="/projects" className={nav}>拆解需求</NavLink>
           <NavLink to="/workshop" className={nav}>做内容</NavLink>

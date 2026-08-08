@@ -1,1 +1,58 @@
 @import "tailwindcss";
+
+/* 「锻造车间」主题 token（spec 2026-08-09-forge-theme-design.md §1）
+   @theme 注册后自动生成 bg-paper / text-ink / border-hairline 等工具类 */
+@theme {
+  --color-paper: #f7f2ea;
+  --color-card: #fffdf8;
+  --color-ink: #1c1712;
+  --color-sub: #5f574c;
+  --color-faint: #989083;
+  --color-hairline: #cfc6b8;
+  --color-fire: #d9481c;
+  --color-fire-soft: #fbe9e2;
+  --color-danger: #b91c1c;
+}
+
+/* 组件类：只此四个（卡片/主按钮/次按钮/分段 tab），其余一律工具类拼 */
+.card-forge {
+  background: var(--color-card);
+  border: 2px solid var(--color-ink);
+  border-radius: 10px;
+  box-shadow: 4px 4px 0 rgba(28, 23, 18, 0.85);
+}
+.btn-fire {
+  background: var(--color-fire);
+  color: #fff;
+  border: 2px solid var(--color-fire);
+  border-radius: 6px;
+  font-weight: 700;
+  box-shadow: 3px 3px 0 rgba(28, 23, 18, 0.9);
+}
+.btn-fire:disabled { opacity: 0.5; box-shadow: none; }
+.btn-ink {
+  background: var(--color-card);
+  color: var(--color-ink);
+  border: 2px solid var(--color-ink);
+  border-radius: 6px;
+  font-weight: 600;
+}
+.btn-ink:disabled { opacity: 0.5; }
+.seg-tabs {
+  display: inline-flex;
+  border: 2px solid var(--color-ink);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-card);
+}
+.seg-tabs > button {
+  border: none;
+  background: transparent;
+  padding: 8px 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-sub);
+  border-right: 2px solid var(--color-ink);
+}
+.seg-tabs > button:last-child { border-right: none; }
+.seg-tabs > button.on { background: var(--color-ink); color: var(--color-paper); }
