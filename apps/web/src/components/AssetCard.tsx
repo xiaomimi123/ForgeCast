@@ -66,7 +66,7 @@ export default function AssetCard({ asset, onRegenerate, onVideo }: {
       <div className="flex items-center justify-between">
         <div className="text-sm text-sub">
           #{asset.id} · {asset.hook} ·
-          <span className={asset.status === 'approved' ? 'text-fire font-medium' : ''}> {asset.status}</span>
+          <span className={asset.status === 'approved' ? 'text-green-600 font-medium' : ''}> {asset.status}</span>
         </div>
         <div className="flex gap-2">
           {!editing && (

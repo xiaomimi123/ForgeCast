@@ -37,11 +37,11 @@ export function Bar({ label, value, max }: { label: string; value: number; max: 
   const pct = Math.max(0, Math.min(100, (value / max) * 100))
   return (
     <div className="flex items-center gap-2 text-xs">
-      <span className="w-8 shrink-0 text-neutral-500">{label}</span>
+      <span className="w-8 shrink-0 text-sub">{label}</span>
       <div className="h-1.5 w-24 shrink-0 rounded bg-hairline">
         <div className="h-1.5 rounded bg-fire" style={{ width: `${pct}%` }} />
       </div>
-      <span className="tabular-nums text-neutral-400">{value}/{max}</span>
+      <span className="tabular-nums text-faint">{value}/{max}</span>
     </div>
   )
 }
@@ -50,8 +50,8 @@ function Row({ icon, label, value, muted }: { icon: string; label: string; value
   return (
     <div className="flex gap-2 text-xs">
       <span className="shrink-0">{icon}</span>
-      <span className="w-14 shrink-0 text-neutral-500">{label}</span>
-      <span className={muted ? 'text-neutral-400 italic' : 'text-neutral-700'}>{value}</span>
+      <span className="w-14 shrink-0 text-sub">{label}</span>
+      <span className={muted ? 'text-faint italic' : 'text-ink'}>{value}</span>
     </div>
   )
 }
