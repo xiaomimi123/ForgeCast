@@ -49,7 +49,7 @@ export default function StageLanes({ projects, onMove, loaded }: {
                     </div>
                   )
                 })}
-                {items.length === 0 && <div className="rounded border-dashed border-hairline p-3 text-center text-xs text-faint">拖到此</div>}
+                {items.length === 0 && <div className="rounded border border-dashed border-hairline p-3 text-center text-xs text-faint">拖到此</div>}
               </div>
             </div>
           )

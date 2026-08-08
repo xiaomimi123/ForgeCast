@@ -80,7 +80,7 @@ export default function AssetCard({ asset, onRegenerate, onVideo }: {
         </div>
       </div>
       {warnings.length > 0 && (
-        <div className="rounded bg-amber-50 border border-amber-300 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded border-[1.5px] border-amber-600 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {warnings.join('；')}
         </div>
       )}

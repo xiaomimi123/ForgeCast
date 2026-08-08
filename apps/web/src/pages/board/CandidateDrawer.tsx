@@ -57,7 +57,7 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
           <button className="btn-ink px-3 py-1.5 text-sm disabled:opacity-50"
             disabled={rescoring} onClick={() => onRescore(candidate.id)}>{rescoring ? '评分中…' : '重新评分'}</button>
           <button disabled={favPending}
-            className={`rounded border px-3 py-1.5 text-sm disabled:opacity-50 ${candidate.favorite ? 'border-fire bg-fire-soft text-fire' : 'text-sub'}`}
+            className={`rounded-md border-[1.5px] px-3 py-1.5 text-sm disabled:opacity-50 ${candidate.favorite ? 'border-fire bg-fire-soft text-fire' : 'border-ink bg-card text-ink'}`}
             onClick={() => onToggleFavorite(candidate)}>{candidate.favorite ? '★ 已收藏' : '☆ 收藏'}</button>
         </div>
 

@@ -46,16 +46,6 @@ export function Bar({ label, value, max }: { label: string; value: number; max: 
   )
 }
 
-function Row({ icon, label, value, muted }: { icon: string; label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex gap-2 text-xs">
-      <span className="shrink-0">{icon}</span>
-      <span className="w-14 shrink-0 text-sub">{label}</span>
-      <span className={muted ? 'text-faint italic' : 'text-ink'}>{value}</span>
-    </div>
-  )
-}
-
 function daysAgoText(iso: string | null): string {
   if (!iso) return ''
   const t = new Date(iso).getTime()
@@ -109,6 +99,7 @@ export default function CandidateCard({ c, isNew, onOpenDetail, onToggleFavorite
           className={`rounded-md border-[1.5px] px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${
             c.favorite ? 'border-fire bg-fire-soft text-fire' : 'border-ink bg-card text-ink'
           }`}
+          title={c.favorite ? '取消收藏' : '收藏'}
           onClick={() => onToggleFavorite(c)}>
           {c.favorite ? '★ 已收' : '☆ 收藏'}
         </button>
