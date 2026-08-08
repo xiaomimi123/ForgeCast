@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { createApp } from './app'
 import { createTaskQueue } from './tasks'
+import { startAutoScout } from './scheduler'
 
 const ctx = createCtx()
 syncWorkspaceProjects(ctx)
@@ -12,3 +13,4 @@ const hostname = process.env.FORGECAST_HOST ?? '127.0.0.1'
 serve({ fetch: app.fetch, port: 4321, hostname }, (info) => {
   console.log(`[forgecast] 已启动 http://${hostname}:${info.port}（LLM 模式: ${ctx.config.llm.mode}）`)
 })
+startAutoScout(ctx)
