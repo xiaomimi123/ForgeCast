@@ -38,8 +38,8 @@ export function Bar({ label, value, max }: { label: string; value: number; max: 
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="w-8 shrink-0 text-neutral-500">{label}</span>
-      <div className="h-1.5 w-24 shrink-0 rounded bg-neutral-200">
-        <div className="h-1.5 rounded bg-blue-500" style={{ width: `${pct}%` }} />
+      <div className="h-1.5 w-24 shrink-0 rounded bg-hairline">
+        <div className="h-1.5 rounded bg-fire" style={{ width: `${pct}%` }} />
       </div>
       <span className="tabular-nums text-neutral-400">{value}/{max}</span>
     </div>
@@ -54,14 +54,6 @@ function Row({ icon, label, value, muted }: { icon: string; label: string; value
       <span className={muted ? 'text-neutral-400 italic' : 'text-neutral-700'}>{value}</span>
     </div>
   )
-}
-
-// 领域分类 → 图标底色（无真实 logo 数据，用色块 + 分类短名替代）
-const CAT_COLORS: Record<string, string> = {
-  '客服/IM': 'bg-sky-500', 'CRM/销售': 'bg-emerald-500', '电商/商城': 'bg-orange-500',
-  '仪表盘/BI': 'bg-violet-500', '表单/问卷': 'bg-pink-500', '文档/知识库': 'bg-amber-500',
-  '建站/CMS': 'bg-teal-500', '项目/协作': 'bg-indigo-500', '财务/发票': 'bg-lime-600',
-  '预约/排期': 'bg-cyan-600', 'AI助手/Agent': 'bg-fuchsia-500', '其它': 'bg-neutral-400',
 }
 
 function daysAgoText(iso: string | null): string {
@@ -80,46 +72,50 @@ export default function CandidateCard({ c, isNew, onOpenDetail, onToggleFavorite
 }) {
   const d = parseDetail(c.score_detail)
   const [owner, name] = c.repo.split('/')
-  const cat = d?.category || '其它'
   const empty = '未生成 — 详情里点「重新评分」'
   return (
-    <div className="flex cursor-pointer flex-col rounded-xl border bg-white p-4 shadow-sm hover:border-blue-300"
+    <div className="card-forge relative flex cursor-pointer flex-col gap-2.5 p-4"
       onClick={() => onOpenDetail(c)}>
-      <div className="flex items-start gap-2">
+      {isNew && (
+        <div className="absolute -top-3 right-3 rounded bg-fire px-2.5 py-0.5 text-[10px] font-extrabold tracking-widest text-white shadow-[2px_2px_0_rgba(28,23,18,0.85)]">
+          今日入炉
+        </div>
+      )}
+      <div className="flex items-start">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs text-neutral-400">
-            {owner}/{isNew && <span className="ml-1 rounded bg-red-500 px-1 py-0.5 text-[10px] font-semibold text-white">NEW</span>}
-          </div>
-          <div className="truncate text-lg font-bold leading-tight">{name}</div>
+          <div className="truncate text-[11px] text-faint">{owner} /</div>
+          <div className="truncate text-lg font-black tracking-tight">{name}</div>
         </div>
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xs font-medium text-white ${CAT_COLORS[cat] ?? CAT_COLORS['其它']}`}>
-          {cat === '其它' ? (name?.[0] ?? '?').toUpperCase() : cat.split('/')[0].slice(0, 2)}
-        </div>
-      </div>
-      <div className="mt-1 line-clamp-2 min-h-[2rem] text-xs text-neutral-500">{c.description ?? ''}</div>
-      <div className="mt-2 flex items-center gap-2 text-xs">
-        <span className="text-neutral-500">⭐ {num(c.stars).toLocaleString()}</span>
-        <span className="rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700">{c.score ?? '—'} 分</span>
-        <span className="rounded bg-green-50 px-1.5 py-0.5 text-green-700">{c.license ?? '—'}</span>
-        {d?.category && d.category !== '其它' && (
-          <span className="truncate rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-700">{d.category}</span>
+        {d?.category && (
+          <span className="ml-2 shrink-0 rounded border-[1.5px] border-ink px-1.5 py-0.5 text-[10px] font-extrabold tracking-[2px]">
+            {d.category.split('/')[0]}
+          </span>
         )}
       </div>
-      <div className="mt-2 flex-1 space-y-1">
-        <Row icon="👤" label="目标群体" value={d?.targetBuyer || empty} muted={!d?.targetBuyer} />
-        <Row icon="💢" label="行业痛点" value={d?.painPoint || empty} muted={!d?.painPoint} />
+      <div className="line-clamp-2 min-h-[2.5rem] text-xs leading-relaxed text-sub">{c.description ?? ''}</div>
+      <div className="flex items-baseline gap-1.5 border-t-2 border-ink pt-2">
+        <span className="text-[26px] font-black tracking-tighter text-fire">{c.score ?? '—'}</span>
+        <span className="text-[10px] font-bold tracking-[2px] text-faint">变现分</span>
+        <span className="ml-auto text-[10.5px] text-faint">
+          ⭐{num(c.stars).toLocaleString()} · {c.license ?? '无协议'}{daysAgoText(c.last_commit) ? ` · ${daysAgoText(c.last_commit)}` : ''}
+        </span>
       </div>
-      <div className="mt-1 text-right text-xs text-neutral-400">{daysAgoText(c.last_commit)}</div>
-      <div className="mt-2 flex items-center gap-2 border-t pt-2" onClick={(e) => e.stopPropagation()}>
-        <button title={c.favorite ? '取消收藏' : '收藏'} disabled={favPending}
-          className={`rounded-lg border px-2.5 py-1.5 text-sm disabled:opacity-50 ${c.favorite ? 'border-amber-400 bg-amber-50 text-amber-500' : 'text-neutral-400 hover:text-amber-500'}`}
+      <div className="flex-1 space-y-0.5 text-[11px] text-sub">
+        <div className="truncate"><em className="mr-2 font-extrabold not-italic text-ink">谁掏钱</em>{d?.targetBuyer || empty}</div>
+        <div className="truncate"><em className="mr-2 font-extrabold not-italic text-ink">为何掏</em>{d?.painPoint || empty}</div>
+      </div>
+      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+        <button disabled={favPending}
+          className={`rounded-md border-[1.5px] px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+            c.favorite ? 'border-fire bg-fire-soft text-fire' : 'border-ink bg-card text-ink'
+          }`}
           onClick={() => onToggleFavorite(c)}>
-          {c.favorite ? '★' : '☆'}
+          {c.favorite ? '★ 已收' : '☆ 收藏'}
         </button>
-        <button className="flex-1 rounded-lg border py-1.5 text-sm hover:border-blue-400 hover:text-blue-600"
-          onClick={() => onOpenDetail(c)}>详情</button>
-        <a className="rounded-lg border px-2.5 py-1.5 text-sm text-neutral-500 hover:text-blue-600"
-          title="打开 GitHub" href={c.url} target="_blank" rel="noreferrer">↗</a>
+        <button className="flex-1 rounded-md border-[1.5px] border-ink bg-ink py-1.5 text-xs font-semibold text-paper"
+          onClick={() => onOpenDetail(c)}>看详情</button>
+        <a className="rounded-md border-[1.5px] border-ink bg-card px-2.5 py-1.5 text-xs font-semibold text-ink"
+          href={c.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>GitHub ↗</a>
       </div>
     </div>
   )

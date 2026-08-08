@@ -136,25 +136,25 @@ export default function ScoutPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={scanning || rescoringAll} onClick={scout}>
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={scout}>
           {scanning ? '抓取中…' : '抓取候选'}
         </button>
-        <button className="rounded border px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={rescoreAll}>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={rescoreAll}>
           {rescoringAll ? '评分中…' : '全部重新评分'}
         </button>
-        <button className="rounded border px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={backfillCats}>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={backfillCats}>
           分类回填
         </button>
-        <span className="text-sm text-neutral-500">共 {rows.length} 个候选</span>
-        <span className="ml-auto text-xs text-neutral-400">
-          {auto ? (auto.enabled ? `每日 ${auto.time} 自动抓取 · 上次：${lastText}` : '自动抓取已关（设置页可开）') : ''}
+        <span className="text-sm text-sub">共 {rows.length} 个候选</span>
+        <span className="ml-auto text-xs text-faint">
+          {auto ? (auto.enabled ? `每日 ${auto.time} 进料 · 上次：${lastText}` : '每日进料已关（设置页可开）') : ''}
         </span>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="seg-tabs">
         {TABS.map((t) => (
           <button key={t.key}
-            className={`rounded-full border px-4 py-1.5 text-sm ${tab === t.key ? 'bg-blue-600 text-white' : 'bg-white text-neutral-600'}`}
+            className={tab === t.key ? 'on' : ''}
             onClick={() => setTab(t.key)}>
             {t.label}{t.key === 'fav' ? ` (${favShown.length})` : ''}
           </button>
@@ -163,9 +163,9 @@ export default function ScoutPage() {
 
       {tab !== 'fav' && catCounts.size > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
-          <button className={`rounded-full border px-3 py-1 ${cat === null ? 'bg-blue-600 text-white' : 'bg-white'}`} onClick={() => setCat(null)}>全部 ({ok.length})</button>
+          <button className={`rounded-full px-3 py-1 ${cat === null ? 'border-[1.5px] border-fire bg-fire-soft font-bold text-fire' : 'border-[1.5px] border-hairline text-sub'}`} onClick={() => setCat(null)}>全部 ({ok.length})</button>
           {[...catCounts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => (
-            <button key={k} className={`rounded-full border px-3 py-1 ${cat === k ? 'bg-blue-600 text-white' : 'bg-white'}`} onClick={() => setCat(k)}>{k} ({n})</button>
+            <button key={k} className={`rounded-full px-3 py-1 ${cat === k ? 'border-[1.5px] border-fire bg-fire-soft font-bold text-fire' : 'border-[1.5px] border-hairline text-sub'}`} onClick={() => setCat(k)}>{k} ({n})</button>
           ))}
         </div>
       )}
@@ -179,15 +179,15 @@ export default function ScoutPage() {
       {tab === 'all' && (
         <>
           <div className={grid}>{allShown.map(card)}</div>
-          {rows.length === 0 && <div className="rounded-lg border p-6 text-center text-neutral-400">暂无候选，点「抓取候选」</div>}
+          {rows.length === 0 && <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">暂无候选，点「抓取候选」</div>}
           {blocked.length > 0 && (
-            <details className="rounded-lg border bg-neutral-50 p-3 text-sm text-neutral-500">
+            <details className="rounded-lg bg-transparent border-[1.5px] border-hairline p-3 text-sm text-sub">
               <summary className="cursor-pointer">另有 {blocked.length} 个协议不可商用（GPL/AGPL 系），点开查看</summary>
               <div className="mt-2 space-y-1">
                 {blocked.map((c) => (
                   <div key={c.id} className="flex gap-2 text-xs">
-                    <a className="text-neutral-600" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
-                    <span className="text-neutral-400">{c.license ?? '无协议'}</span>
+                    <a className="text-sub" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
+                    <span className="text-faint">{c.license ?? '无协议'}</span>
                   </div>
                 ))}
               </div>
@@ -198,17 +198,17 @@ export default function ScoutPage() {
       {tab === 'fav' && (
         favShown.length
           ? <div className={grid}>{favShown.map(card)}</div>
-          : <div className="rounded-lg border p-6 text-center text-neutral-400">还没有收藏，点卡片上的 ☆ 收藏感兴趣的项目</div>
+          : <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">还没有收藏，点卡片上的 ☆ 收藏感兴趣的项目</div>
       )}
       {tab === 'daily' && (
         dailyGroups.length
           ? dailyGroups.map(([day, list]) => (
               <div key={day}>
-                <div className="mb-2 text-sm font-medium text-neutral-600">{dayLabel(day, today)} <span className="text-neutral-400">({list.length})</span></div>
+                <div className="mb-2 text-sm font-bold text-ink">{dayLabel(day, today)} <span className="text-faint">({list.length})</span></div>
                 <div className={grid}>{list.map(card)}</div>
               </div>
             ))
-          : <div className="rounded-lg border p-6 text-center text-neutral-400">近 14 天没有新入库的候选（每日自动抓取会把新发现的项目归到这里）</div>
+          : <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">近 14 天没有新入库的候选（每日自动抓取会把新发现的项目归到这里）</div>
       )}
 
       {detail && (
