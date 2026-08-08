@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
-import { HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
+import { getAllSettings, HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
@@ -15,6 +15,7 @@ import {
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
+import { readAutoScoutCfg } from './scheduler'
 
 // 可通过 PATCH 修改的项目字段白名单
 const PATCHABLE = ['brand_name', 'target_buyer', 'demo_url', 'price_deploy', 'price_custom', 'stage'] as const
@@ -261,7 +262,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
 
   app.get('/api/candidates', (c) => {
     return c.json(ctx.db.prepare(
-      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
+      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, favorite, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
     ).all())
   })
 
@@ -331,6 +332,22 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
     }
+  })
+
+  app.post('/api/candidates/:id/favorite', async (c) => {
+    const id = c.req.param('id')
+    if (!ctx.db.prepare('SELECT id FROM candidates WHERE id = ?').get(id)) return c.json({ error: '候选不存在' }, 404)
+    const body = await c.req.json().catch(() => ({}))
+    ctx.db.prepare('UPDATE candidates SET favorite = ? WHERE id = ?').run(body.favorite ? 1 : 0, id)
+    return c.json({ ok: true })
+  })
+
+  app.get('/api/scout/auto-status', (c) => {
+    const cfg = readAutoScoutCfg(ctx.db)
+    const s = getAllSettings(ctx.db)
+    let lastResult: unknown = null
+    try { lastResult = s.auto_scout_last_result ? JSON.parse(s.auto_scout_last_result) : null } catch { /* 坏 JSON 兜底 null */ }
+    return c.json({ enabled: cfg.enabled, time: cfg.time, lastRun: s.auto_scout_last_run ?? null, lastResult })
   })
 
   // —— M2 analyst ——
