@@ -67,6 +67,7 @@ forgecast tailor add|list|decompose|search|proposal   # 定制项目：需求拆
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/server` 本地 API
 - `apps/web` Web 控制台（按业务流分五板块：找项目 `/scout` / 拆解需求 `/projects` / 做内容 `/workshop` / 分发营销 `/market` / 定制项目 `/tailor`）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
+- `designs/` 设计稿与视觉体系参照（当前主题：锻造车间，见 docs/superpowers/specs/2026-08-09-forge-theme-design.md）
 
 ## Docker（可选）
 ```bash
