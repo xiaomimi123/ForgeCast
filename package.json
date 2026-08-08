@@ -15,7 +15,8 @@
     "@forgecast/ops": "workspace:*",
     "@forgecast/rebrand": "workspace:*",
     "@forgecast/scout": "workspace:*",
-    "@forgecast/studio": "workspace:*"
+    "@forgecast/studio": "workspace:*",
+    "@forgecast/tailor": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

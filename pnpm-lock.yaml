@@ -29,6 +29,9 @@ importers:
       '@forgecast/studio':
         specifier: workspace:*
         version: link:packages/studio
+      '@forgecast/tailor':
+        specifier: workspace:*
+        version: link:packages/tailor
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
