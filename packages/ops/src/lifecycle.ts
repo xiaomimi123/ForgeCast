@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CoreCtx } from '@forgecast/core'
+import { advanceStage, type CoreCtx } from '@forgecast/core'
 
 export interface Lead {
   id: number
@@ -13,10 +13,12 @@ export interface Lead {
   slug: string | null
 }
 
-function assertAsset(ctx: CoreCtx, assetId: number): void {
-  if (!ctx.db.prepare('SELECT id FROM assets WHERE id = ?').get(assetId)) {
-    throw new Error(`素材不存在: ${assetId}`)
-  }
+function assertAsset(ctx: CoreCtx, assetId: number): { id: number; project_id: number } {
+  const row = ctx.db.prepare('SELECT id, project_id FROM assets WHERE id = ?').get(assetId) as
+    | { id: number; project_id: number }
+    | undefined
+  if (!row) throw new Error(`素材不存在: ${assetId}`)
+  return row
 }
 
 /** 登记开发过程碎片（人工 Claude Code 录屏）为 process 视频素材，走 draft→approve→publish 生命周期（§5.2 第三内容类别） */
@@ -50,10 +52,11 @@ export function deleteAsset(ctx: CoreCtx, assetId: number): void {
 
 /** 回填发布：状态置 published，记发布时间/平台/链接 */
 export function publishAsset(ctx: CoreCtx, assetId: number, opts: { platform: string; url?: string }): void {
-  assertAsset(ctx, assetId)
+  const asset = assertAsset(ctx, assetId)
   ctx.db.prepare(
     "UPDATE assets SET status = 'published', published_at = datetime('now'), platform = ?, published_url = ? WHERE id = ?",
   ).run(opts.platform, opts.url ?? null, assetId)
+  advanceStage(ctx.db, asset.project_id, 'publishing')
 }
 
 /** 回填表现数据：曝光/赞/询单，存 perf JSON */
@@ -67,9 +70,10 @@ export function recordPerf(ctx: CoreCtx, assetId: number, perf: { views?: number
 
 /** 登记询单（归因到来源素材） */
 export function addLead(ctx: CoreCtx, input: { assetId: number; wechat?: string; intent?: string }): { id: number } {
-  assertAsset(ctx, input.assetId)
+  const asset = assertAsset(ctx, input.assetId)
   const info = ctx.db.prepare('INSERT INTO leads (asset_id, wechat, intent) VALUES (?, ?, ?)')
     .run(input.assetId, input.wechat ?? null, input.intent ?? null)
+  advanceStage(ctx.db, asset.project_id, 'selling')
   return { id: Number(info.lastInsertRowid) }
 }
 

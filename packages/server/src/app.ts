@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
-import { getAllSettings, HOOKS, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
+import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
@@ -36,18 +36,53 @@ function readFileSafe(p: string): string {
 export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   const app = new Hono()
 
+  // 立项时继承的候选字段（intro_detail/score_detail 是产品说明书/评分明细的种子，供泳道卡片和详情页在未分析时回退展示）
+  const PROJECT_SELECT = `
+    SELECT p.*, c.intro_detail AS intro_detail, c.score_detail AS score_detail
+    FROM projects p LEFT JOIN candidates c ON c.id = p.candidate_id
+  `
+
+  /** 按 project_id 聚合真实产物计数（各一条 SQL，不逐项目查库，避免 N+1） */
+  function projectCounts(): Map<number, { copies: number; videos: number; published: number; leads: number }> {
+    const assetRows = ctx.db.prepare(`
+      SELECT project_id,
+             SUM(type = 'copy') AS copies,
+             SUM(type = 'video') AS videos,
+             SUM(status = 'published') AS published
+      FROM assets GROUP BY project_id
+    `).all() as Array<{ project_id: number; copies: number; videos: number; published: number }>
+    const leadRows = ctx.db.prepare(`
+      SELECT a.project_id AS project_id, COUNT(*) AS leads
+      FROM leads l JOIN assets a ON a.id = l.asset_id
+      GROUP BY a.project_id
+    `).all() as Array<{ project_id: number; leads: number }>
+    const map = new Map<number, { copies: number; videos: number; published: number; leads: number }>()
+    for (const r of assetRows) map.set(r.project_id, { copies: r.copies, videos: r.videos, published: r.published, leads: 0 })
+    for (const r of leadRows) {
+      const cur = map.get(r.project_id) ?? { copies: 0, videos: 0, published: 0, leads: 0 }
+      cur.leads = r.leads
+      map.set(r.project_id, cur)
+    }
+    return map
+  }
+
   app.get('/api/projects', (c) => {
-    const rows = ctx.db.prepare('SELECT * FROM projects ORDER BY id').all() as any[]
+    const rows = ctx.db.prepare(`${PROJECT_SELECT} ORDER BY p.id`).all() as any[]
+    const counts = projectCounts()
     // 附上 analysis.md 摘要给看板泳道卡片；没跑过分析的项目为空对象，不报错
     return c.json(rows.map((r) => {
       const p = path.join(ctx.config.paths.workspace, r.slug, 'analysis.md')
       const md = readFileSafe(p)
-      return { ...r, analysis_summary: parseAnalysisSummary(md) }
+      return {
+        ...r,
+        analysis_summary: parseAnalysisSummary(md),
+        counts: counts.get(r.id) ?? { copies: 0, videos: 0, published: 0, leads: 0 },
+      }
     }))
   })
 
   app.get('/api/projects/:slug', (c) => {
-    const row: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(c.req.param('slug'))
+    const row: any = ctx.db.prepare(`${PROJECT_SELECT} WHERE p.slug = ?`).get(c.req.param('slug'))
     if (!row) return c.json({ error: '项目不存在' }, 404)
     const analysisPath = path.join(ctx.config.paths.workspace, row.slug, 'analysis.md')
     const analysisMd = readFileSafe(analysisPath)
@@ -59,6 +94,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const exists = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
     if (!exists) return c.json({ error: '项目不存在' }, 404)
     const body = await c.req.json()
+    if ('stage' in body && !isStage(body.stage)) return c.json({ error: '非法 stage' }, 400)
     const keys = PATCHABLE.filter((k) => k in body)
     if (keys.length) {
       ctx.db.prepare(`UPDATE projects SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE slug = ?`)

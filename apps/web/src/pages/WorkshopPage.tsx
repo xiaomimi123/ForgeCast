@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, subscribeTask, type Asset, type Project } from '../api'
 import AssetCard from '../components/AssetCard'
+import CutPlanEditor from './CutPlanEditor'
 
 const HOOKS = [
   { value: 'pain', label: '行业痛点型' },
@@ -73,50 +74,55 @@ export default function WorkshopPage() {
   }
 
   return (
-    <div className="grid grid-cols-[320px_1fr] gap-6">
-      {/* 左侧：生成面板 */}
-      <div className="space-y-4">
-        <div className="card-forge p-4 space-y-3">
-          <div>
-            <label className="text-sm text-sub">项目</label>
-            <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2" value={selected} onChange={(e) => setSlug(e.target.value)}>
-              {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
-            </select>
-            {selected && <Link to={`/projects/${selected}`} className="text-xs text-fire">查看项目详情 →</Link>}
-          </div>
-          <div>
-            <label className="text-sm text-sub">钩子类型</label>
-            <div className="mt-1 grid grid-cols-2 gap-2">
-              {HOOKS.map((h) => (
-                <button key={h.value}
-                  className={`rounded-md border-[1.5px] px-2 py-1.5 text-sm ${hook === h.value ? 'border-fire bg-fire-soft text-fire font-bold' : 'border-hairline bg-transparent text-sub'}`}
-                  onClick={() => setHook(h.value)}>{h.label}</button>
-              ))}
+    <div className="space-y-6">
+      <div className="grid grid-cols-[320px_1fr] gap-6">
+        {/* 左侧：生成面板 */}
+        <div className="space-y-4">
+          <div className="card-forge p-4 space-y-3">
+            <div>
+              <label className="text-sm text-sub">项目</label>
+              <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2" value={selected} onChange={(e) => setSlug(e.target.value)}>
+                {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
+              </select>
+              {selected && <Link to={`/projects/${selected}`} className="text-xs text-fire">查看项目详情 →</Link>}
             </div>
+            <div>
+              <label className="text-sm text-sub">钩子类型</label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {HOOKS.map((h) => (
+                  <button key={h.value}
+                    className={`rounded-md border-[1.5px] px-2 py-1.5 text-sm ${hook === h.value ? 'border-fire bg-fire-soft text-fire font-bold' : 'border-hairline bg-transparent text-sub'}`}
+                    onClick={() => setHook(h.value)}>{h.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-sub">篇数</label>
+              <input type="number" min={1} max={5} className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2"
+                value={n} onChange={(e) => setN(Number(e.target.value))} />
+            </div>
+            <button className="btn-fire w-full py-2 disabled:opacity-50"
+              disabled={!selected || running} onClick={() => generate()}>
+              {running ? '生成中…' : '生成'}
+            </button>
           </div>
-          <div>
-            <label className="text-sm text-sub">篇数</label>
-            <input type="number" min={1} max={5} className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2"
-              value={n} onChange={(e) => setN(Number(e.target.value))} />
-          </div>
-          <button className="btn-fire w-full py-2 disabled:opacity-50"
-            disabled={!selected || running} onClick={() => generate()}>
-            {running ? '生成中…' : '生成'}
-          </button>
+          {logs.length > 0 && (
+            <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-48 overflow-y-auto space-y-1">
+              {logs.map((l, i) => <div key={i}>{l}</div>)}
+            </div>
+          )}
         </div>
-        {logs.length > 0 && (
-          <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-48 overflow-y-auto space-y-1">
-            {logs.map((l, i) => <div key={i}>{l}</div>)}
-          </div>
-        )}
+        {/* 右侧：素材列表 */}
+        <div className="space-y-4">
+          {assets.data?.length === 0 && <div className="text-faint text-sm">暂无素材，点左侧「生成」</div>}
+          {assets.data?.map((a) => (
+            <AssetCard key={a.id} asset={a} onRegenerate={(fb) => generate(fb)} onVideo={(id) => makeVideo(id)} />
+          ))}
+        </div>
       </div>
-      {/* 右侧：素材列表 */}
-      <div className="space-y-4">
-        {assets.data?.length === 0 && <div className="text-faint text-sm">暂无素材，点左侧「生成」</div>}
-        {assets.data?.map((a) => (
-          <AssetCard key={a.id} asset={a} onRegenerate={(fb) => generate(fb)} onVideo={(id) => makeVideo(id)} />
-        ))}
-      </div>
+      {/* 卡点编辑器（原在项目详情页，320px 侧栏放不下卡点列表，挪到这里下方全宽）；key 强制切项目时重挂载，
+          否则 CutPlanEditor 内部 plan state 不会清空，会残留上一个项目的卡点方案 */}
+      {selected && <CutPlanEditor key={selected} slug={selected} />}
     </div>
   )
 }

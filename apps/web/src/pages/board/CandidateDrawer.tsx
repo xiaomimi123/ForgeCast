@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type Candidate, type IntroResponse } from '../../api'
 import { Bar, DIMS, parseDetail } from './CandidateCard'
+import IntroSections from './IntroSections'
 
 /** 右侧抽屉详情：产品说明书 + 评分明细 + 操作区（立项/重评/收藏）。原 CandidateDetailModal 改造。 */
 export default function CandidateDrawer({ candidate, onClose, onPick, onRescore, onToggleFavorite, picking, rescoring, favPending }: {
@@ -91,30 +92,9 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
         )}
 
         {!loading && live && (
-          <div className="space-y-4 py-3 text-sm">
-            <section>
-              <h3 className="mb-1 font-medium text-ink">产品简介</h3>
-              <p className="text-sub">{live.intro.summary}</p>
-            </section>
-            <section>
-              <h3 className="mb-1 font-medium text-ink">核心功能</h3>
-              <ul className="list-disc space-y-0.5 pl-5 text-sub">
-                {live.intro.features.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
-            </section>
-            <section>
-              <h3 className="mb-1 font-medium text-ink">目标用户</h3>
-              <p className="text-sub">{live.intro.targetUser}</p>
-            </section>
-            <section>
-              <h3 className="mb-1 font-medium text-ink">行业痛点</h3>
-              <p className="text-sub">{live.intro.painPoint}</p>
-            </section>
-            <section>
-              <h3 className="mb-1 font-medium text-ink">换皮卖点</h3>
-              <p className="text-sub">{live.intro.rebrandIdea}</p>
-            </section>
-            <div className="flex items-center gap-3 border-t border-hairline pt-2 text-xs text-faint">
+          <div className="py-3">
+            <IntroSections intro={live.intro} />
+            <div className="mt-4 flex items-center gap-3 border-t border-hairline pt-2 text-xs text-faint">
               <span>生成于 {new Date(live.intro.generatedAt).toLocaleString()}{live.cached ? '（缓存）' : ''}</span>
               <button className="btn-ink ml-auto px-2 py-1 text-xs" onClick={() => load(true)}>重新生成</button>
             </div>

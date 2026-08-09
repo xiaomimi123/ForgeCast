@@ -35,6 +35,8 @@ describe('analyzeProject mock', () => {
     expect(md).toMatch(/^# chatwoot 商业化分析/)
     expect(md).toContain('## 钩子匹配')
     expect(spy).not.toHaveBeenCalled()
+    const row = ctx.db.prepare('SELECT stage FROM projects WHERE slug = ?').get('chatwoot') as any
+    expect(row.stage).toBe('rebranding')
   })
   it('项目不存在 → 抛错', async () => {
     await expect(analyzeProject(ctx, 'nope')).rejects.toThrow(/项目不存在/)

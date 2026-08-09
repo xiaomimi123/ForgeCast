@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useParams } from 'react-router-dom'
-import { api, subscribeTask, type Project } from '../api'
-import CutPlanEditor from './CutPlanEditor'
+import { api, subscribeTask, type IntroDetail, type Project } from '../api'
+import IntroSections from './board/IntroSections'
 
 const FIELDS = [
   { key: 'brand_name', label: '品牌名' },
@@ -63,10 +63,14 @@ export default function ProjectDetailPage() {
 
   if (!project.data) return <div className="text-faint">加载中…</div>
   const p = project.data
+  // 未分析时的回退：立项继承自候选的产品说明书（intro_detail 常为 null——只在 live 模式且用户开过候选抽屉时才有）
+  let inheritedIntro: IntroDetail | null = null
+  if (!p.analysisMd && p.intro_detail) {
+    try { inheritedIntro = JSON.parse(p.intro_detail) as IntroDetail } catch { /* 坏 JSON 按无数据处理 */ }
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-[1fr_360px] gap-6">
+    <div className="grid grid-cols-[1fr_360px] gap-6">
       <div className="card-forge p-6 text-sm leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h2]:font-bold [&_h2]:mt-4 [&_li]:ml-4">
         <div className="mb-3 flex items-center gap-3 border-b border-hairline pb-2">
           <button className="btn-fire px-3 py-1 text-sm disabled:opacity-50"
@@ -82,7 +86,16 @@ export default function ProjectDetailPage() {
         )}
         {p.analysisMd
           ? <ReactMarkdown>{p.analysisMd}</ReactMarkdown>
-          : <div className="text-faint">暂无 analysis.md——在 workspace/{slug}/ 下补充分析报告</div>}
+          : inheritedIntro
+            ? (
+              <div>
+                <div className="mb-3 rounded bg-fire-soft px-3 py-2 text-xs text-fire">
+                  以下来自候选期说明书，点上方「生成分析」得到正式的商业化分析报告
+                </div>
+                <IntroSections intro={inheritedIntro} />
+              </div>
+            )
+            : <div className="text-faint">暂无 analysis.md——在 workspace/{slug}/ 下补充分析报告</div>}
       </div>
       <div className="space-y-4">
         <div className="card-forge p-4 space-y-3">
@@ -112,9 +125,6 @@ export default function ProjectDetailPage() {
           </ul>
         </div>
       </div>
-      </div>
-      {/* 卡点编辑器挪到下方全宽（窄侧栏放不下卡点列表） */}
-      <CutPlanEditor slug={slug} />
     </div>
   )
 }

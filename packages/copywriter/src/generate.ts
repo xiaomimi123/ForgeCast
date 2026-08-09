@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CoreCtx, HookType } from '@forgecast/core'
+import { advanceStage, type CoreCtx, type HookType } from '@forgecast/core'
 import { assemblePrompt } from './assemble'
 import { checkBannedWords } from './banned-words'
 import { HOOK_KEYWORDS, searchAtoms } from './knowledge'
@@ -107,5 +107,6 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
       }
     }
   }
+  if (results.length) advanceStage(ctx.db, project.id, 'producing')
   return results
 }

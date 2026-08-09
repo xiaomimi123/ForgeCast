@@ -26,6 +26,17 @@ describe('publishAsset', () => {
   it('素材不存在抛错', () => {
     expect(() => publishAsset(ctx, 999, { platform: 'xhs' })).toThrow(/素材不存在/)
   })
+  it('推进项目 stage 到 publishing', () => {
+    publishAsset(ctx, 1, { platform: 'xhs' })
+    const p: any = ctx.db.prepare('SELECT stage FROM projects WHERE id = 1').get()
+    expect(p.stage).toBe('publishing')
+  })
+  it('已在更靠后的 stage（selling）时不回退', () => {
+    ctx.db.prepare("UPDATE projects SET stage = 'selling' WHERE id = 1").run()
+    publishAsset(ctx, 1, { platform: 'xhs' })
+    const p: any = ctx.db.prepare('SELECT stage FROM projects WHERE id = 1').get()
+    expect(p.stage).toBe('selling')
+  })
 })
 
 describe('registerClip', () => {
@@ -82,6 +93,11 @@ describe('addLead / listLeads', () => {
   })
   it('素材不存在抛错', () => {
     expect(() => addLead(ctx, { assetId: 999 })).toThrow(/素材不存在/)
+  })
+  it('推进项目 stage 到 selling', () => {
+    addLead(ctx, { assetId: 1, wechat: 'wx1' })
+    const p: any = ctx.db.prepare('SELECT stage FROM projects WHERE id = 1').get()
+    expect(p.stage).toBe('selling')
   })
 })
 

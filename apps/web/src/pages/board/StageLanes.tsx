@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { Project } from '../../api'
+import type { IntroDetail, Project } from '../../api'
+import { parseDetail } from './CandidateCard'
 
 // 立项项目阶段泳道（§8）：analysis→rebranding→producing→publishing→selling
+// 枚举与自动推进规则的单一真源在 packages/core/src/stage.ts（web 不依赖 core，是浏览器包，这里保留一份带中文标签的平行声明）
 const STAGES: Array<{ key: string; label: string }> = [
   { key: 'analysis', label: '分析' },
   { key: 'rebranding', label: '换皮' },
@@ -10,6 +12,20 @@ const STAGES: Array<{ key: string; label: string }> = [
   { key: 'publishing', label: '发布' },
   { key: 'selling', label: '成交' },
 ]
+
+/** 卡片买家/痛点三级回退：analysis.md 摘要 → 候选评分明细 → 候选产品说明书（立项刚发生、还没生成 analysis.md 时用） */
+function fallbackIntro(p: Project): { targetBuyer: string; painPoint: string } {
+  if (p.analysis_summary?.targetBuyer || p.analysis_summary?.painPoint) return p.analysis_summary
+  const sd = parseDetail(p.score_detail)
+  if (sd?.targetBuyer || sd?.painPoint) return { targetBuyer: sd.targetBuyer, painPoint: sd.painPoint }
+  if (p.intro_detail) {
+    try {
+      const intro = JSON.parse(p.intro_detail) as IntroDetail
+      return { targetBuyer: intro.targetUser, painPoint: intro.painPoint }
+    } catch { /* 坏 JSON 按无数据处理 */ }
+  }
+  return { targetBuyer: '', painPoint: '' }
+}
 
 export default function StageLanes({ projects, onMove, loaded }: {
   projects: Project[]; onMove: (slug: string, stage: string) => void; loaded?: boolean
@@ -33,7 +49,16 @@ export default function StageLanes({ projects, onMove, loaded }: {
               </div>
               <div className="space-y-2">
                 {items.map((p) => {
-                  const sum = p.analysis_summary
+                  const sum = fallbackIntro(p)
+                  const counts = p.counts
+                  const countParts = counts
+                    ? [
+                        counts.copies ? `文案 ${counts.copies}` : '',
+                        counts.videos ? `视频 ${counts.videos}` : '',
+                        counts.published ? `已发 ${counts.published}` : '',
+                        counts.leads ? `询单 ${counts.leads}` : '',
+                      ].filter(Boolean)
+                    : []
                   return (
                     <div key={p.id} draggable
                       onDragStart={() => setDragSlug(p.slug)}
@@ -42,10 +67,13 @@ export default function StageLanes({ projects, onMove, loaded }: {
                       className="cursor-grab rounded-lg border-[1.5px] border-ink bg-card p-2 text-sm shadow-[2px_2px_0_rgba(28,23,18,0.85)] hover:shadow-[3px_3px_0_rgba(217,72,28,0.9)] active:cursor-grabbing">
                       <div className="font-medium">{p.brand_name || p.slug}</div>
                       <div className="text-xs text-faint">{p.slug}</div>
-                      {sum?.targetBuyer
+                      {sum.targetBuyer
                         ? <div className="mt-1 text-xs text-sub">👤 {sum.targetBuyer}</div>
                         : <div className="mt-1 text-xs text-faint">未分析 · 点开生成分析</div>}
-                      {sum?.painPoint && <div className="text-xs text-sub">💢 {sum.painPoint}</div>}
+                      {sum.painPoint && <div className="text-xs text-sub">💢 {sum.painPoint}</div>}
+                      {countParts.length > 0 && (
+                        <div className="mt-1 border-t border-hairline pt-1 text-[11px] text-faint">{countParts.join(' · ')}</div>
+                      )}
                     </div>
                   )
                 })}

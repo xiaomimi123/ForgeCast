@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CoreCtx } from '@forgecast/core'
+import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
 import { analyzeBeats, buildDemoSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
@@ -192,6 +192,7 @@ async function renderAndRegister(
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
   ).run(projectId, 'video', hook, relPath, '[]')
+  advanceStage(ctx.db, projectId, 'producing')
   onProgress(`视频完成: ${relPath}`)
   return { assetId: Number(info.lastInsertRowid), filePath: relPath }
 }

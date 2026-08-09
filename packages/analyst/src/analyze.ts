@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CoreCtx } from '@forgecast/core'
+import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { mockAnalysis } from './fixtures/analysis-fixture'
 import { validateAnalysis } from './validate'
 
@@ -13,7 +13,7 @@ export async function analyzeProject(
   opts: AnalyzeOptions = {},
 ): Promise<{ path: string }> {
   const onProgress = opts.onProgress ?? (() => {})
-  const project = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+  const project = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug) as { id: number } | undefined
   if (!project) throw new Error(`项目不存在: ${slug}`)
 
   const srcReadme = path.join(ctx.config.paths.workspace, slug, 'source', 'README.md')
@@ -46,6 +46,7 @@ export async function analyzeProject(
 
   const relPath = path.join(slug, 'analysis.md')
   fs.writeFileSync(path.join(ctx.config.paths.workspace, slug, 'analysis.md'), md, 'utf8')
+  advanceStage(ctx.db, project.id, 'rebranding')
   onProgress(`分析完成: ${relPath}`)
   return { path: relPath }
 }
