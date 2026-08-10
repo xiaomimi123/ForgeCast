@@ -40,6 +40,16 @@ describe('projects API', () => {
     expect(after.brand_name).toBe('快客通')
     expect(after.price_deploy).toBe(1999)
   })
+  it('GET 详情带 rebrandMd；没有 rebrand-plan.md 时为空串', async () => {
+    syncWorkspaceProjects(ctx)
+    const app = createApp(ctx, createTaskQueue())
+    const before = await (await app.request('/api/projects/demo-project')).json() as any
+    expect(before.rebrandMd).toBe('')
+
+    fs.writeFileSync(path.join(ctx.config.paths.workspace, 'demo-project', 'rebrand-plan.md'), '# 换皮清单')
+    const after = await (await app.request('/api/projects/demo-project')).json() as any
+    expect(after.rebrandMd).toContain('# 换皮清单')
+  })
   it('未知项目 404', async () => {
     const app = createApp(ctx, createTaskQueue())
     expect((await app.request('/api/projects/nope')).status).toBe(404)

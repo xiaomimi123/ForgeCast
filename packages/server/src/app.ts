@@ -86,7 +86,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     if (!row) return c.json({ error: '项目不存在' }, 404)
     const analysisPath = path.join(ctx.config.paths.workspace, row.slug, 'analysis.md')
     const analysisMd = readFileSafe(analysisPath)
-    return c.json({ ...row, analysisMd })
+    const rebrandMd = readFileSafe(path.join(ctx.config.paths.workspace, row.slug, 'rebrand-plan.md'))
+    return c.json({ ...row, analysisMd, rebrandMd })
   })
 
   app.patch('/api/projects/:slug', async (c) => {

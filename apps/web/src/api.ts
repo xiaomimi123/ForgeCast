@@ -2,7 +2,7 @@ export interface Project {
   id: number; slug: string; candidate_id: number | null
   brand_name: string | null; target_buyer: string | null
   demo_url: string | null; price_deploy: number | null; price_custom: number | null
-  stage: string; analysisMd?: string
+  stage: string; analysisMd?: string; rebrandMd?: string
   analysis_summary?: { targetBuyer: string; painPoint: string }
   /** 立项时继承自候选（candidate_id 为空或候选未生成过说明书/评分时为 null），JSON 字符串需自行解析 */
   intro_detail: string | null
