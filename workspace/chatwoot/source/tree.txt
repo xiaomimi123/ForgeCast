@@ -1,6 +1,0 @@
-app/
-app/javascript/
-Dockerfile
-docker-compose.yml
-README.md
-config/

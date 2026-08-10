@@ -30,6 +30,40 @@ export async function pickCandidate(ctx: CoreCtx, repo: string): Promise<{ slug:
   return { slug, projectId }
 }
 
+/**
+ * 撤销立项：删项目本体 + 其素材（有真实询单则整体拒绝，保护归因数据）+ workspace/<slug> 目录，
+ * 并把关联候选状态重置回 'candidate'，允许同一个 repo 重新立项。
+ */
+export function deleteProject(ctx: CoreCtx, slug: string): void {
+  const project = ctx.db.prepare('SELECT id, candidate_id FROM projects WHERE slug = ?').get(slug) as
+    | { id: number; candidate_id: number | null }
+    | undefined
+  if (!project) throw new Error(`项目不存在: ${slug}`)
+
+  const assetIds = (ctx.db.prepare('SELECT id FROM assets WHERE project_id = ?').all(project.id) as Array<{ id: number }>)
+    .map((r) => r.id)
+  if (assetIds.length) {
+    const placeholders = assetIds.map(() => '?').join(',')
+    const { n } = ctx.db.prepare(`SELECT COUNT(*) AS n FROM leads WHERE asset_id IN (${placeholders})`)
+      .get(...assetIds) as { n: number }
+    if (n > 0) throw new Error('该项目下的素材有关联询单，不能删除')
+  }
+
+  ctx.db.transaction(() => {
+    if (assetIds.length) {
+      const placeholders = assetIds.map(() => '?').join(',')
+      ctx.db.prepare(`DELETE FROM assets WHERE id IN (${placeholders})`).run(...assetIds)
+    }
+    ctx.db.prepare('DELETE FROM projects WHERE id = ?').run(project.id)
+    if (project.candidate_id) {
+      ctx.db.prepare("UPDATE candidates SET status = 'candidate' WHERE id = ?").run(project.candidate_id)
+    }
+  })()
+
+  const dir = path.join(ctx.config.paths.workspace, slug)
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+}
+
 /** repo 名派生 slug：owner/My-App → my-app（小写、非字母数字段转 -、去首尾 -） */
 function deriveSlug(repo: string): string {
   const name = repo.split('/').pop() ?? repo

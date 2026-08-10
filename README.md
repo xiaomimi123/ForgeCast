@@ -14,7 +14,7 @@ pnpm --filter @forgecast/copywriter exec playwright install chromium  # 封面�
 cp .env.example .env    # 默认 mock 模式，无需任何 key
 pnpm dev                # API :4321 + Web :5173
 ```
-打开 http://localhost:5173 → 默认进「找项目」板块；做素材在「做内容」板块选 demo-project → 生成。
+打开 http://localhost:5173 → 默认进「找项目」板块；做素材在「做内容」板块选一个已立项的项目 → 生成。
 
 ## 环境变量（.env）
 | 变量 | 说明 |

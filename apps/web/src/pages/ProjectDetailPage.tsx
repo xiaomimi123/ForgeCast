@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api, subscribeTask, type IntroDetail, type Project } from '../api'
 import IntroSections from './board/IntroSections'
 
@@ -21,6 +21,7 @@ type DocTab = (typeof DOC_TABS)[number]['key']
 
 export default function ProjectDetailPage() {
   const { slug = '' } = useParams()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [form, setForm] = useState<Record<string, string>>({})
   const [docTab, setDocTab] = useState<DocTab>('analysis')
@@ -87,10 +88,34 @@ export default function ProjectDetailPage() {
     queryKey: ['raw', slug],
     queryFn: () => api<{ files: string[] }>(`/api/projects/${slug}/raw`),
   })
+  const [saved, setSaved] = useState(false)
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       api(`/api/projects/${slug}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project', slug] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project', slug] })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    },
+    onError: (e) => {
+      const m = e instanceof Error ? e.message : String(e)
+      const i = m.indexOf('{'); let text = m
+      if (i >= 0) { try { const j = JSON.parse(m.slice(i)); if (j?.error) text = j.error } catch { /* 非 JSON */ } }
+      alert('保存失败：' + text)
+    },
+  })
+  const del = useMutation({
+    mutationFn: () => api(`/api/projects/${slug}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      navigate('/projects')
+    },
+    onError: (e) => {
+      const m = e instanceof Error ? e.message : String(e)
+      const i = m.indexOf('{'); let text = m
+      if (i >= 0) { try { const j = JSON.parse(m.slice(i)); if (j?.error) text = j.error } catch { /* 非 JSON */ } }
+      alert('删除失败：' + text)
+    },
   })
 
   async function upload(file: File) {
@@ -191,10 +216,11 @@ export default function ProjectDetailPage() {
                 onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))} />
             </div>
           ))}
-          <button className="btn-fire w-full py-1.5 text-sm"
+          <button className="btn-fire w-full py-1.5 text-sm disabled:opacity-50"
+            disabled={save.isPending}
             onClick={() => save.mutate(Object.fromEntries(
               Object.entries(form).map(([k, v]) => [k, FIELDS.find((f) => f.key === k && 'number' in f && (f as any).number) ? Number(v) : v]),
-            ))}>保存</button>
+            ))}>{save.isPending ? '保存中…' : (saved ? '已保存' : '保存')}</button>
         </div>
         <div className="card-forge p-4 space-y-2">
           <h3 className="font-semibold">raw 素材（录屏/截图）</h3>
@@ -206,6 +232,17 @@ export default function ProjectDetailPage() {
             ))}
             {raw.data?.files.length === 0 && <li className="text-faint">暂无</li>}
           </ul>
+        </div>
+        <div className="card-forge p-4 space-y-2">
+          <h3 className="font-semibold text-danger">危险操作</h3>
+          <button className="w-full rounded-md border-[1.5px] border-danger py-1.5 text-sm text-danger disabled:opacity-50"
+            disabled={del.isPending}
+            onClick={() => {
+              if (window.confirm('删除这个项目？连带的文案/视频素材和 workspace 文件都会删掉，不可恢复。删除后对应候选可以重新立项。'))
+                del.mutate()
+            }}>
+            {del.isPending ? '删除中…' : '删除项目'}
+          </button>
         </div>
       </div>
     </div>

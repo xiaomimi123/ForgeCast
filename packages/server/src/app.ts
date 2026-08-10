@@ -6,7 +6,7 @@ import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setS
 import { generateCopy } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, backfillCategories, candidatesNeedingRescore, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
 import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
@@ -102,6 +102,18 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
         .run(...keys.map((k) => body[k]), slug)
     }
     return c.json({ ok: true })
+  })
+
+  app.delete('/api/projects/:slug', (c) => {
+    const slug = c.req.param('slug')
+    try {
+      deleteProject(ctx, slug)
+      return c.json({ ok: true })
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      if (m.includes('不存在')) return c.json({ error: m }, 404)
+      return c.json({ error: m }, m.includes('询单') ? 409 : 500) // 询单护栏→409，其它→500
+    }
   })
 
   // —— 设置页：key/模型/模式（key 打码回显，绝不回明文）——
