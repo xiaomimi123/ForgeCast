@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": { "test": "vitest run --passWithNoTests" },
   "dependencies": {
+    "@forgecast/analyst": "workspace:*",
     "@forgecast/core": "workspace:*",
     "playwright": "^1.49.0"
   },

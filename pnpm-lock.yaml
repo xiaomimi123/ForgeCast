@@ -101,6 +101,9 @@ importers:
 
   packages/copywriter:
     dependencies:
+      '@forgecast/analyst':
+        specifier: workspace:*
+        version: link:../analyst
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
