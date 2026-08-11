@@ -1,13 +1,16 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { IntroDetail, Project } from '../../api'
 import { parseDetail } from './CandidateCard'
 
-// 立项项目阶段泳道（§8）：analysis→rebranding→producing→publishing→selling
-// 枚举与自动推进规则的单一真源在 packages/core/src/stage.ts（web 不依赖 core，是浏览器包，这里保留一份带中文标签的平行声明）
-const STAGES: Array<{ key: string; label: string }> = [
+// 完整 5 阶段单一真源见 packages/core/src/stage.ts：analysis→rebranding→producing→publishing→selling
+// 这个页面只管「拆解」这一段（分析/换皮）——产素材/发布/成交分别由「做内容」「分发营销」板块展示，不在这里重复
+const GROUPS: Array<{ key: string; label: string }> = [
   { key: 'analysis', label: '分析' },
   { key: 'rebranding', label: '换皮' },
+]
+// 手动改阶段下拉用完整 5 项：选到产素材及之后，卡片会在下次渲染时从这两组里消失（预期行为）
+const ALL_STAGES: Array<{ key: string; label: string }> = [
+  ...GROUPS,
   { key: 'producing', label: '产素材' },
   { key: 'publishing', label: '发布' },
   { key: 'selling', label: '成交' },
@@ -27,27 +30,23 @@ function fallbackIntro(p: Project): { targetBuyer: string; painPoint: string } {
   return { targetBuyer: '', painPoint: '' }
 }
 
-export default function StageLanes({ projects, onMove, loaded }: {
+const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+
+export default function ProjectGroups({ projects, onMove, loaded }: {
   projects: Project[]; onMove: (slug: string, stage: string) => void; loaded?: boolean
 }) {
   const navigate = useNavigate()
-  const [dragSlug, setDragSlug] = useState<string | null>(null)
+  const inDecompose = projects.filter((p) => GROUPS.some((g) => g.key === p.stage))
 
   return (
-    <div>
-      <div className="mb-2 text-sm font-medium text-sub">立项项目 · 拖拽卡片流转阶段</div>
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {STAGES.map((s) => {
-          const items = projects.filter((p) => p.stage === s.key)
-          return (
-            <div key={s.key}
-              className="min-w-[200px] flex-1 rounded-lg border-[1.5px] border-hairline bg-transparent p-2"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => { if (dragSlug) onMove(dragSlug, s.key); setDragSlug(null) }}>
-              <div className="mb-2 flex items-center justify-between px-1 text-xs font-bold text-sub tracking-wide">
-                <span>{s.label}</span><span>{items.length}</span>
-              </div>
-              <div className="space-y-2">
+    <div className="space-y-6">
+      {GROUPS.map((g) => {
+        const items = projects.filter((p) => p.stage === g.key)
+        return (
+          <div key={g.key}>
+            <div className="mb-2 text-xs font-bold text-sub tracking-wide">{g.label} ({items.length})</div>
+            {items.length > 0 ? (
+              <div className={grid}>
                 {items.map((p) => {
                   const sum = fallbackIntro(p)
                   const counts = p.counts
@@ -60,11 +59,9 @@ export default function StageLanes({ projects, onMove, loaded }: {
                       ].filter(Boolean)
                     : []
                   return (
-                    <div key={p.id} draggable
-                      onDragStart={() => setDragSlug(p.slug)}
-                      onDragEnd={() => setDragSlug(null)}
+                    <div key={p.id}
                       onClick={() => navigate(`/projects/${p.slug}`)}
-                      className="cursor-grab rounded-lg border-[1.5px] border-ink bg-card p-2 text-sm shadow-[2px_2px_0_rgba(28,23,18,0.85)] hover:shadow-[3px_3px_0_rgba(217,72,28,0.9)] active:cursor-grabbing">
+                      className="cursor-pointer rounded-lg border-[1.5px] border-ink bg-card p-3 text-sm shadow-[2px_2px_0_rgba(28,23,18,0.85)] hover:shadow-[3px_3px_0_rgba(217,72,28,0.9)]">
                       <div className="font-medium">{p.brand_name || p.slug}</div>
                       <div className="text-xs text-faint">{p.slug}</div>
                       {sum.targetBuyer
@@ -74,16 +71,28 @@ export default function StageLanes({ projects, onMove, loaded }: {
                       {countParts.length > 0 && (
                         <div className="mt-1 border-t border-hairline pt-1 text-[11px] text-faint">{countParts.join(' · ')}</div>
                       )}
+                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                        <select className="w-full rounded border-[1.5px] border-hairline bg-transparent px-1.5 py-1 text-xs text-sub"
+                          value={p.stage} onChange={(e) => onMove(p.slug, e.target.value)}>
+                          {ALL_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                        </select>
+                      </div>
                     </div>
                   )
                 })}
-                {items.length === 0 && <div className="rounded border border-dashed border-hairline p-3 text-center text-xs text-faint">拖到此</div>}
               </div>
-            </div>
-          )
-        })}
-      </div>
-      {loaded && projects.length === 0 && <div className="mt-1 text-xs text-faint">暂无立项项目，先到「找项目」板块在候选卡片点「立项」</div>}
+            ) : (
+              <div className="rounded border border-dashed border-hairline p-3 text-center text-xs text-faint">暂无</div>
+            )}
+          </div>
+        )
+      })}
+      {loaded && projects.length === 0 && (
+        <div className="text-xs text-faint">暂无立项项目，先到「找项目」板块在候选卡片点「立项」</div>
+      )}
+      {loaded && projects.length > 0 && inDecompose.length === 0 && (
+        <div className="text-xs text-faint">当前没有处于拆解阶段的项目——已进入后续阶段的项目请去「做内容」/「分发营销」板块查看</div>
+      )}
     </div>
   )
 }
