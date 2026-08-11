@@ -30,6 +30,8 @@ export default function ProjectDetailPage() {
   const [rebranding, setRebranding] = useState(false)
   const [rebrandLog, setRebrandLog] = useState<string[]>([])
   const [copied, setCopied] = useState(false)
+  const [screensBusy, setScreensBusy] = useState(false)
+  const [screensLog, setScreensLog] = useState<string[]>([])
 
   async function analyze() {
     if (analyzing) return
@@ -66,6 +68,25 @@ export default function ProjectDetailPage() {
     } catch (err) {
       setRebrandLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
       setRebranding(false)
+    }
+  }
+
+  async function generateScreens() {
+    if (screensBusy) return
+    setScreensBusy(true)
+    setScreensLog([])
+    try {
+      const { taskId } = await api<{ taskId: string }>(`/api/projects/${slug}/screens`, { method: 'POST' })
+      subscribeTask(taskId, (e) => {
+        setScreensLog((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
+        if (e.type === 'done' || e.type === 'error') {
+          setScreensBusy(false)
+          qc.invalidateQueries({ queryKey: ['shots', slug] })
+        }
+      })
+    } catch (err) {
+      setScreensLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
+      setScreensBusy(false)
     }
   }
 
@@ -250,6 +271,16 @@ export default function ProjectDetailPage() {
           <p className="text-xs text-faint">文件名前缀控制播放顺序，如 01-xxx.png</p>
           <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm"
             onChange={(e) => e.target.files?.[0] && uploadShot(e.target.files[0])} />
+          <button className="btn-ink w-full py-1.5 text-sm disabled:opacity-50"
+            disabled={screensBusy} onClick={generateScreens}>
+            {screensBusy ? '生成中…' : 'AI 生成演示图'}
+          </button>
+          <p className="text-xs text-faint">会调用 3 次大模型 + 渲染，约十几秒到 1 分钟；生成 3 张固定文件名的图，重新点会覆盖</p>
+          {screensLog.length > 0 && (
+            <div className="rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-24 overflow-y-auto space-y-1">
+              {screensLog.map((l, i) => <div key={i}>{l}</div>)}
+            </div>
+          )}
           <ul className="text-sm text-sub space-y-1">
             {shots.data?.files.map((f) => (
               <li key={f}><a className="text-fire" href={`/files/${slug}/shots/${f}`} target="_blank" rel="noreferrer">{f}</a></li>
