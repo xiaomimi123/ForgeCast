@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
 import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
-import { generateCopy, regenerateCover } from '@forgecast/copywriter'
+import { generateCopy, generateDemoScreens, regenerateCover } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
@@ -306,6 +306,14 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   app.get('/api/projects/:slug/shots', (c) => {
     const dir = path.join(ctx.config.paths.workspace, c.req.param('slug'), 'shots')
     return c.json({ files: fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [] })
+  })
+
+  // AI 生成演示图：LLM 写 3 份完整 HTML（仪表盘/列表/详情）+ Playwright 截图，落进 shots/
+  app.post('/api/projects/:slug/screens', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const taskId = queue.enqueue((log) => generateDemoScreens(ctx, slug, { onProgress: log }))
+    return c.json({ taskId })
   })
 
   // —— workspace 静态文件（封面/视频预览）——
