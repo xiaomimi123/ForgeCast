@@ -70,4 +70,13 @@ describe('video API (stub)', () => {
   it('未知项目 → 404', async () => {
     expect((await app.request('/api/projects/nope/video', { method: 'POST' })).status).toBe(404)
   })
+  it('POST video 透传 bgm/mood/bg/captions → 不报错、正常出片', async () => {
+    const { taskId } = await (await app.request('/api/projects/demo/video', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bgm: 'none', mood: 'tense', bg: 'aurora', captions: false }),
+    })).json() as any
+    await runTask(taskId)
+    const assets = await (await app.request('/api/projects/demo/assets')).json() as any[]
+    expect(assets.some((a) => a.type === 'video')).toBe(true)
+  })
 })

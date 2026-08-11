@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
 import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
-import { generateCopy } from '@forgecast/copywriter'
+import { generateCopy, regenerateCover } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
@@ -257,6 +257,18 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json({ ok: true })
   })
 
+  // 独立重新生成封面：:id 是 copy 素材 id（读它的正文重新解析封面文案，不重跑文案生成）
+  app.post('/api/assets/:id/cover', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!ctx.db.prepare("SELECT id FROM assets WHERE id = ? AND type = 'copy'").get(id)) return c.json({ error: '文案素材不存在' }, 404)
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => regenerateCover(ctx, id, {
+      template: typeof body.template === 'string' ? body.template : undefined,
+      shot: typeof body.shot === 'string' ? body.shot : undefined,
+    }).then((r) => { log(`封面完成: ${r.filePath}`); return r }))
+    return c.json({ taskId })
+  })
+
   // —— raw 上传与列表 ——
   app.post('/api/projects/:slug/raw', async (c) => {
     const slug = c.req.param('slug')
@@ -276,9 +288,30 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json({ files: fs.existsSync(dir) ? fs.readdirSync(dir) : [] })
   })
 
+  // —— shots 上传与列表（demo 视频模板用；readShots 只吃 png/jpg/webp，上传时同一白名单拦非法扩展名）——
+  app.post('/api/projects/:slug/shots', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const body = await c.req.parseBody()
+    const file = body.file
+    if (!(file instanceof File)) return c.json({ error: '缺少 file 字段' }, 400)
+    const safeName = path.basename(file.name)
+    if (!/\.(png|jpe?g|webp)$/i.test(safeName)) return c.json({ error: '仅支持 png/jpg/jpeg/webp' }, 400)
+    const shotsDir = path.join(ctx.config.paths.workspace, slug, 'shots')
+    fs.mkdirSync(shotsDir, { recursive: true })
+    fs.writeFileSync(path.join(shotsDir, safeName), Buffer.from(await file.arrayBuffer()))
+    return c.json({ ok: true, name: safeName })
+  })
+
+  app.get('/api/projects/:slug/shots', (c) => {
+    const dir = path.join(ctx.config.paths.workspace, c.req.param('slug'), 'shots')
+    return c.json({ files: fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [] })
+  })
+
   // —— workspace 静态文件（封面/视频预览）——
   const MIME: Record<string, string> = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.mp4': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    '.mp4': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
   }
   app.get('/files/*', (c) => {
     const rel = decodeURIComponent(c.req.path.replace(/^\/files\//, ''))
@@ -418,9 +451,27 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       slug,
       assetId: typeof body.assetId === 'number' ? body.assetId : undefined,
       tpl,
+      bgm: typeof body.bgm === 'string' ? body.bgm : undefined,
+      mood: typeof body.mood === 'string' ? body.mood : undefined,
+      bg: typeof body.bg === 'string' ? body.bg : undefined,
+      captions: typeof body.captions === 'boolean' ? body.captions : undefined,
       onProgress: log,
     }))
     return c.json({ taskId })
+  })
+
+  // 曲库列表：根目录 + tense/upbeat/tech/warm 四个情绪子目录（存在才扫），前端拼 BGM 下拉用
+  app.get('/api/bgm', (c) => {
+    const bgmDir = path.join(ctx.config.paths.templates, 'bgm')
+    const isAudio = (f: string) => /\.(mp3|wav|m4a)$/i.test(f)
+    const listDir = (dir: string) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter(isAudio).sort() : [])
+    const root = listDir(bgmDir)
+    const byMood: Record<string, string[]> = {}
+    for (const mood of ['tense', 'upbeat', 'tech', 'warm']) {
+      const files = listDir(path.join(bgmDir, mood))
+      if (files.length) byMood[mood] = files
+    }
+    return c.json({ root, byMood })
   })
 
   // —— 卡点方案（cutplan）——

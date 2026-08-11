@@ -1,8 +1,10 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { buildCoverHtml, imageToDataUri, pickRawShot } from '../src/cover'
+import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { buildCoverHtml, imageToDataUri, pickRawShot, regenerateCover } from '../src/cover'
+import { generateCopy } from '../src/generate'
 
 const tplDir = path.resolve(__dirname, '../../../templates/covers')
 // 最小合法 1×1 PNG
@@ -65,5 +67,42 @@ describe('imageToDataUri', () => {
     const uri = imageToDataUri(p)
     expect(uri.startsWith('data:image/png;base64,')).toBe(true)
     expect(uri).toContain(PNG1x1.toString('base64'))
+  })
+})
+
+// regenerateCover 的错误路径不需要真的起 Playwright（都在 renderCover 调用之前就抛错），
+// 和仓库现有约定一致（generateCopy 测试全部 renderCovers:false，不在单测里真渲染）。
+describe('regenerateCover（错误路径，不触发真实 Playwright 渲染）', () => {
+  let ctx: CoreCtx
+  let copyAssetId: number
+  beforeEach(async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-regen-cover-'))
+    const config = loadConfig(root, {})
+    config.paths.templates = path.resolve(__dirname, '../../../templates')
+    const db = openDb(config.paths.db)
+    db.prepare("INSERT INTO projects (slug, target_buyer) VALUES ('demo-project', '中小电商卖家')").run()
+    fs.mkdirSync(path.join(root, 'workspace/demo-project'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'workspace/demo-project/analysis.md'), '# 快客通 商业化分析\n## 痛点清单\n- 回消息熬夜')
+    ctx = { db, config, llm: createLlmClient(config.llm) }
+    const out = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    copyAssetId = out.find((a) => a.type === 'copy')!.assetId
+  })
+  it('文案素材不存在 → 抛错', async () => {
+    await expect(regenerateCover(ctx, 999999)).rejects.toThrow(/文案素材不存在/)
+  })
+  it('id 指向的是非 copy 类型素材 → 按不存在处理（SELECT 已按 type=copy 过滤）', async () => {
+    const info = ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (1, 'video', 'pain', 'x.mp4', '[]')",
+    ).run()
+    await expect(regenerateCover(ctx, Number(info.lastInsertRowid))).rejects.toThrow(/文案素材不存在/)
+  })
+  it('opts.shot 指定的 raw 文件不存在 → 抛错', async () => {
+    await expect(regenerateCover(ctx, copyAssetId, { shot: 'nope.png' })).rejects.toThrow(/raw 文件不存在/)
+  })
+  it('opts.shot 指定不支持的扩展名 → 抛错', async () => {
+    const rawDir = path.join(ctx.config.paths.workspace, 'demo-project', 'raw')
+    fs.mkdirSync(rawDir, { recursive: true })
+    fs.writeFileSync(path.join(rawDir, 'weird.txt'), 'x')
+    await expect(regenerateCover(ctx, copyAssetId, { shot: 'weird.txt' })).rejects.toThrow(/不支持的文件类型/)
   })
 })

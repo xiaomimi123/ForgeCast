@@ -13,7 +13,12 @@ export interface Project {
 export interface Asset {
   id: number; project_id: number; type: 'copy' | 'cover' | 'video'; hook: string | null
   file_path: string; status: 'draft' | 'approved' | 'published'; warnings: string | null
+  published_at: string | null; platform: string | null; published_url: string | null
+  /** JSON 字符串 {views,likes,leads,recordedAt}，自行解析 */
+  perf: string | null
 }
+/** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
+export interface BgmList { root: string[]; byMood: Record<string, string[]> }
 export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string }
 export interface IntroDetail {
   summary: string; features: string[]; targetUser: string

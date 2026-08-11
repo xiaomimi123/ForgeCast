@@ -83,6 +83,33 @@ describe('generateVideo (stub)', () => {
     expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
   })
+  it('input.bgm="none" 覆盖 ctx.config.video.bgm：不选曲、不跑节拍分析', async () => {
+    const bgmDir = path.join(root, 'templates/bgm')
+    fs.mkdirSync(bgmDir, { recursive: true })
+    fs.writeFileSync(path.join(bgmDir, 'tech.mp3'), 'fake')
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub', FORGECAST_BEAT_PYTHON: '/fake/py' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const spy = vi.spyOn(hyperframes, 'analyzeBeats')
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bgm: 'none' })
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+  it('input.bg="none" 覆盖默认 grid：html 不含科技背景元素', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bg: 'none' })
+    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).not.toContain('id="techbg"')
+  })
+  it('override 参数不 mutate ctx.config.video（单例安全，不污染后续调用）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bgm: 'none', bg: 'aurora', mood: 'tense', captions: false })
+    expect(fctx.config.video.bgm).toBe('')
+    expect(fctx.config.video.bg).toBe('grid')
+    expect(fctx.config.video.mood).toBe('')
+    expect(fctx.config.video.captions).toBe(true)
+  })
   it('tpl=changelog 走 HyperFrames stub，产出 asset 行与 hf 项目', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }

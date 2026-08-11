@@ -1,8 +1,11 @@
 import { execFile } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import type { CoreCtx } from '@forgecast/core'
+import { parseCopyOutput } from './parser'
 
 const execFileP = promisify(execFile)
 
@@ -20,8 +23,8 @@ export function buildCoverHtml(templateHtml: string, slots: { main: string; sub:
     .replaceAll('{{shot}}', slots.shot ?? '')
 }
 
-const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp'])
-const VIDEO_EXT = new Set(['.mp4', '.mov'])
+export const IMG_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp'])
+export const VIDEO_EXT = new Set(['.mp4', '.mov'])
 
 /** 从 raw 目录挑一个封面截图源：图片优先，其次视频；无则 null（纯 fs，可单测） */
 export function pickRawShot(rawDir: string): { kind: 'image' | 'video'; path: string } | null {
@@ -96,6 +99,61 @@ export interface RenderCoverInput {
   sub: string
   shotDataUri?: string
   outPath: string
+}
+
+export interface RegenerateCoverOptions {
+  template?: CoverTemplate
+  /** raw/ 目录下的具体文件名；缺省则复用 resolveCoverShot 的自动逻辑（raw 字典序第一张 → demo_url 截图） */
+  shot?: string
+}
+export interface RegeneratedCover { assetId: number; filePath: string }
+
+/**
+ * 独立重新生成封面：以一条 copy 素材为入口（读它已落盘的 md 重新解析封面文案，不重新生成正文），
+ * 渲染出一张新封面并插入新 cover asset 行——旧封面不删，和"重新生成文案"的行为一致，用户自己删不满意的。
+ */
+export async function regenerateCover(ctx: CoreCtx, copyAssetId: number, opts: RegenerateCoverOptions = {}): Promise<RegeneratedCover> {
+  const copy: any = ctx.db.prepare("SELECT * FROM assets WHERE id = ? AND type = 'copy'").get(copyAssetId)
+  if (!copy) throw new Error(`文案素材不存在: ${copyAssetId}`)
+  const project: any = ctx.db.prepare('SELECT * FROM projects WHERE id = ?').get(copy.project_id)
+  if (!project) throw new Error(`项目不存在（project_id=${copy.project_id}）`)
+
+  const md = fs.readFileSync(path.join(ctx.config.paths.workspace, copy.file_path), 'utf8')
+  const doc = parseCopyOutput(md)
+  const wsDir = path.join(ctx.config.paths.workspace, project.slug)
+
+  let coverShot: string | null
+  if (opts.shot) {
+    const shotPath = path.join(wsDir, 'raw', opts.shot)
+    if (!fs.existsSync(shotPath)) throw new Error(`raw 文件不存在: ${opts.shot}`)
+    const ext = path.extname(shotPath).toLowerCase()
+    if (VIDEO_EXT.has(ext)) {
+      const frame = await videoFrameDataUri(shotPath)
+      if (!frame) throw new Error(`无法从视频抽帧: ${opts.shot}（需要系统装了 ffmpeg）`)
+      coverShot = frame
+    } else if (IMG_EXT.has(ext)) {
+      coverShot = imageToDataUri(shotPath)
+    } else {
+      throw new Error(`不支持的文件类型: ${opts.shot}`)
+    }
+  } else {
+    coverShot = await resolveCoverShot({ rawDir: path.join(wsDir, 'raw'), demoUrl: project.demo_url })
+  }
+
+  const template = opts.template ?? (coverShot ? 'annotate' : 'bigtext')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const rand = randomBytes(4).toString('hex')
+  const coverRel = path.join(project.slug, 'covers', `${copy.hook ?? 'cover'}-${stamp}-${rand}.png`)
+  await renderCover({
+    templatesDir: ctx.config.paths.templates,
+    template, main: doc.cover.main, sub: doc.cover.sub,
+    shotDataUri: coverShot ?? undefined,
+    outPath: path.join(ctx.config.paths.workspace, coverRel),
+  })
+  const info = ctx.db.prepare(
+    'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
+  ).run(project.id, 'cover', copy.hook, coverRel, '[]')
+  return { assetId: Number(info.lastInsertRowid), filePath: coverRel }
 }
 
 /** Playwright 截图 1242×1660（小红书 3:4）。调用方自行 try/catch——封面失败不应阻断文案。 */

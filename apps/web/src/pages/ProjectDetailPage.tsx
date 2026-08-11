@@ -88,6 +88,10 @@ export default function ProjectDetailPage() {
     queryKey: ['raw', slug],
     queryFn: () => api<{ files: string[] }>(`/api/projects/${slug}/raw`),
   })
+  const shots = useQuery({
+    queryKey: ['shots', slug],
+    queryFn: () => api<{ files: string[] }>(`/api/projects/${slug}/shots`),
+  })
   const [saved, setSaved] = useState(false)
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -124,6 +128,14 @@ export default function ProjectDetailPage() {
     const res = await fetch(`/api/projects/${slug}/raw`, { method: 'POST', body: fd })
     if (!res.ok) alert(`上传失败: ${await res.text()}`)
     qc.invalidateQueries({ queryKey: ['raw', slug] })
+  }
+
+  async function uploadShot(file: File) {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`/api/projects/${slug}/shots`, { method: 'POST', body: fd })
+    if (!res.ok) alert(`上传失败: ${await res.text()}`)
+    qc.invalidateQueries({ queryKey: ['shots', slug] })
   }
 
   if (!project.data) return <div className="text-faint">加载中…</div>
@@ -231,6 +243,18 @@ export default function ProjectDetailPage() {
               <li key={f}><a className="text-fire" href={`/files/${slug}/raw/${f}`} target="_blank" rel="noreferrer">{f}</a></li>
             ))}
             {raw.data?.files.length === 0 && <li className="text-faint">暂无</li>}
+          </ul>
+        </div>
+        <div className="card-forge p-4 space-y-2">
+          <h3 className="font-semibold">shots（demo 视频模板用）</h3>
+          <p className="text-xs text-faint">文件名前缀控制播放顺序，如 01-xxx.png</p>
+          <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm"
+            onChange={(e) => e.target.files?.[0] && uploadShot(e.target.files[0])} />
+          <ul className="text-sm text-sub space-y-1">
+            {shots.data?.files.map((f) => (
+              <li key={f}><a className="text-fire" href={`/files/${slug}/shots/${f}`} target="_blank" rel="noreferrer">{f}</a></li>
+            ))}
+            {shots.data?.files.length === 0 && <li className="text-faint">暂无</li>}
           </ul>
         </div>
         <div className="card-forge p-4 space-y-2">
