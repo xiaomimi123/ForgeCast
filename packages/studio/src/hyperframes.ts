@@ -20,7 +20,7 @@ const COSY_SCRIPT = fileURLToPath(new URL('../scripts/cosy_infer.py', import.met
 const BEAT_SCRIPT = fileURLToPath(new URL('../scripts/beat_grid.py', import.meta.url))
 
 /** 带超时的 spawn：超时 kill 并 reject。stdin ignore。cmd 默认 npx（HyperFrames 用）。 */
-function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
+export function spawnWithTimeout(args: string[], opts: { cmd?: string; cwd?: string; timeoutMs: number; label: string; onStdout?: (s: string) => void }): Promise<void> {
   return new Promise((resolve, reject) => {
     const p = spawn(opts.cmd ?? 'npx', args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     let err = ''
