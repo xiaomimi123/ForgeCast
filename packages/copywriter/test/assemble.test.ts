@@ -28,4 +28,13 @@ describe('assemblePrompt', () => {
     expect(prompt).toContain('【用户修改意见，必须遵守】')
     expect(prompt.indexOf('语气再口语') > prompt.indexOf('分析报告内容')).toBe(true)
   })
+  it('patternsMd 有值时拼进 prompt，无值/未传时不出现该段落', () => {
+    const withPatterns = assemblePrompt({ ...base, patternsMd: '标题结构示例' })
+    expect(withPatterns.prompt).toContain('【选题风格参考】')
+    expect(withPatterns.prompt).toContain('标题结构示例')
+    const without = assemblePrompt({ ...base, patternsMd: '' })
+    expect(without.prompt).not.toContain('【选题风格参考】')
+    const untouched = assemblePrompt(base)
+    expect(untouched.prompt).not.toContain('【选题风格参考】')
+  })
 })

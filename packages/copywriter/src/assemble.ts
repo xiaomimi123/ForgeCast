@@ -5,6 +5,7 @@ export interface AssembleInput {
   hook: HookType
   hookTemplate: string
   formatSpec: string
+  patternsMd?: string
   knowledgeMd: string
   atoms: Atom[]
   analysis: string
@@ -24,6 +25,7 @@ export function assemblePrompt(i: AssembleInput): { system: string; prompt: stri
     `【钩子类型】${i.hook}`,
     i.hookTemplate,
     i.formatSpec,
+    i.patternsMd ? `【选题风格参考】\n${i.patternsMd}` : '',
     `【方法论要点】\n${atomsBlock}`,
     `【商业化分析报告】\n${i.analysis}`,
     i.feedback ? `【用户修改意见，必须遵守】\n${i.feedback}` : '',

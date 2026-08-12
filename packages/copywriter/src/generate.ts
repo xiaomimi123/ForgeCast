@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx, type HookType } from '@forgecast/core'
+import { listPatterns } from '@forgecast/topics'
 import { assemblePrompt } from './assemble'
 import { checkBannedWords } from './banned-words'
 import { HOOK_KEYWORDS, searchAtoms } from './knowledge'
@@ -27,6 +28,13 @@ function readIfExists(p: string): string {
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
 }
 
+/** 把选题库提炼结果格式化成参考风格文本：标题结构示例 + 情绪类型 + 可参考的选题方向。 */
+function formatPatternsMd(p: { title_patterns: string; emotion_type: string; recommended_topics: string }): string {
+  const titles = (JSON.parse(p.title_patterns) as string[]).map((t) => `- ${t}`).join('\n')
+  const topics = (JSON.parse(p.recommended_topics) as string[]).map((t) => `- ${t}`).join('\n')
+  return `参考同赛道爆款提炼的标题结构：\n${titles}\n\n情绪类型：${p.emotion_type}\n\n可参考的选题方向：\n${topics}`
+}
+
 export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Promise<GeneratedAsset[]> {
   const { slug, hook, n = 1, feedback, renderCovers = true, onProgress = () => {} } = input
   const project: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug)
@@ -49,7 +57,10 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
     ? fs.readdirSync(knowledgeDir).filter((f) => f.endsWith('.md'))
         .map((f) => readIfExists(path.join(knowledgeDir, f))).join('\n\n')
     : ''
-  const { system, prompt } = assemblePrompt({ hook, hookTemplate, formatSpec, knowledgeMd, atoms, analysis, feedback })
+  // 选题库风格参考：查当前 hook 类型最新一条提炼结果，格式化成参考文本；没有则跳过，不影响生成
+  const patterns = listPatterns(ctx, hook)
+  const patternsMd = patterns.length ? formatPatternsMd(patterns[0]) : ''
+  const { system, prompt } = assemblePrompt({ hook, hookTemplate, formatSpec, patternsMd, knowledgeMd, atoms, analysis, feedback })
 
   const copyDir = path.join(wsDir, 'copy')
   fs.mkdirSync(copyDir, { recursive: true })

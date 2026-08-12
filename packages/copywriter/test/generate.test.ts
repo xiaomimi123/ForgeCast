@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { generateCopy } from '../src/generate'
+import { addSource, extractPatterns, importNotes } from '@forgecast/topics'
 
 let ctx: CoreCtx
 let root: string
@@ -76,5 +77,26 @@ describe('generateCopy', () => {
     expect(fs.existsSync(abs2)).toBe(true)
     expect(fs.readFileSync(abs1, 'utf8')).toContain('## 小红书正文')
     expect(fs.readFileSync(abs2, 'utf8')).toContain('## 小红书正文')
+  })
+  it('topic_patterns 有匹配 hook 的记录时，prompt 里出现选题风格参考段落', async () => {
+    addSource(ctx, { platform: 'douyin', handle: 'gt', followerCount: 100 })
+    importNotes(ctx, { sourceHandle: 'gt', platform: 'douyin', notes: [{ noteId: 'gt1', title: 't', playCount: 50, likeCount: 1 }] })
+    await extractPatterns(ctx) // mock fixture 含 pain 类型
+
+    const capturedPrompts: string[] = []
+    const real = ctx.llm.complete.bind(ctx.llm)
+    ctx.llm.complete = async (req) => { capturedPrompts.push(req.prompt ?? ''); return real(req) }
+
+    await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    expect(capturedPrompts[0]).toContain('【选题风格参考】')
+  })
+  it('topic_patterns 没有匹配记录时，prompt 里不出现该段落，生成流程不受影响', async () => {
+    const capturedPrompts: string[] = []
+    const real = ctx.llm.complete.bind(ctx.llm)
+    ctx.llm.complete = async (req) => { capturedPrompts.push(req.prompt ?? ''); return real(req) }
+
+    const results = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
+    expect(capturedPrompts[0]).not.toContain('【选题风格参考】')
+    expect(results.length).toBeGreaterThan(0) // 生成流程照常成功
   })
 })

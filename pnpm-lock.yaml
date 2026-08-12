@@ -110,6 +110,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
+      '@forgecast/topics':
+        specifier: workspace:*
+        version: link:../topics
       playwright:
         specifier: ^1.49.0
         version: 1.61.1
