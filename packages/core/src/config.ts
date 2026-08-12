@@ -15,7 +15,7 @@ export interface ForgecastConfig {
   }
   github: { mode: GithubMode; token: string }
   video: { mode: VideoMode; bgm: string; beatPython: string; captions: boolean; bg: string; mood: string }
-  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string }
+  tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string; asrPython: string }
   paths: { workspace: string; db: string; templates: string }
 }
 
@@ -64,6 +64,8 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       voice: env.FORGECAST_TTS_VOICE ?? '',
       meloPython: env.FORGECAST_MELO_PYTHON ?? '',
       cosyHome: env.FORGECAST_COSY_HOME ?? '',
+      // 字幕对齐用 ASR 的 venv；缺省回落 meloPython（跟 video.beatPython 同样的回落写法）
+      asrPython: env.FORGECAST_ASR_PYTHON || env.FORGECAST_MELO_PYTHON || '',
     },
     paths: {
       workspace: path.join(resolvedRoot, 'workspace'),

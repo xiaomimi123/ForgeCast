@@ -47,9 +47,9 @@ describe('loadConfig', () => {
     expect(loadConfig('/tmp/x', { FORGECAST_MOOD: 'tense' }).video.mood).toBe('tense')
   })
   it('tts 可设 stub，可设 live', () => {
-    expect(loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'stub' }).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '', voice: '', meloPython: '', cosyHome: '' })
+    expect(loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'stub' }).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '', voice: '', meloPython: '', cosyHome: '', asrPython: '' })
     const cfg = loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'live', FORGECAST_TTS_KEY: 'k', FORGECAST_TTS_MODEL: 'm', FORGECAST_TTS_VOICE: 'v' })
-    expect(cfg.tts).toEqual({ mode: 'live', baseURL: 'https://aitoken.homes/v1', apiKey: 'k', model: 'm', voice: 'v', meloPython: '', cosyHome: '' })
+    expect(cfg.tts).toEqual({ mode: 'live', baseURL: 'https://aitoken.homes/v1', apiKey: 'k', model: 'm', voice: 'v', meloPython: '', cosyHome: '', asrPython: '' })
   })
   it('FORGECAST_TTS_MODE=kokoro 被识别', () => {
     const c = loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'kokoro' })
@@ -66,5 +66,13 @@ describe('loadConfig', () => {
     const c2 = loadConfig('/tmp/x', { FORGECAST_BGM: 'none', FORGECAST_BEAT_PYTHON: '/venv/beat/py' })
     expect(c2.video.bgm).toBe('none')
     expect(c2.video.beatPython).toBe('/venv/beat/py')
+  })
+  it('asrPython 可显式设置，未设时回落 meloPython，都不设为空串', () => {
+    const explicit = loadConfig('/tmp/x', { FORGECAST_ASR_PYTHON: '/venv/asr/py', FORGECAST_MELO_PYTHON: '/venv/melo/py' })
+    expect(explicit.tts.asrPython).toBe('/venv/asr/py')
+    const fallback = loadConfig('/tmp/x', { FORGECAST_MELO_PYTHON: '/venv/melo/py' })
+    expect(fallback.tts.asrPython).toBe('/venv/melo/py')
+    const empty = loadConfig('/tmp/x', {})
+    expect(empty.tts.asrPython).toBe('')
   })
 })
