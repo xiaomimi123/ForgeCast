@@ -32,6 +32,9 @@ importers:
       '@forgecast/tailor':
         specifier: workspace:*
         version: link:packages/tailor
+      '@forgecast/topics':
+        specifier: workspace:*
+        version: link:packages/topics
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
@@ -258,6 +261,22 @@ importers:
       '@forgecast/scout':
         specifier: workspace:*
         version: link:../scout
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.11
+        version: 7.6.13
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)(lightningcss@1.32.0)(terser@5.49.0)
+
+  packages/topics:
+    dependencies:
+      '@forgecast/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.11

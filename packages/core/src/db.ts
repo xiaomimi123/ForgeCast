@@ -97,6 +97,41 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+CREATE TABLE IF NOT EXISTS topic_sources (
+  id INTEGER PRIMARY KEY,
+  platform TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  display_name TEXT,
+  follower_count INTEGER,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(platform, handle)
+);
+CREATE TABLE IF NOT EXISTS viral_notes (
+  id INTEGER PRIMARY KEY,
+  source_id INTEGER REFERENCES topic_sources(id),
+  platform TEXT NOT NULL,
+  note_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  play_count INTEGER NOT NULL,
+  like_count INTEGER NOT NULL,
+  collect_count INTEGER,
+  follower_count_at_scrape INTEGER,
+  ratio REAL,
+  scraped_at TEXT NOT NULL,
+  raw_json TEXT NOT NULL,
+  UNIQUE(platform, note_id)
+);
+CREATE TABLE IF NOT EXISTS topic_patterns (
+  id INTEGER PRIMARY KEY,
+  hook_type TEXT NOT NULL,
+  title_patterns TEXT NOT NULL,
+  emotion_type TEXT NOT NULL,
+  topic_clusters TEXT NOT NULL,
+  recommended_topics TEXT NOT NULL,
+  sample_note_ids TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content='knowledge_atoms', content_rowid='id');
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）
