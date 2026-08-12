@@ -3,6 +3,7 @@ dist/
 db/
 .env
 *.log
+__pycache__/
 
 # workspace 运行时产物（analysis.md 等种子数据仍跟踪）
 workspace/*/copy/
