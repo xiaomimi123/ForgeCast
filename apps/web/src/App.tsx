@@ -6,6 +6,7 @@ import ScoutPage from './pages/ScoutPage'
 import SettingsPage from './pages/SettingsPage'
 import TailorPage from './pages/TailorPage'
 import TailorDetailPage from './pages/TailorDetailPage'
+import TopicsPage from './pages/TopicsPage'
 import WorkshopPage from './pages/WorkshopPage'
 import Sidebar from './Sidebar'
 
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/tailor" element={<TailorPage />} />
           <Route path="/tailor/:id" element={<TailorDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/topics" element={<TopicsPage />} />
           <Route path="/projects/:slug" element={<ProjectDetailPage />} />
           {/* 旧路由重定向：书签/肌肉记忆兼容 */}
           <Route path="/board" element={<Navigate to="/scout" replace />} />

@@ -49,6 +49,11 @@ const TailorIcon = () => (
     <path d="M14.5 6.5a3 3 0 0 0-4.2 4.2L4 17v3h3l6.3-6.3a3 3 0 0 0 4.2-4.2l-2.3 2.3-2-2 2.3-2.3Z" />
   </Icon>
 )
+const TopicsIcon = () => (
+  <Icon>
+    <path d="M4 5h16M4 12h10M4 19h13" />
+  </Icon>
+)
 const SettingsIcon = () => (
   <Icon>
     <line x1="4" y1="7" x2="20" y2="7" />
@@ -66,6 +71,7 @@ const NAV = [
   { to: '/workshop', label: '做内容', icon: WorkshopIcon },
   { to: '/market', label: '分发营销', icon: MarketIcon },
   { to: '/tailor', label: '定制项目', icon: TailorIcon },
+  { to: '/topics', label: '选题库', icon: TopicsIcon },
 ]
 
 /* 锻造车间导航：激活项 3px 炉火橙左边条 + 淡橙晕底 + 加粗墨字（原 C 稿 .vc-nav 的底边条改竖栏后转左边条） */

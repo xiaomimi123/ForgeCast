@@ -102,3 +102,12 @@ export interface TailorCapability {
   chosen_repo: string | null; sort: number; wheels: TailorWheel[]
 }
 export interface TailorDetail { request: TailorRequest; capabilities: TailorCapability[] }
+export interface TopicSource {
+  id: number; platform: 'douyin' | 'xiaohongshu'; handle: string
+  display_name: string | null; follower_count: number | null; note: string | null; created_at: string
+}
+export interface TopicPattern {
+  id: number; hook_type: 'pain' | 'sideline' | 'infogap' | 'story'
+  title_patterns: string; emotion_type: string; topic_clusters: string
+  recommended_topics: string; sample_note_ids: string; created_at: string
+}
