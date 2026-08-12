@@ -9,7 +9,7 @@ import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
-import { addSource, extractPatterns, importNotes, listPatterns } from '@forgecast/topics'
+import { addSource, extractPatterns, importNotes, listPatterns, listSources } from '@forgecast/topics'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -269,6 +269,17 @@ async function main() {
         const patterns = listPatterns(ctx, hook as any)
         console.log(`选题库共 ${patterns.length} 条:`)
         for (const p of patterns) console.log(`  [${p.hook_type}] ${(JSON.parse(p.title_patterns)[0] ?? '')}`)
+      } else if (sub === 'list-sources') {
+        const sources = listSources(ctx)
+        console.log(`目标账号共 ${sources.length} 个:`)
+        for (const s of sources) {
+          const status = s.scrape_requested_at
+            ? `待抓取（请求于 ${s.scrape_requested_at}）`
+            : s.last_scraped_at
+              ? `上次抓取：${s.last_scraped_at}`
+              : '从未抓取'
+          console.log(`  #${s.id} [${s.platform}] ${s.handle} — ${status}`)
+        }
       } else {
         console.error(usage)
         process.exit(1)
@@ -326,7 +337,8 @@ async function main() {
   forgecast topics add-source --platform=<douyin|xiaohongshu> --handle=<handle> [--name=..] [--followers=N] [--note=..]  # 加选题库目标账号
   forgecast topics import-notes --source=<handle> --platform=<douyin|xiaohongshu> --file=<notes.json>  # 导入抓到的爆款笔记（数据来源：agent 会话手动抓取后写文件）
   forgecast topics extract [--top=N] [--min-ratio=R]          # LLM 提炼选题模式（按播放/粉丝比取前 N 条尚未提炼过的笔记）
-  forgecast topics list-patterns [--hook=<pain|sideline|infogap|story>]  # 列出选题库`)
+  forgecast topics list-patterns [--hook=<pain|sideline|infogap|story>]  # 列出选题库
+  forgecast topics list-sources                                # 列出目标账号清单及抓取状态（待抓取/上次抓取时间）`)
   }
 }
 main()
