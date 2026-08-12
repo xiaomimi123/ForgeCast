@@ -64,6 +64,19 @@ describe('/api/topics/sources', () => {
     })
     expect(res.status).toBe(404)
   })
+  it('POST .../:id/request-scrape 设置待抓取标记；不存在账号 → 404', async () => {
+    const created = await (await app.request('/api/topics/sources', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ platform: 'douyin', handle: 'g' }),
+    })).json() as any
+    const res = await app.request(`/api/topics/sources/${created.id}/request-scrape`, { method: 'POST' })
+    expect(res.status).toBe(200)
+    const list = await (await app.request('/api/topics/sources')).json() as any[]
+    expect(list[0].scrape_requested_at).not.toBeNull()
+
+    const res404 = await app.request('/api/topics/sources/999/request-scrape', { method: 'POST' })
+    expect(res404.status).toBe(404)
+  })
 })
 
 describe('/api/topics/patterns + extract', () => {

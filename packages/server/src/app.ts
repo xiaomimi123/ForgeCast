@@ -12,7 +12,7 @@ import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
 } from '@forgecast/tailor'
-import { addSource, deleteSource, extractPatterns, listPatterns, listSources, updateSource } from '@forgecast/topics'
+import { addSource, deleteSource, extractPatterns, listPatterns, listSources, requestScrape, updateSource } from '@forgecast/topics'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -702,6 +702,16 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   app.delete('/api/topics/sources/:id', (c) => {
     deleteSource(ctx, Number(c.req.param('id')))
     return c.json({ ok: true })
+  })
+  app.post('/api/topics/sources/:id/request-scrape', (c) => {
+    const id = Number(c.req.param('id'))
+    try {
+      requestScrape(ctx, id)
+      return c.json({ ok: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, msg.includes('不存在') ? 404 : 400)
+    }
   })
   app.get('/api/topics/patterns', (c) => {
     const hook = c.req.query('hook')
