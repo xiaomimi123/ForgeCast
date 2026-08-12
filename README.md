@@ -58,6 +58,10 @@ forgecast report [--since=YYYY-MM-DD]                       # 各钩子转化周
 forgecast knowledge sync [--source=<dir>] [--repo=<url>]     # 拉取 dbskill 上游 → atoms.jsonl 入库（喂文案生成）
 forgecast knowledge list                                    # 列出已入库知识原子
 forgecast tailor add|list|decompose|search|proposal   # 定制项目：需求拆解→GitHub 找轮子→拼装方案书
+forgecast topics add-source --platform=<douyin|xiaohongshu> --handle=<handle> [--name=..] [--followers=N] [--note=..]  # 选题库：加目标账号
+forgecast topics import-notes --source=<handle> --platform=<douyin|xiaohongshu> --file=<notes.json>  # 导入抓到的爆款笔记（抓取本身需在对话里让 Claude 用浏览器工具手动跑）
+forgecast topics extract [--top=N] [--min-ratio=R]           # LLM 提炼选题模式（标题结构/情绪类型/推荐选题）
+forgecast topics list-patterns [--hook=<pain|sideline|infogap|story>]  # 列出选题库
 ```
 
 ### 知识层（knowledge sync，§5.6）
@@ -66,8 +70,8 @@ forgecast tailor add|list|decompose|search|proposal   # 定制项目：需求拆
 `--source=<本地 dbskill checkout 或普通 md 目录>` 可跳过克隆（普通 md 目录走 parseAtoms 回退）。**合规**：dbskill 为 CC BY-NC 4.0，仅内部创作提效；`.cache/` 与 `templates/knowledge/dbskill/` 已 gitignore，其内容不提交进本仓、不打包进对外产品（§5.6 边界）。
 
 ## 目录结构
-- `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/server` 本地 API
-- `apps/web` Web 控制台（按业务流分五板块：找项目 `/scout`（候选卡片点「立项」直达项目详情页）/ 拆解需求 `/projects`（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容 `/workshop`（文案+视频生成；视频可选模板/BGM/情绪/背景/字幕，封面可独立选模板+raw 图重新生成，素材审核/发布数据展示齐全，见 docs/superpowers/specs/2026-08-11-workshop-panel-design.md；含卡点编辑器；项目详情页可一键 AI 生成 demo 模板配图，见 docs/superpowers/specs/2026-08-12-ai-demo-screens-design.md） / 分发营销 `/market` / 定制项目 `/tailor`）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
+- `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/topics` 选题库（目标账号+爆款笔记+LLM 提炼的选题模式，生成文案时作为风格参考注入）；`packages/server` 本地 API
+- `apps/web` Web 控制台（按业务流分六板块：找项目 `/scout`（候选卡片点「立项」直达项目详情页）/ 拆解需求 `/projects`（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容 `/workshop`（文案+视频生成；视频可选模板/BGM/情绪/背景/字幕，封面可独立选模板+raw 图重新生成，素材审核/发布数据展示齐全，见 docs/superpowers/specs/2026-08-11-workshop-panel-design.md；含卡点编辑器；项目详情页可一键 AI 生成 demo 模板配图，见 docs/superpowers/specs/2026-08-12-ai-demo-screens-design.md） / 分发营销 `/market` / 定制项目 `/tailor` / 选题库 `/topics`（目标账号清单 + 同赛道爆款笔记导入 + LLM 提炼标题结构/情绪类型，生成文案时自动引用，见 docs/superpowers/specs/2026-08-13-topic-pool-design.md））；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
 - `designs/` 设计稿与视觉体系参照（当前主题：锻造车间，见 docs/superpowers/specs/2026-08-09-forge-theme-design.md）
 
 ## Docker（可选）
