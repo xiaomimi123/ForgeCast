@@ -194,3 +194,59 @@ describe('synthesizeVoice cosy', () => {
     expect(r.degraded).toContain('FORGECAST_COSY_HOME')
   })
 })
+
+describe('synthesizeVoice ASR 对齐', () => {
+  it('kokoro 成功后 ASR 对齐成功 → cues 用对齐结果而非估算值', async () => {
+    const out = path.join(root, 'workspace/demo/videos/asr-ok.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'kokoro' })
+    const kctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runKokoro = vi.fn(async (_text: string, outPath: string) => {
+      fs.mkdirSync(path.dirname(outPath), { recursive: true })
+      fs.writeFileSync(outPath, Buffer.from([1, 2, 3, 4]))
+    })
+    const alignCuesMock = vi.fn(async () => [{ start: 0.5, end: 1.9 }])
+    const r = await synthesizeVoice(kctx, '一句话。', out, { runKokoro, alignCues: alignCuesMock })
+    expect(alignCuesMock).toHaveBeenCalledWith(out, ['一句话'], '')
+    expect(r.cues).toEqual([{ start: 0.5, end: 1.9, text: '一句话' }])
+  })
+
+  it('kokoro 成功但 ASR 对齐失败(返回 null) → cues 仍是原来的估算值（回归）', async () => {
+    const out = path.join(root, 'workspace/demo/videos/asr-fail.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'kokoro' })
+    const kctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runKokoro = vi.fn(async (_text: string, outPath: string) => {
+      fs.mkdirSync(path.dirname(outPath), { recursive: true })
+      fs.writeFileSync(outPath, Buffer.from([1, 2, 3, 4]))
+    })
+    const alignCuesMock = vi.fn(async () => null)
+    const r = await synthesizeVoice(kctx, '一句话。', out, { runKokoro, alignCues: alignCuesMock })
+    expect(alignCuesMock).toHaveBeenCalledOnce()
+    expect(r.cues.length).toBe(1)
+    expect(r.cues[0].text).toBe('一句话')
+    expect(r.cues[0].start).toBe(0) // 原有估算逻辑：首句从 0 开始
+  })
+
+  it('stub 模式不调用 alignCues（没有真实音频可对齐）', async () => {
+    // 注意：外层 beforeEach 的 ctx 用 loadConfig(root, {}) 建，TTS 默认模式是 kokoro 不是
+    // stub（config.ts 未设 FORGECAST_TTS_MODE 时回落 'kokoro'）——这里必须显式建一个
+    // stub 模式的 ctx，不能直接用外层 ctx，否则会真的尝试 spawn kokoro。
+    const out = path.join(root, 'workspace/demo/videos/asr-stub.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'stub' })
+    const stubCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const alignCuesMock = vi.fn(async () => [{ start: 0, end: 1 }])
+    const r = await synthesizeVoice(stubCtx, '一句话。', out, { alignCues: alignCuesMock })
+    expect(alignCuesMock).not.toHaveBeenCalled()
+    expect(r.cues[0].text).toBe('一句话')
+  })
+
+  it('TTS 本身失败(降级 stub) → 不调用 alignCues', async () => {
+    const out = path.join(root, 'workspace/demo/videos/asr-degrade.wav')
+    const config = loadConfig(root, { FORGECAST_TTS_MODE: 'kokoro' })
+    const kctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const runKokoro = vi.fn(async () => { throw new Error('kokoro-onnx 未安装') })
+    const alignCuesMock = vi.fn(async () => [{ start: 0, end: 1 }])
+    const r = await synthesizeVoice(kctx, '一句话。', out, { runKokoro, alignCues: alignCuesMock })
+    expect(alignCuesMock).not.toHaveBeenCalled()
+    expect(r.degraded).toContain('kokoro-onnx 未安装')
+  })
+})

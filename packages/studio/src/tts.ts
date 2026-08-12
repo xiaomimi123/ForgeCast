@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
+import { alignCues, type AlignedCue } from './asr'
 import { runCosyTts, runKokoroTts, runMeloTts } from './hyperframes'
 
 export interface Cue { start: number; end: number; text: string }
@@ -13,6 +14,7 @@ export interface TtsDeps {
   runMelo?: (text: string, outWavAbs: string) => Promise<void>
   runCosy?: (text: string, outWavAbs: string) => Promise<void>
   fetchImpl?: typeof fetch
+  alignCues?: (wavAbs: string, sentences: string[], asrPython: string) => Promise<AlignedCue[] | null>
 }
 
 /**
@@ -75,13 +77,21 @@ export async function synthesizeVoice(
   const rel = path.relative(ctx.config.paths.workspace, outWavAbs)
   // 去舞台提示后再念/切句：TTS 不念【节奏标记】（画面指示），字幕也用干净文本
   const clean = cleanNarrationText(text)
-  const cues = cuesFrom(splitSentences(clean))
+  const sentences = splitSentences(clean)
+  const estimatedCues = cuesFrom(sentences)
   const writeStub = () => { fs.mkdirSync(path.dirname(outWavAbs), { recursive: true }); fs.writeFileSync(outWavAbs, minimalWav()) }
-  const degrade = (reason: string): VoiceResult => { writeStub(); return { audioRel: rel, cues, degraded: reason } }
+  const degrade = (reason: string): VoiceResult => { writeStub(); return { audioRel: rel, cues: estimatedCues, degraded: reason } }
+  // 真实语音合成成功后才有音频可对齐：用本地 ASR 拿真实时间轴，失败/未配置则回落估算——对调用方透明
+  const finish = async (): Promise<VoiceResult> => {
+    const run = deps.alignCues ?? alignCues
+    const aligned = await run(outWavAbs, sentences, ctx.config.tts.asrPython)
+    const cues = aligned ? aligned.map((c, i) => ({ start: c.start, end: c.end, text: sentences[i] })) : estimatedCues
+    return { audioRel: rel, cues }
+  }
 
   if (ctx.config.tts.mode === 'stub') {
     writeStub()
-    return { audioRel: rel, cues }
+    return { audioRel: rel, cues: estimatedCues }
   }
 
   if (ctx.config.tts.mode === 'kokoro') {
@@ -89,7 +99,7 @@ export async function synthesizeVoice(
     try {
       await run(clean, outWavAbs)
       if (!fs.existsSync(outWavAbs) || fs.statSync(outWavAbs).size === 0) return degrade('Kokoro 未产出音频')
-      return { audioRel: rel, cues }
+      return await finish()
     } catch (err) {
       return degrade(`Kokoro 失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -101,7 +111,7 @@ export async function synthesizeVoice(
     try {
       await run(clean, outWavAbs)
       if (!fs.existsSync(outWavAbs) || fs.statSync(outWavAbs).size === 0) return degrade('MeloTTS 未产出音频')
-      return { audioRel: rel, cues }
+      return await finish()
     } catch (err) {
       return degrade(`MeloTTS 失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -113,7 +123,7 @@ export async function synthesizeVoice(
     try {
       await run(clean, outWavAbs)
       if (!fs.existsSync(outWavAbs) || fs.statSync(outWavAbs).size === 0) return degrade('CosyVoice2 未产出音频')
-      return { audioRel: rel, cues }
+      return await finish()
     } catch (err) {
       return degrade(`CosyVoice2 失败: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -136,7 +146,7 @@ export async function synthesizeVoice(
     if (bytes.length === 0) return degrade('TTS 返回空音频')
     fs.mkdirSync(path.dirname(outWavAbs), { recursive: true })
     fs.writeFileSync(outWavAbs, bytes)
-    return { audioRel: rel, cues } // 真实时间轴待接 ASR，暂用估算
+    return await finish()
   } catch (err) {
     return degrade(`TTS 请求失败: ${err instanceof Error ? err.message : String(err)}`)
   }
