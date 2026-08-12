@@ -214,6 +214,9 @@ importers:
       '@forgecast/tailor':
         specifier: workspace:*
         version: link:../tailor
+      '@forgecast/topics':
+        specifier: workspace:*
+        version: link:../topics
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.30)

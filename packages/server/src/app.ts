@@ -12,6 +12,7 @@ import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
 } from '@forgecast/tailor'
+import { addSource, deleteSource, extractPatterns, listPatterns, listSources, updateSource } from '@forgecast/topics'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -670,6 +671,50 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       const msg = err instanceof Error ? err.message : String(err)
       return c.json({ error: msg }, msg.includes('不存在') ? 404 : 400)
     }
+  })
+
+  // —— 选题库 ——
+  app.get('/api/topics/sources', (c) => c.json(listSources(ctx)))
+  app.post('/api/topics/sources', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    if (body.platform !== 'douyin' && body.platform !== 'xiaohongshu') return c.json({ error: 'platform 必须是 douyin/xiaohongshu' }, 400)
+    if (typeof body.handle !== 'string' || !body.handle.trim()) return c.json({ error: '缺少 handle' }, 400)
+    try {
+      return c.json(addSource(ctx, {
+        platform: body.platform, handle: body.handle,
+        displayName: body.displayName, followerCount: body.followerCount, note: body.note,
+      }))
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+  app.put('/api/topics/sources/:id', async (c) => {
+    const id = Number(c.req.param('id'))
+    const body = await c.req.json().catch(() => ({}))
+    try {
+      updateSource(ctx, id, { followerCount: body.followerCount, note: body.note })
+      return c.json({ ok: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, msg.includes('不存在') ? 404 : 400)
+    }
+  })
+  app.delete('/api/topics/sources/:id', (c) => {
+    deleteSource(ctx, Number(c.req.param('id')))
+    return c.json({ ok: true })
+  })
+  app.get('/api/topics/patterns', (c) => {
+    const hook = c.req.query('hook')
+    return c.json(listPatterns(ctx, hook as any))
+  })
+  app.post('/api/topics/extract', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => extractPatterns(ctx, {
+      topN: typeof body.top === 'number' ? body.top : undefined,
+      minRatio: typeof body.minRatio === 'number' ? body.minRatio : undefined,
+      onProgress: log,
+    }))
+    return c.json({ taskId })
   })
 
   // —— 静态托管构建好的 Web（Docker 单容器部署）。本地 dev 用 Vite，无 dist 则不注册，不影响 ——

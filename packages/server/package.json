@@ -13,6 +13,7 @@
     "@forgecast/scout": "workspace:*",
     "@forgecast/studio": "workspace:*",
     "@forgecast/tailor": "workspace:*",
+    "@forgecast/topics": "workspace:*",
     "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0"
   },
