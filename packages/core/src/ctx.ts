@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type Database from 'better-sqlite3'
 import { loadConfig, type ForgecastConfig } from './config'
 import { openDb } from './db'
@@ -12,8 +13,19 @@ export interface CoreCtx {
   modeNotes?: string[]
 }
 
+/** 把仓库根目录的 .env 灌进 process.env（已存在的真实环境变量优先，不覆盖）。测试从不调用 createCtx，不受影响。 */
+function loadRootEnvFile(root?: string): void {
+  const envRoot = root ?? process.env.INIT_CWD ?? process.cwd()
+  try {
+    process.loadEnvFile(path.join(envRoot, '.env'))
+  } catch {
+    // .env 不存在（如容器里直接注入环境变量）——忽略
+  }
+}
+
 /** CLI 与 server 共用的上下文工厂。config 优先级：settings 表(设置页) > env > 默认 */
 export function createCtx(root?: string, env?: NodeJS.ProcessEnv): CoreCtx {
+  if (!env) loadRootEnvFile(root)
   const config = loadConfig(root, env)
   const db = openDb(config.paths.db)
   applyStoredSettings(config, db)

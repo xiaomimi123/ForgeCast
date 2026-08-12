@@ -398,10 +398,12 @@ export function buildDemoSections(opts: {
     let cutStarts: number[] = []
     if (hasBeats) {
       const win = beats!.filter((b) => b >= carStart && b < carEnd)
-      cutStarts = win.filter((_, i) => i % 4 === 0) // 每 4 拍取一刀
+      // 切点数至少等于图数（保证每张图播到），但不超过窗口内拍数；否则按"每 4 拍一刀"的密度均匀取拍
+      const cutCount = Math.min(win.length, Math.max(shots.length, Math.ceil(win.length / 4)))
+      cutStarts = cutCount > 0 ? Array.from({ length: cutCount }, (_, i) => win[Math.floor((i * win.length) / cutCount)]) : []
     }
-    if (cutStarts.length < 2) {
-      // 无 BGM / 窗口内拍太少：退回按图数均分（与原行为一致，保证有图能播）
+    if (cutStarts.length < 2 || cutStarts.length < shots.length) {
+      // 无 BGM / 窗口内拍太少（不够切出每图至少一刀）：退回按图数均分（保证每张图都能播到）
       const per = shots.length ? (carEnd - carStart) / shots.length : 0
       cutStarts = shots.map((_, i) => carStart + i * per)
     }

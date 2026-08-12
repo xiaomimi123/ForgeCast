@@ -293,6 +293,16 @@ describe('buildDemoSections（截图轮播卡点）', () => {
     expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length) // 一图一段
     expect(r.accents).toBe('') // 无 BGM 不卡点不弹
   })
+  it('图片数多于节拍切点数：仍保证每张图至少出现一次（不因快切节奏丢图）', () => {
+    const manyShots = {
+      ...base,
+      shots: Array.from({ length: 5 }, (_, i) => ({ rel: `${String(i + 1).padStart(2, '0')}.png`, orientation: 'portrait' as const })),
+    }
+    // 窗口 [6,24) 内共 12 拍，每 4 拍取一刀 → 只够切出 3 刀（少于 5 张图，且 ≥2 不会触发"拍太少"回退）
+    const beats = Array.from({ length: 12 }, (_, i) => 6 + i * 0.5)
+    const r = buildDemoSections({ ...manyShots, durationSec: 30, beats })
+    for (const s of manyShots.shots) expect(r.html).toContain(s.rel)
+  })
 })
 
 describe('buildDemoSections 消费卡点方案', () => {

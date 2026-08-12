@@ -124,6 +124,23 @@ describe('cleanNarrationText', () => {
   it('半角括号也去掉', () => {
     expect(cleanNarrationText('正文(旁白)结尾')).toBe('正文结尾')
   })
+  it('整行"画面：xxx"是镜头指示，整行丢弃，不进旁白/字幕', () => {
+    const raw = '【0-3s 钩子】\n画面：手机聊天记录，甲方发来一句话\n台词：接外包的兄弟，这句话你熟不熟？'
+    const out = cleanNarrationText(raw)
+    expect(out).not.toContain('画面')
+    expect(out).not.toContain('手机聊天记录')
+    expect(out).toContain('接外包的兄弟，这句话你熟不熟？')
+  })
+  it('"台词：xxx"只剥标签前缀，保留台词原文', () => {
+    expect(cleanNarrationText('台词：这是台词内容')).toBe('这是台词内容')
+  })
+  it('半角冒号形式"画面:"/"台词:"同样处理', () => {
+    const raw = '画面:一段画面描述\n台词:一句台词'
+    const out = cleanNarrationText(raw)
+    expect(out).not.toContain('画面')
+    expect(out).not.toContain('一段画面描述')
+    expect(out).toBe('一句台词')
+  })
 })
 
 describe('synthesizeVoice melo', () => {

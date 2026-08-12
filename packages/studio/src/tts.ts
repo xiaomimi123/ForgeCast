@@ -19,12 +19,16 @@ export interface TtsDeps {
  * 清理口播脚本：去掉舞台提示，只留要念/要显示的话。
  * 抖音脚本形如「【0-3s 钩子】（大字弹出）正文…」——【…】是段落节奏标记、（…）是画面指示，
  * 都不该被 TTS 念出来、也不该进字幕。全角/半角括号都处理。
+ * 兼容旧版/模型未遵循括号格式时写成整行「画面：…」「台词：…」的情况：
+ * 「画面：」整行是镜头指示，丢弃；「台词：」只是标签前缀，剥掉后保留台词原文。
  */
 export function cleanNarrationText(text: string): string {
   return text
     .replace(/【[^】]*】/g, '')
     .replace(/（[^）]*）/g, '')
     .replace(/\([^)]*\)/g, '')
+    .replace(/^\s*画面[：:].*$/gm, '')
+    .replace(/^\s*台词[：:]\s*/gm, '')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{2,}/g, '\n')
     .trim()
