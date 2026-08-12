@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addSource, deleteSource, listSources, updateSource } from '../src/sources'
+import { addSource, deleteSource, listSources, requestScrape, updateSource } from '../src/sources'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -47,5 +47,13 @@ describe('topic_sources CRUD', () => {
     const { id } = addSource(ctx, { platform: 'douyin', handle: 'd' })
     deleteSource(ctx, id)
     expect(listSources(ctx).find((r) => r.id === id)).toBeUndefined()
+  })
+  it('requestScrape 设置待抓取时间戳，账号不存在抛错，可重复调用不报错', () => {
+    const { id } = addSource(ctx, { platform: 'douyin', handle: 'e' })
+    expect(listSources(ctx)[0].scrape_requested_at).toBeNull()
+    requestScrape(ctx, id)
+    expect(listSources(ctx)[0].scrape_requested_at).not.toBeNull()
+    expect(() => requestScrape(ctx, 999)).toThrow(/不存在/)
+    expect(() => requestScrape(ctx, id)).not.toThrow()
   })
 })

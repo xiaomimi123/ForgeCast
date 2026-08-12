@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addSource } from '../src/sources'
+import { addSource, listSources, requestScrape } from '../src/sources'
 import { importNotes, listNotes } from '../src/notes'
 
 let ctx: CoreCtx
@@ -53,5 +53,14 @@ describe('importNotes', () => {
     importNotes(ctx, { sourceHandle: 'e', platform: 'douyin', notes: [{ noteId: 'n5', title: 't', playCount: 1, likeCount: 1 }] })
     expect(listNotes(ctx, a.id).length).toBe(1)
     expect(listNotes(ctx).length).toBe(2)
+  })
+  it('导入成功后清空 scrape_requested_at、更新 last_scraped_at', () => {
+    const { id } = addSource(ctx, { platform: 'douyin', handle: 'f', followerCount: 100 })
+    requestScrape(ctx, id)
+    expect(listSources(ctx).find((s) => s.id === id)?.scrape_requested_at).not.toBeNull()
+    importNotes(ctx, { sourceHandle: 'f', platform: 'douyin', notes: [{ noteId: 'n6', title: 't', playCount: 1, likeCount: 1 }] })
+    const row = listSources(ctx).find((s) => s.id === id)
+    expect(row?.scrape_requested_at).toBeNull()
+    expect(row?.last_scraped_at).not.toBeNull()
   })
 })

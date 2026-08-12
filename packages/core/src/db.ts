@@ -142,5 +142,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
   ensureColumn(db, 'candidates', 'intro_detail', 'TEXT')
   // 迁移：候选收藏标记（scout UPSERT 不含此列，每日自动抓取不会覆盖收藏）
   ensureColumn(db, 'candidates', 'favorite', 'INTEGER DEFAULT 0')
+  // 迁移：选题库抓取请求排队（新库已含，此为兼容旧库）
+  ensureColumn(db, 'topic_sources', 'scrape_requested_at', 'TEXT')
+  ensureColumn(db, 'topic_sources', 'last_scraped_at', 'TEXT')
   return db
 }

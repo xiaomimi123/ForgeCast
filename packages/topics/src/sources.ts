@@ -10,6 +10,8 @@ export interface TopicSource {
   follower_count: number | null
   note: string | null
   created_at: string
+  scrape_requested_at: string | null
+  last_scraped_at: string | null
 }
 
 /** 新增目标账号（选题库爆款笔记来源，手动维护，不做隐式创建）。同 platform+handle 重复抛错。 */
@@ -49,4 +51,10 @@ export function updateSource(ctx: CoreCtx, id: number, patch: SourcePatch): void
 
 export function deleteSource(ctx: CoreCtx, id: number): void {
   ctx.db.prepare('DELETE FROM topic_sources WHERE id = ?').run(id)
+}
+
+/** 标记该账号"想被抓一次"（不触发任何真实抓取，只写时间戳）。不存在抛错；可重复调用（幂等，只是刷新时间）。 */
+export function requestScrape(ctx: CoreCtx, id: number): void {
+  if (!ctx.db.prepare('SELECT id FROM topic_sources WHERE id = ?').get(id)) throw new Error(`目标账号不存在: ${id}`)
+  ctx.db.prepare("UPDATE topic_sources SET scrape_requested_at = datetime('now') WHERE id = ?").run(id)
 }

@@ -61,6 +61,8 @@ export function importNotes(
     })
     if (exists) updated++; else imported++
   }
+  // 导入即视为对之前"请求抓取"标记的响应：清掉待处理、记下这次抓取时间
+  ctx.db.prepare("UPDATE topic_sources SET scrape_requested_at = NULL, last_scraped_at = datetime('now') WHERE id = ?").run(source.id)
   return { imported, updated }
 }
 
