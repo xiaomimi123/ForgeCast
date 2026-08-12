@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
@@ -8,6 +9,7 @@ import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
+import { addSource, extractPatterns, importNotes, listPatterns } from '@forgecast/topics'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -224,6 +226,55 @@ async function main() {
       }
       break
     }
+    case 'topics': {
+      const sub = rest.find((a) => !a.startsWith('--'))
+      const ctx = ctxWithNotes()
+      const usage = '用法: forgecast topics <add-source|import-notes|extract|list-patterns>'
+      if (sub === 'add-source') {
+        const platform = arg('platform')
+        const handle = arg('handle')
+        if (platform !== 'douyin' && platform !== 'xiaohongshu') {
+          console.error('用法: forgecast topics add-source --platform=<douyin|xiaohongshu> --handle=<handle> [--name=<display_name>] [--followers=<N>] [--note=<text>]')
+          process.exit(1)
+        }
+        if (!handle) { console.error('缺少 --handle'); process.exit(1) }
+        const followers = arg('followers')
+        const { id } = addSource(ctx, {
+          platform, handle, displayName: arg('name'),
+          followerCount: followers ? Number(followers) : undefined, note: arg('note'),
+        })
+        console.log(`已添加目标账号 #${id}`)
+      } else if (sub === 'import-notes') {
+        const source = arg('source')
+        const platform = arg('platform')
+        const file = arg('file')
+        if (!source || (platform !== 'douyin' && platform !== 'xiaohongshu') || !file) {
+          console.error('用法: forgecast topics import-notes --source=<handle> --platform=<douyin|xiaohongshu> --file=<notes.json>')
+          process.exit(1)
+        }
+        const notes = JSON.parse(fs.readFileSync(file, 'utf8'))
+        const { imported, updated } = importNotes(ctx, { sourceHandle: source, platform, notes })
+        console.log(`导入完成：新增 ${imported} 条，更新 ${updated} 条`)
+      } else if (sub === 'extract') {
+        const top = arg('top')
+        const minRatio = arg('min-ratio')
+        const patterns = await extractPatterns(ctx, {
+          topN: top ? Number(top) : undefined,
+          minRatio: minRatio ? Number(minRatio) : undefined,
+          onProgress: (m) => console.log(`  ${m}`),
+        })
+        console.log(`提炼完成：新增 ${patterns.length} 条选题模式`)
+      } else if (sub === 'list-patterns') {
+        const hook = arg('hook')
+        const patterns = listPatterns(ctx, hook as any)
+        console.log(`选题库共 ${patterns.length} 条:`)
+        for (const p of patterns) console.log(`  [${p.hook_type}] ${(JSON.parse(p.title_patterns)[0] ?? '')}`)
+      } else {
+        console.error(usage)
+        process.exit(1)
+      }
+      break
+    }
     case 'knowledge': {
       const sub = rest.find((a) => !a.startsWith('--'))
       const ctx = ctxWithNotes()
@@ -271,7 +322,11 @@ async function main() {
   tailor search <id> [--cap=<capId>]    搜索轮子、评分入库（可单项重搜）
   tailor proposal <id>                  生成拼装方案书（需完成决策）
   knowledge sync [--source=<dir>] [--repo=<url>]  拉取 dbskill 上游→atoms.jsonl 入库（--source 指本地checkout/md目录跳过克隆）
-  knowledge list                        列出已入库知识原子`)
+  knowledge list                        列出已入库知识原子
+  forgecast topics add-source --platform=<douyin|xiaohongshu> --handle=<handle> [--name=..] [--followers=N] [--note=..]  # 加选题库目标账号
+  forgecast topics import-notes --source=<handle> --platform=<douyin|xiaohongshu> --file=<notes.json>  # 导入抓到的爆款笔记（数据来源：agent 会话手动抓取后写文件）
+  forgecast topics extract [--top=N] [--min-ratio=R]          # LLM 提炼选题模式（按播放/粉丝比取前 N 条尚未提炼过的笔记）
+  forgecast topics list-patterns [--hook=<pain|sideline|infogap|story>]  # 列出选题库`)
   }
 }
 main()
