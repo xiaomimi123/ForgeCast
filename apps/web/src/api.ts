@@ -105,6 +105,7 @@ export interface TailorDetail { request: TailorRequest; capabilities: TailorCapa
 export interface TopicSource {
   id: number; platform: 'douyin' | 'xiaohongshu'; handle: string
   display_name: string | null; follower_count: number | null; note: string | null; created_at: string
+  scrape_requested_at: string | null; last_scraped_at: string | null
 }
 export interface TopicPattern {
   id: number; hook_type: 'pain' | 'sideline' | 'infogap' | 'story'

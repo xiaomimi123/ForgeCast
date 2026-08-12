@@ -33,6 +33,16 @@ export default function TopicsPage() {
       qc.invalidateQueries({ queryKey: ['topics', 'sources'] })
     } catch (e) { alert(e instanceof Error ? e.message : String(e)) }
   }
+  const requestScrapeMut = useMutation({
+    mutationFn: (id: number) => api(`/api/topics/sources/${id}/request-scrape`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['topics', 'sources'] }),
+    onError: (e) => alert(e instanceof Error ? e.message : String(e)),
+  })
+  function sourceStatus(s: TopicSource): string {
+    if (s.scrape_requested_at) return `待抓取（请求于 ${s.scrape_requested_at}）`
+    if (s.last_scraped_at) return `上次抓取：${s.last_scraped_at}`
+    return '从未抓取'
+  }
 
   const [extracting, setExtracting] = useState(false)
   const [extractLog, setExtractLog] = useState('')
@@ -56,7 +66,7 @@ export default function TopicsPage() {
       <div className="card-forge p-4">
         <div className="mb-2 font-semibold">目标账号清单</div>
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-faint"><th>平台</th><th>账号</th><th>粉丝数</th><th>备注</th><th /></tr></thead>
+          <thead><tr className="text-left text-faint"><th>平台</th><th>账号</th><th>粉丝数</th><th>备注</th><th>抓取状态</th><th /></tr></thead>
           <tbody>
             {sources.data?.map((s) => (
               <tr key={s.id} className="border-t border-hairline">
@@ -64,7 +74,12 @@ export default function TopicsPage() {
                 <td>{s.display_name ? `${s.display_name}（${s.handle}）` : s.handle}</td>
                 <td>{s.follower_count ?? '—'}</td>
                 <td className="text-faint">{s.note ?? ''}</td>
-                <td><button className="text-xs text-red-600" onClick={() => removeSource(s.id)}>删除</button></td>
+                <td className="text-faint">{sourceStatus(s)}</td>
+                <td className="space-x-2">
+                  <button className="text-xs text-ink underline disabled:opacity-50" disabled={requestScrapeMut.isPending}
+                    onClick={() => requestScrapeMut.mutate(s.id)}>请求抓取</button>
+                  <button className="text-xs text-red-600" onClick={() => removeSource(s.id)}>删除</button>
+                </td>
               </tr>
             ))}
           </tbody>
