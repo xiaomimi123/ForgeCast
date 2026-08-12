@@ -31,6 +31,7 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_BGM | 背景乐选曲：空=按文案 hook 情绪自动匹配 / `none`=关 / 具体文件名（不含后缀）=指定。素材放 `templates/bgm/`（gitignore），CLI 亦可 `--bgm=<name>` / `--no-bgm` |
 | FORGECAST_MOOD | 手动指定情绪（覆盖 hook 自动映射）：`tense`(紧张,pain)/`upbeat`(热血,sideline)/`tech`(科技,infogap)/`warm`(温情,story)。曲子放 `templates/bgm/<情绪>/` 子文件夹，缺失则回落根目录。CLI 亦可 `--mood=<key>` |
 | FORGECAST_BEAT_PYTHON | 节拍分析用的 python（含 librosa），默认回落 `FORGECAST_MELO_PYTHON`；缺失则加 BGM 但不卡点 |
+| FORGECAST_ASR_PYTHON | 字幕真对齐用的本地 faster-whisper venv；缺省回落 FORGECAST_MELO_PYTHON；都不配则字幕退回按字数估算时间轴（不影响视频生成） |
 | FORGECAST_CAPTIONS | 是否把旁白字幕烧进视频：默认开；`off`/`0`/`false` 关（在平台自配字幕时用）。CLI 亦可 `--no-captions` |
 | FORGECAST_BG | 科技背景变体(demo/flash/changelog)：`grid`(赛博网格,默认)/`aurora`(极光)/`matrix`(数据雨)/`synth`(合成波)/`mesh`(深空)/`random`(每条随机)。CLI 亦可 `--bg=<name>` |
 

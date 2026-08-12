@@ -142,3 +142,29 @@ export FORGECAST_TTS_MODE=cosy FORGECAST_COSY_HOME=$H
 - **Apple Silicon 强制 CPU**：`scripts/cosy_infer.py` 已 `torch.backends.mps.is_available=lambda:False`。M1 上模型加载 ~10s、合成 RTF ~2.75x。
 - **换音色 = 换 `prompt.wav` + `prompt.txt`**（不用改代码/环境变量）。
 - `pynini`/`ttsfrd` 在 Mac 装不上没关系——CosyVoice2 用 `wetext` 前端兜底。
+
+### 字幕真对齐（faster-whisper，`FORGECAST_ASR_PYTHON`）
+
+TTS 合成音频后，若配置了 `FORGECAST_ASR_PYTHON`（或已有 `FORGECAST_MELO_PYTHON`，缺省会自动回落），
+会用本地 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)（CTranslate2 重实现的 Whisper）
+转写出真实词级时间戳，跟原文做字符级对齐，把字幕/旁白从"按字数估算时长"换成真实语音对齐的时间轴。
+**只用 ASR 的时间信息，不用它识别出的文字**——字幕显示内容永远是我们自己生成的原文，识别偶尔认错字
+不影响显示、只影响对齐精度；对齐失败（静音、匹配率过低）会静默回落原有估算，不阻断视频生成。
+
+复用 melo 的 venv（装了 melo 就免配置）：
+
+```bash
+uv pip install --python ~/.forgecast-venvs/melo/bin/python faster-whisper
+export FORGECAST_ASR_PYTHON=~/.forgecast-venvs/melo/bin/python
+```
+
+或单独建一个 venv：
+
+```bash
+uv venv --python 3.11 ~/.forgecast-venvs/asr
+uv pip install --python ~/.forgecast-venvs/asr/bin/python faster-whisper
+export FORGECAST_ASR_PYTHON=~/.forgecast-venvs/asr/bin/python
+```
+
+模型用 `small`（约 500MB，首次运行自动从 Hugging Face 下载并缓存，无需手动下载步骤），
+CPU 上单条几秒到十几秒。不配置这个变量视频照常生成，只是字幕退回估算时间轴。
