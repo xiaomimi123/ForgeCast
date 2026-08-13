@@ -43,7 +43,7 @@
 
 ## 模块结构（新包 packages/demand，同构于 packages/topics）
 
-- `src/signals.ts`：addSignal / importSignals（批量 upsert）/ listSignals（按 source/kind/status 筛）/ setStatus
+- `src/signals.ts`：importSignals（批量 upsert，单条添加即单元素批量）/ listSignals（按 source/kind/status 筛）/ setSignalStatus / requestCollect / collectStatus
 - `src/extract.ts`：extractSignals——取 kind 为空的新信号批量调 LLM 分类 + 生成 opportunity；mock 走 fixture，live 调 LLM；校验失败整批抛错不写脏数据（照抄 topics/patterns.ts 模式）
 - `src/fixtures/demand-fixture.ts`：mock fixture（永不调 ctx.llm）
 - `templates/prompts/demand-extract.md`：提炼提示词——输入原始信号清单，输出 JSON 数组 [{id, kind, opportunity}]；遵守真实感红线（opportunity 不编数字）
@@ -67,6 +67,7 @@
 - `forgecast demand list [--source=] [--kind=] [--status=]`
 - `forgecast demand extract`
 - `forgecast demand star <id>` / `forgecast demand dismiss <id>`
+- `forgecast demand request`（打采集请求标记，同 Web 按钮）
 
 ## Web 界面
 
