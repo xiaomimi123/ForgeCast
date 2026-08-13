@@ -13,6 +13,7 @@ import {
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
 } from '@forgecast/tailor'
 import { addSource, deleteSource, extractPatterns, listPatterns, listSources, requestScrape, updateSource } from '@forgecast/topics'
+import { collectStatus, extractSignals, importSignals, listSignals, requestCollect, setSignalStatus } from '@forgecast/demand'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -726,6 +727,40 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     }))
     return c.json({ taskId })
   })
+
+  // —— 需求信号库（demand）。采集由 agent 会话完成后经 import 导入，服务端零抓取逻辑 ——
+  app.get('/api/demand/signals', (c) => {
+    const q = c.req.query()
+    return c.json(listSignals(ctx, { source: q.source, kind: q.kind, status: q.status }))
+  })
+  app.post('/api/demand/import', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    if (!body?.source || !Array.isArray(body?.signals)) return c.json({ error: 'source 与 signals 必填' }, 400)
+    try {
+      return c.json(importSignals(ctx, { source: body.source, signals: body.signals }))
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400)
+    }
+  })
+  app.patch('/api/demand/signals/:id', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    try {
+      setSignalStatus(ctx, Number(c.req.param('id')), body.status)
+      return c.json({ ok: true })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return c.json({ error: msg }, msg.includes('不存在') ? 404 : 400)
+    }
+  })
+  app.post('/api/demand/extract', (c) => {
+    const taskId = queue.enqueue((log) => extractSignals(ctx, { onProgress: log }))
+    return c.json({ taskId })
+  })
+  app.post('/api/demand/request-collect', (c) => {
+    requestCollect(ctx)
+    return c.json({ ok: true })
+  })
+  app.get('/api/demand/collect-status', (c) => c.json(collectStatus(ctx)))
 
   // —— 静态托管构建好的 Web（Docker 单容器部署）。本地 dev 用 Vite，无 dist 则不注册，不影响 ——
   const webDist = path.resolve(process.env.FORGECAST_WEB_DIST ?? path.join(ctx.config.root, 'apps/web/dist'))
