@@ -80,4 +80,23 @@ describe('/api/demand', () => {
     expect(s.kind).toBeTruthy()
     expect(s.opportunity).toBeTruthy()
   })
+  it('match 任务（mock github+llm）→ matches 列表非空、信号 status=matched', async () => {
+    await app.request('/api/demand/import', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: 'xhs', signals: [{ title: '在线客服系统需求' }] }),
+    })
+    const [s] = await (await app.request('/api/demand/signals')).json() as any[]
+    const { taskId } = await (await app.request(`/api/demand/signals/${s.id}/match`, { method: 'POST' })).json() as any
+    await runTask(taskId)
+    const matches = await (await app.request(`/api/demand/signals/${s.id}/matches`)).json() as any[]
+    expect(matches.length).toBeGreaterThan(0)
+    expect(matches[0].repo).toBeTruthy()
+    expect(matches[0].biz_plan).toBeTruthy()
+    const [after] = await (await app.request('/api/demand/signals')).json() as any[]
+    expect(after.status).toBe('matched')
+  })
+  it('match 不存在的信号 → 任务失败', async () => {
+    const { taskId } = await (await app.request('/api/demand/signals/9999/match', { method: 'POST' })).json() as any
+    await expect(runTask(taskId)).rejects.toThrow(/不存在/)
+  })
 })

@@ -13,7 +13,7 @@ import {
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
 } from '@forgecast/tailor'
 import { addSource, deleteSource, extractPatterns, listPatterns, listSources, requestScrape, updateSource } from '@forgecast/topics'
-import { collectStatus, extractSignals, importSignals, listSignals, requestCollect, setSignalStatus } from '@forgecast/demand'
+import { collectStatus, extractSignals, importSignals, listMatches, listSignals, matchSignal, requestCollect, setSignalStatus } from '@forgecast/demand'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
@@ -761,6 +761,12 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json({ ok: true })
   })
   app.get('/api/demand/collect-status', (c) => c.json(collectStatus(ctx)))
+  app.post('/api/demand/signals/:id/match', (c) => {
+    const id = Number(c.req.param('id'))
+    const taskId = queue.enqueue((log) => matchSignal(ctx, id, { onProgress: log }))
+    return c.json({ taskId })
+  })
+  app.get('/api/demand/signals/:id/matches', (c) => c.json(listMatches(ctx, Number(c.req.param('id')))))
 
   // —— 静态托管构建好的 Web（Docker 单容器部署）。本地 dev 用 Vite，无 dist 则不注册，不影响 ——
   const webDist = path.resolve(process.env.FORGECAST_WEB_DIST ?? path.join(ctx.config.root, 'apps/web/dist'))
