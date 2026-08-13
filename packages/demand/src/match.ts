@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
-import { createGithubClient, isLicenseOk, type GithubClient } from '@forgecast/scout'
+import { createGithubClient, isLicenseOk, type GithubClient, type RepoMeta } from '@forgecast/scout'
 import { wheelScore } from '@forgecast/tailor'
 import { mockMatchKeywords, mockMatchPlans, type MatchPlanDraft } from './fixtures/match-fixture'
 import type { DemandSignal } from './signals'
@@ -75,8 +75,20 @@ export async function matchSignal(
 
   onProgress('搜索 GitHub…')
   const gh = opts.gh ?? createGithubClient(ctx.config.github)
-  const repos = await gh.searchByKeywords(keywords, { perPage: 8 })
+  // 逐关键词单独搜（GitHub 把多词 AND 起来，多个多词短语一起搜几乎必为 0 结果），按 repo 去重（先出现者优先）
+  const byRepo = new Map<string, RepoMeta>()
+  const errors: string[] = []
+  for (const kw of keywords.slice(0, 3)) {
+    try {
+      const found = await gh.searchByKeywords([kw], { perPage: 8 })
+      for (const r of found) if (!byRepo.has(r.repo)) byRepo.set(r.repo, r)
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e))
+    }
+  }
+  const repos = Array.from(byRepo.values())
   if (!repos.length) {
+    if (errors.length) throw new Error(`GitHub 搜索失败：${errors.join('；')}`)
     onProgress('没搜到合适项目，换个信号或稍后再试')
     return { matched: 0 }
   }

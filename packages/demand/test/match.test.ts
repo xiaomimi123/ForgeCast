@@ -28,7 +28,27 @@ function fakeGh(repos: RepoMeta[]): GithubClient {
     fetchReadme: async () => '', fetchTree: async () => [],
   }
 }
+/** 每次调用 searchByKeywords 依次消费一个行为（Error 则抛出，否则返回该数组），最后一个行为重复用于多余调用 */
+function sequentialGh(behaviors: Array<RepoMeta[] | Error>): GithubClient {
+  let call = 0
+  return {
+    searchRepos: async () => [],
+    searchByKeywords: async () => {
+      const b = behaviors[Math.min(call, behaviors.length - 1)]
+      call++
+      if (b instanceof Error) throw b
+      return b
+    },
+    fetchReadme: async () => '', fetchTree: async () => [],
+  }
+}
 function sigId(): number { return listSignals(ctx)[0].id }
+/** 导入一条能被 mock 切词切出 ≥2 个关键词的信号（多空格标题），返回其 id */
+function multiKeywordSigId(): number {
+  const title = 'AI 定制 小游戏 生成器'
+  importSignals(ctx, { source: 'douyin_hot', signals: [{ title, heat: 5 }] })
+  return listSignals(ctx).find((s) => s.title === title)!.id
+}
 
 describe('matchSignal mock', () => {
   it('全流程：搜 8 个取 top5、按 score 降序落库、status→matched、不调 ctx.llm', async () => {
@@ -59,6 +79,18 @@ describe('matchSignal mock', () => {
   })
   it('信号不存在抛错', async () => {
     await expect(matchSignal(ctx, 9999, { gh: fakeGh([]) })).rejects.toThrow(/不存在/)
+  })
+  it('逐关键词搜索：单个关键词失败被隔离，其余关键词成功仍能匹配', async () => {
+    const gh = sequentialGh([new Error('限流'), [meta('a/x', 100)], [meta('b/y', 200)]])
+    const r = await matchSignal(ctx, multiKeywordSigId(), { gh })
+    expect(r.matched).toBeGreaterThan(0)
+  })
+  it('所有关键词搜索都失败：抛错、不写表、status 不变', async () => {
+    const gh = sequentialGh([new Error('限流'), new Error('超时'), new Error('网络错误')])
+    const id = multiKeywordSigId()
+    await expect(matchSignal(ctx, id, { gh })).rejects.toThrow(/GitHub 搜索失败/)
+    expect(listMatches(ctx, id)).toHaveLength(0)
+    expect(listSignals(ctx).find((s) => s.id === id)!.status).toBe('new')
   })
 })
 
