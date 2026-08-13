@@ -13,7 +13,9 @@ export async function analyzeProject(
   opts: AnalyzeOptions = {},
 ): Promise<{ path: string }> {
   const onProgress = opts.onProgress ?? (() => {})
-  const project = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug) as { id: number } | undefined
+  const project = ctx.db.prepare(
+    'SELECT p.id, c.stars, c.license, c.tech_stack FROM projects p LEFT JOIN candidates c ON c.id = p.candidate_id WHERE p.slug = ?',
+  ).get(slug) as { id: number; stars: number | null; license: string | null; tech_stack: string | null } | undefined
   if (!project) throw new Error(`项目不存在: ${slug}`)
 
   const srcReadme = path.join(ctx.config.paths.workspace, slug, 'source', 'README.md')
@@ -31,9 +33,17 @@ export async function analyzeProject(
   } else {
     const tpl = fs.readFileSync(path.join(ctx.config.paths.templates, 'prompts', 'analysis.md'), 'utf8')
     const system = '你是开源项目商业化分析专家，输出严格遵循给定 markdown 结构。'
+    // 真实客观事实：star 数/协议/技术栈来自 candidates 表（爬虫抓的真数据），不是 LLM 猜的——
+    // 喂给分析这步当"有真材料可写"的依据，减少它在没有市场数据时瞎编价格/成本数字的冲动
+    const facts = [
+      project.stars != null ? `GitHub star 数：${project.stars}` : '',
+      project.license ? `开源协议：${project.license}` : '',
+      project.tech_stack ? `技术栈标签：${(() => { try { return (JSON.parse(project.tech_stack) as string[]).join('、') } catch { return project.tech_stack } })()}` : '',
+    ].filter(Boolean).join('\n') || '（无）'
     const prompt = [
       tpl,
       `【项目 slug】${slug}`,
+      `【项目客观事实（真实数据，可引用；除此以外不要编造具体数字）】\n${facts}`,
       `【源码 README】\n${readme.slice(0, 8000)}`,
       `【目录树】\n${tree.slice(0, 2000)}`,
     ].join('\n\n---\n\n')
