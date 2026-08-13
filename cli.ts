@@ -111,11 +111,11 @@ async function main() {
     }
     case 'video': {
       const slug = rest.find((a) => !a.startsWith('--'))
-      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--captions] [--mood=<tense|upbeat|tech|warm>]'); process.exit(1) }
+      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo|changelog|insight [--asset=<id>] [--bgm=<name>|--no-bgm] [--captions] [--mood=<tense|upbeat|tech|warm>]'); process.exit(1) }
       const ctx = ctxWithNotes()
       const assetArg = arg('asset')
-      // tpl 白名单：story/demo/changelog 显式放行，其余（含未传）回落 flash
-      const tpl = (['story', 'demo', 'changelog'] as const).includes(arg('tpl') as any) ? (arg('tpl') as 'story' | 'demo' | 'changelog') : 'flash'
+      // tpl 白名单：story/demo/changelog/insight 显式放行，其余（含未传）回落 flash
+      const tpl = (['story', 'demo', 'changelog', 'insight'] as const).includes(arg('tpl') as any) ? (arg('tpl') as 'story' | 'demo' | 'changelog' | 'insight') : 'flash'
       if (rest.includes('--no-bgm')) ctx.config.video.bgm = 'none'
       else if (arg('bgm')) ctx.config.video.bgm = arg('bgm') as string
       if (rest.includes('--no-captions')) ctx.config.video.captions = false

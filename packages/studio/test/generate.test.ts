@@ -131,6 +131,38 @@ describe('generateVideo (stub)', () => {
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
     expect(html).not.toContain('<!--HF_ACCENTS-->')
   })
+  it('tpl=insight 走 HyperFrames stub，文案无数字句时兜底只出开场+结尾（不报错、无空卡片区）', async () => {
+    // beforeEach 用的 pain fixture 口播稿逐句里没有「数字+%/万/亿/倍/折」，天然覆盖零命中兜底路径
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(hfCtx, { slug: 'demo', tpl: 'insight', captions: true, onProgress: () => {} })
+    expect(r.filePath).toContain('insight-')
+    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-composition-id="main"')
+    expect(html).toContain('<audio id="narration"')
+    expect(html).toContain('class="cap clip"')
+    expect(html).toContain('class="painT tw"') // 开场大字标题
+    expect(html).toContain('class="cta tw"') // 结尾 CTA
+    expect(html).not.toContain('class="card"') // 无数字句 → 零命中兜底，不留空卡片区
+    expect(html).not.toContain('<!--HF_SECTIONS-->')
+    expect(html).not.toContain('<!--HF_ACCENTS-->')
+  })
+  it('tpl=insight 文案有数字句时按 cue 时机生成数据卡片，累加淡入', async () => {
+    // 自建一条口播稿里带百分比数据的文案，验证卡片真的会生成、且挂了淡入 accent
+    const doc = `## 标题\n1. 标题一\n\n## 小红书正文\n正文\n\n## 抖音口播脚本\n效率提升了50%，客户满意度也涨到80%。\n\n## 封面文案\n主标题：数据说话\n副标题：看得见的增长\n\n## 评论区运营\n### 预埋提问\n1. 真的假的\n### 回复话术\n1. 真的，数据都在后台可查`
+    ctx.db.prepare("INSERT INTO projects (slug, brand_name) VALUES ('stats', '数据说话')").run()
+    const copyDir = path.join(root, 'workspace/stats/copy')
+    fs.mkdirSync(copyDir, { recursive: true })
+    fs.writeFileSync(path.join(copyDir, 'pain-1.md'), doc)
+    ctx.db.prepare("INSERT INTO assets (project_id, type, hook, file_path) VALUES ((SELECT id FROM projects WHERE slug='stats'), 'copy', 'pain', 'stats/copy/pain-1.md')").run()
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(hfCtx, { slug: 'stats', tpl: 'insight', captions: true, onProgress: () => {} })
+    expect(r.filePath).toContain('insight-')
+    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'stats', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('class="card"')
+    expect(html).toMatch(/50%|80%/)
+  })
 })
 
 describe('generateVideo demo (HyperFrames stub)', () => {

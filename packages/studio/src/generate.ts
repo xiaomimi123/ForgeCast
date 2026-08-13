@@ -3,15 +3,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, buildDemoSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildDemoSections, buildInsightSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
-import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildStorySlots } from './props'
+import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildInsightSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
 
 export interface GenerateVideoInput {
   slug: string
   assetId?: number
-  tpl?: 'flash' | 'story' | 'demo' | 'changelog'
+  tpl?: 'flash' | 'story' | 'demo' | 'changelog' | 'insight'
   /** 渲染参数覆盖：缺省则用 ctx.config.video.* 的值。server 是长驻进程、ctx 是所有请求共享的单例，
    *  这几个覆盖值只在本次调用内生效（算一份局部 video 配置），绝不 mutate ctx.config.video——
    *  CLI 短进程里直接突变 ctx.config.video 是安全的，但 server 这样做会污染后续请求，是必须绕开的坑。 */
@@ -93,6 +93,27 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     html = fillAccents(html, '')
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress, audioMix)
+  }
+
+  // insight：数据卡片解说（HyperFrames）。卡片直接从 TTS cue 文本挖数字，时机跟着旁白逐句走
+  if (tpl === 'insight') {
+    const s = buildInsightSlots(doc, brandName)
+    const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
+    onProgress('TTS 配音…')
+    const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
+    const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+    if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+    const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
+    const duration = Math.max(16, Math.ceil(lastEnd))
+    const { audioMix } = await selectBgm(ctx, video, duration, onProgress, copy.hook)
+    const sections = buildInsightSections({ cues: voice.cues, durationSec: duration, painTitle: s.painTitle, cta: s.cta, brandName: s.brandName })
+    let html = fillTemplate(readTemplate('insight'), { duration: String(duration) })
+    html = html.replace('<!--HF_SECTIONS-->', () => sections.html)
+    html = injectTechFx(html, { bg: video.bg, durationSec: duration })
+    html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)
+    html = fillAccents(html, sections.accents)
+    scaffoldHfProject(hfDir, html)
+    return renderAndRegister(ctx, hfDir, slug, 'insight', copy.hook, project.id, onProgress, audioMix)
   }
 
   // demo：产品截图轮播（HyperFrames）。读 shots/，无图报错退出（本模板无图即无意义）

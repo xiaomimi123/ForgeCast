@@ -46,10 +46,10 @@ forgecast scout --add=<repo-url>            # 手动投喂一个 repo
 forgecast pick <owner/repo>                 # 立项：建 workspace + 落源 README/目录树到 source/
 forgecast analyze <slug>                    # 生成商业化分析 analysis.md（读 source/README）
 forgecast rebrand <slug>                    # 生成换皮改造清单 rebrand-plan.md（读 analysis.md）
-forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--mood=<tense|upbeat|tech|warm>] [--captions]  # HyperFrames 渲染竖屏视频（flash 文字快闪/story 微信气泡/demo 产品截图轮播/changelog 代码变更）
-#   demo 需 workspace/<slug>/shots/ 放产品截图；配音默认 Kokoro 离线中文；环境依赖见 docs/hyperframes-deploy.md
+forgecast video <slug> --tpl=flash|story|demo|changelog|insight [--asset=<id>] [--bgm=<name>|--no-bgm] [--mood=<tense|upbeat|tech|warm>] [--captions]  # HyperFrames 渲染竖屏视频（flash 文字快闪/story 微信气泡/demo 产品截图轮播/changelog 代码变更/insight 数据卡片解说）
+#   demo 需 workspace/<slug>/shots/ 放产品截图；insight 适合文案里有具体数字的项目——数据卡片直接从口播稿里挖数字句，按 TTS 逐句节奏累加淡入，没数字则只出开场大字+结尾CTA；配音默认 Kokoro 离线中文；环境依赖见 docs/hyperframes-deploy.md
 #   曲库非空时自动垫 BGM：旁白响时 ducking 闪避，段/截图切换吸附节拍（卡点），强拍加缩放脉冲 + 音效；见 docs/superpowers/specs/2026-07-24-bgm-beat-sync-design.md
-#   出场特效：标题大字逐字解码(故障风)+科技背景——demo(截图轮播每4拍快切+图片弹跳)/flash/changelog 全套；story 只结尾卖点/CTA解码保聊天真截图感；旁白字幕默认关，--captions 开
+#   出场特效：标题大字逐字解码(故障风)+科技背景——demo(截图轮播每4拍快切+图片弹跳)/flash/changelog/insight 全套；story 只结尾卖点/CTA解码保聊天真截图感；旁白字幕默认关，--captions 开
 forgecast publish <id> --platform=<xhs|douyin> [--url=<link>]  # 回填发布（平台/链接）
 forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/询单
 forgecast lead <id> --wechat=<..> [--intent=<..>]           # 登记询单（归因到素材）

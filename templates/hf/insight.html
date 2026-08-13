@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0a0a0f; font-family: "NotoSC", "Noto Sans CJK SC", "PingFang SC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      .painT { font-size: 100px; font-weight: 900; line-height: 1.28; color: #fff; }
+      .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+      .brand { font-size: 40px; color: #8888aa; }
+      /* 数据卡片：彩色描边圆角框，--card-color 由 buildInsightSections 内联覆盖 */
+      .card { position: absolute; left: 64px; right: 64px; border: 2px solid var(--card-color, #ffd54f); border-radius: 16px; background: rgba(15,15,15,.85); padding: 24px 28px; }
+      .card .stat { font-size: 64px; font-weight: 900; color: var(--card-color, #ffd54f); }
+      .card .label { font-size: 32px; color: #e5e5e5; margin-top: 8px; }
+      .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+      <!--HF_FXCSS-->
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
+      <!--HF_BG-->
+      <!--HF_SECTIONS-->
+      <!--HF_CAPTIONS-->
+      <!--HF_AUDIO-->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      <!--HF_BGANIM-->
+      <!--HF_ACCENTS-->
+      <!--HF_DECODE-->
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

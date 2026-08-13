@@ -6,6 +6,7 @@ export const VIDEO_TPLS = [
   { value: 'story', label: 'story · 微信气泡' },
   { value: 'demo', label: 'demo · 产品截图轮播' },
   { value: 'changelog', label: 'changelog · 代码变更' },
+  { value: 'insight', label: 'insight · 数据卡片解说' },
 ]
 export const MOODS = [
   { value: '', label: '自动（按钩子情绪）' },

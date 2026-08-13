@@ -479,6 +479,71 @@ export function buildStorySections(opts: {
   ].join('\n')
 }
 
+// insight 模板卡片配色循环：组内按序号取色，保证每组第一张卡固定暖黄，跟参考视频观感一致
+const INSIGHT_PALETTE = ['#ffd54f', '#2dd4bf', '#34d399', '#60a5fa', '#a78bfa', '#fb7185']
+// 挖数据卡片用的数字正则：百分比/万/亿/倍/折，或"数字(-数字)?+常见量词"（口播稿更常见的写法，
+// 如"2-4周""5-10个工作日""3-5轮"，不带 %/万这类单位）
+const INSIGHT_STAT_RE = /\d+(?:\.\d+)?\s*[%％]|\d+(?:\.\d+)?\s*(?:万|亿|倍|折)|\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?\s*(?:天|周|月|年|个|人|元|次|轮|小时|分钟|工作日|块)/
+
+/**
+ * 组装 insight 模板分镜段（填 <!--HF_SECTIONS-->）。开场大字标题→数据卡片按旁白 cue 时间点
+ * 逐张累加（每组最多 3 张，组内相邻卡片间隔超 12s 强制开新组）→结尾 CTA。
+ *
+ * 卡片时机直接取 cue.start：cue 就是 TTS 逐句旁白的时间轴（与字幕条同源），这样卡片出现的
+ * 节奏天然跟旁白讲到哪句对齐，不需要额外的节拍/LLM 数据。命中 0 张卡片时只渲染开场+结尾，
+ * 不留空白卡片区、不报错。
+ */
+export function buildInsightSections(opts: {
+  cues: Cue[]; durationSec: number; painTitle: string; cta: string; brandName: string
+}): { html: string; accents: string } {
+  const { cues, durationSec, painTitle, cta, brandName } = opts
+  const clip = (start: number, dur: number, track: number, inner: string, id?: string, style?: string) =>
+    `<div class="clip"${id ? ` id="${id}"` : ''}${style ? ` style="${style}"` : ''} data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+
+  interface Card { stat: string; label: string; start: number }
+  const cards: Card[] = []
+  for (const c of cues) {
+    const m = INSIGHT_STAT_RE.exec(c.text)
+    if (!m) continue
+    const label = (c.text.slice(0, m.index) + c.text.slice(m.index + m[0].length)).trim().slice(0, 24)
+    cards.push({ stat: m[0].trim(), label, start: c.start })
+  }
+
+  // 分组：每组最多 3 张；同组内相邻卡片间隔超 12s 强制开新组
+  const groups: Card[][] = []
+  for (const card of cards) {
+    const cur = groups.at(-1)
+    if (cur && cur.length < 3 && card.start - cur.at(-1)!.start <= 12) cur.push(card)
+    else groups.push([card])
+  }
+
+  const introEnd = cards[0]?.start ?? Math.max(3, Math.min(4, durationSec - 3))
+  const outroStart = Math.max(introEnd, durationSec - 3)
+
+  const cardClips: string[] = []
+  const accentLines: string[] = []
+  groups.forEach((group, gi) => {
+    const sceneStart = group[0].start
+    const sceneEnd = Math.min(outroStart, groups[gi + 1]?.[0]?.start ?? outroStart)
+    group.forEach((card, idx) => {
+      const id = `insCard${gi}_${idx}`
+      const color = INSIGHT_PALETTE[idx % INSIGHT_PALETTE.length]
+      const inner = `<div class="card" style="--card-color:${color};top:${260 + idx * 220}px">`
+        + `<div class="stat">${escapeHtml(card.stat)}</div><div class="label">${escapeHtml(card.label)}</div></div>`
+      cardClips.push(clip(card.start, Math.max(0.5, sceneEnd - card.start), 2, inner, id))
+      accentLines.push(`tl.from("#${id}", { opacity: 0, y: 24, duration: .45 }, ${card.start});`)
+    })
+  })
+
+  const html = [
+    clip(0, introEnd, 1, `<div class="fill pad center"><div class="painT tw">${escapeHtml(painTitle)}</div></div>`),
+    cardClips.join('\n'),
+    clip(outroStart, Math.max(0.5, durationSec - outroStart), 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+  ].join('\n')
+
+  return { html, accents: accentLines.join('\n') }
+}
+
 /** 渲染：stub 写占位；render spawn `hyperframes render`（需 Node 22+、已 ensure 浏览器）。带超时 + --yes。 */
 export async function renderHyperframes(
   projectDir: string, outPath: string, mode: 'render' | 'stub',

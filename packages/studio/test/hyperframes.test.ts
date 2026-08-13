@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, planCutTimes, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
+import { buildDemoSections, buildInsightSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
@@ -331,6 +331,52 @@ describe('buildDemoSections 消费卡点方案', () => {
   it('不传 plan 行为不变（回归：无 beats 按图数均分）', () => {
     const r = buildDemoSections({ ...base, durationSec: 30 })
     expect((r.html.match(/id="car\d+"/g) || []).length).toBe(base.shots.length)
+  })
+})
+
+describe('buildInsightSections（数据卡片按旁白节奏累加）', () => {
+  const base = { painTitle: '大标题', cta: '扣1', brandName: 'demo' }
+  it('cue 命中数字正则则生成卡片，data-start 等于 cue.start', () => {
+    const cues = [
+      { start: 2, end: 4, text: '这个数字达到了53%这么高' },
+      { start: 6, end: 8, text: '没有数字的一句话' },
+    ]
+    const r = buildInsightSections({ cues, durationSec: 20, ...base })
+    expect(r.html).toContain('data-start="2"')
+    expect(r.html).toContain('53%')
+    // 无数字的第二句不生成卡片
+    expect((r.html.match(/class="card"/g) || []).length).toBe(1)
+  })
+  it('超过 3 张自动分组，组内 idx 从 0 开始取色循环', () => {
+    const cues = Array.from({ length: 4 }, (_, i) => ({ start: i * 2, end: i * 2 + 1, text: `第${i}句有${10 + i}%数据` }))
+    const r = buildInsightSections({ cues, durationSec: 30, ...base })
+    // 4 张卡应分成 [3,1] 两组：第 4 张卡（组内 idx=0）应带第一组色 #ffd54f
+    expect((r.html.match(/class="card"/g) || []).length).toBe(4)
+    const ids = [...r.html.matchAll(/id="(insCard\d+_\d+)"/g)].map((m) => m[1])
+    expect(ids).toEqual(['insCard0_0', 'insCard0_1', 'insCard0_2', 'insCard1_0'])
+  })
+  it('相邻卡片间隔超 12s 强制开新组', () => {
+    const cues = [
+      { start: 0, end: 1, text: '第一句50%' },
+      { start: 20, end: 21, text: '第二句60%' }, // 间隔 20s > 12s
+    ]
+    const r = buildInsightSections({ cues, durationSec: 30, ...base })
+    const ids = [...r.html.matchAll(/id="(insCard\d+_\d+)"/g)].map((m) => m[1])
+    expect(ids).toEqual(['insCard0_0', 'insCard1_0'])
+  })
+  it('零命中：只渲染开场大字+结尾 CTA，不留空卡片区、不报错', () => {
+    const cues = [{ start: 0, end: 2, text: '没有任何数字的一句话' }]
+    const r = buildInsightSections({ cues, durationSec: 20, ...base })
+    expect(r.html).not.toContain('class="card"')
+    expect(r.html).toContain('大标题')
+    expect(r.html).toContain('扣1')
+    expect(r.accents).toBe('')
+  })
+  it('accents 逐卡片生成 tl.from 淡入', () => {
+    const cues = [{ start: 3, end: 4, text: '增长了80%' }]
+    const r = buildInsightSections({ cues, durationSec: 20, ...base })
+    expect(r.accents).toContain('tl.from("#insCard0_0"')
+    expect(r.accents).toContain(', 3);')
   })
 })
 

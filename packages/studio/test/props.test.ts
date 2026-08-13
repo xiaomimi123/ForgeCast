@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildChangelogProps, buildFlashProps } from '../src/props'
+import { buildChangelogProps, buildFlashProps, buildInsightSlots } from '../src/props'
 
 const doc = {
   titles: ['t1', 't2', 't3'],
@@ -21,6 +21,24 @@ describe('buildFlashProps', () => {
     const p = buildFlashProps({ ...doc, douyinScript: '没有那段' } as any)
     expect(p.cta.length).toBeGreaterThan(0)
     expect(p.brandName).toBe('forgecast')
+  })
+})
+
+describe('buildInsightSlots', () => {
+  it('取封面主标题与 CTA，不含 sellingPoint（卡片数据不在这里处理）', () => {
+    const s = buildInsightSlots(doc as any, '快客通')
+    expect(s.painTitle).toBe('网店客服还在手动回？')
+    expect(s.cta).toBe('评论区扣1领文档')
+    expect(s.brandName).toBe('快客通')
+    expect((s as any).sellingPoint).toBeUndefined()
+  })
+  it('无 cover.main 时回落 titles[0]', () => {
+    const s = buildInsightSlots({ ...doc, cover: { main: '', sub: '' } } as any)
+    expect(s.painTitle).toBe('t1')
+  })
+  it('无 CTA 段时兜底非空', () => {
+    const s = buildInsightSlots({ ...doc, douyinScript: '没有那段' } as any)
+    expect(s.cta.length).toBeGreaterThan(0)
   })
 })
 

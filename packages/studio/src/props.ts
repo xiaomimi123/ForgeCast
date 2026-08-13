@@ -103,3 +103,10 @@ export function buildFlashSlots(doc: CopyDoc, brandName = 'forgecast'): Record<s
   const f = buildFlashProps(doc, brandName)
   return { painTitle: f.painTitle, sellingPoint: f.sellingPoint, cta: f.cta, brandName }
 }
+
+/** insight 模板 slot：开场大字标题 + 结尾 CTA，复用 flash 的取值规则。数据卡片本身由
+ *  generate.ts 从 TTS cue 文本直接挖（见 buildInsightSections），不在这里处理。 */
+export function buildInsightSlots(doc: CopyDoc, brandName = 'forgecast'): { painTitle: string; cta: string; brandName: string } {
+  const f = buildFlashProps(doc, brandName)
+  return { painTitle: f.painTitle, cta: f.cta, brandName }
+}
