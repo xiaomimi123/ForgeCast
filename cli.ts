@@ -10,7 +10,7 @@ import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
 import { addSource, extractPatterns, importNotes, listPatterns, listSources } from '@forgecast/topics'
-import { extractSignals, importSignals, listSignals, requestCollect, setSignalStatus } from '@forgecast/demand'
+import { extractSignals, importSignals, listMatches, listSignals, matchSignal, requestCollect, setSignalStatus } from '@forgecast/demand'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -291,7 +291,7 @@ async function main() {
     case 'demand': {
       const sub = rest.find((a) => !a.startsWith('--'))
       const ctx = ctxWithNotes()
-      const usage = '用法: forgecast demand <import|list|extract|star|dismiss|request>'
+      const usage = '用法: forgecast demand <import|list|extract|star|dismiss|request|match|matches>'
       if (sub === 'import') {
         const source = arg('source')
         const file = arg('file')
@@ -316,6 +316,19 @@ async function main() {
         if (!id) { console.error(`用法: forgecast demand ${sub} <id>`); process.exit(1) }
         setSignalStatus(ctx, Number(id), sub === 'star' ? 'starred' : 'dismissed')
         console.log(`#${id} → ${sub === 'star' ? 'starred' : 'dismissed'}`)
+      } else if (sub === 'match') {
+        const id = rest.filter((a) => !a.startsWith('--'))[1]
+        if (!id) { console.error('用法: forgecast demand match <id>'); process.exit(1) }
+        const { matched } = await matchSignal(ctx, Number(id), { onProgress: (m) => console.log(`  ${m}`) })
+        console.log(`匹配完成：${matched} 个项目`)
+      } else if (sub === 'matches') {
+        const id = rest.filter((a) => !a.startsWith('--'))[1]
+        if (!id) { console.error('用法: forgecast demand matches <id>'); process.exit(1) }
+        const rows = listMatches(ctx, Number(id))
+        console.log(`信号 #${id} 匹配 ${rows.length} 条:`)
+        for (const m of rows) {
+          console.log(`  ${m.repo} ★${m.stars} [${m.license ?? '-'}] ${m.score}分 ${m.biz_mode}\n      ↳ ${m.biz_plan}`)
+        }
       } else if (sub === 'request') {
         requestCollect(ctx)
         console.log('已打「请求采集」标记（下次 agent 会话处理）')
