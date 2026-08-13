@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import MarketPage from './pages/MarketPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import ProjectsPage from './pages/ProjectsPage'
-import ScoutPage from './pages/ScoutPage'
+import ScoutShellPage from './pages/ScoutShellPage'
 import SettingsPage from './pages/SettingsPage'
 import TailorPage from './pages/TailorPage'
 import TailorDetailPage from './pages/TailorDetailPage'
@@ -17,7 +17,7 @@ export default function App() {
       <main className="min-w-0 flex-1 p-6">
         <Routes>
           <Route path="/" element={<Navigate to="/scout" replace />} />
-          <Route path="/scout" element={<ScoutPage />} />
+          <Route path="/scout" element={<ScoutShellPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/workshop" element={<WorkshopPage />} />
           <Route path="/market" element={<MarketPage />} />

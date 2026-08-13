@@ -19,6 +19,14 @@ export interface Asset {
 }
 /** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
 export interface BgmList { root: string[]; byMood: Record<string, string[]> }
+/** 需求信号（demand_signals 行）。evidence 是 JSON 串自行解析 */
+export interface DemandSignal {
+  id: number; source: string; kind: 'traffic' | 'emotional' | 'supply' | null
+  title: string; summary: string | null; evidence: string | null; heat: number | null
+  opportunity: string | null; status: 'new' | 'starred' | 'dismissed' | 'matched'
+  captured_at: string | null; created_at: string
+}
+export interface DemandCollectStatus { requestedAt: string | null; lastCollectedAt: string | null }
 export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string }
 export interface IntroDetail {
   summary: string; features: string[]; targetUser: string
