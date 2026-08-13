@@ -144,6 +144,7 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
               onClick={() => { setDraft(content.data?.content ?? ''); setEditing(true) }}>编辑</button>
           )}
           {approveButton}
+          {deleteButton}
         </div>
       </div>
       <PublishInfo asset={asset} />
