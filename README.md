@@ -62,6 +62,7 @@ forgecast topics add-source --platform=<douyin|xiaohongshu> --handle=<handle> [-
 forgecast topics import-notes --source=<handle> --platform=<douyin|xiaohongshu> --file=<notes.json>  # 导入抓到的爆款笔记（抓取本身需在对话里让 Claude 用浏览器工具手动跑）
 forgecast topics extract [--top=N] [--min-ratio=R]           # LLM 提炼选题模式（标题结构/情绪类型/推荐选题）
 forgecast topics list-patterns [--hook=<pain|sideline|infogap|story>]  # 列出选题库
+forgecast demand <import|list|extract|star|dismiss|request>  # 需求信号库：agent 会话内 ego-browser 采集后导入、LLM 分类提炼、star 标记看好（后续喂需求×项目匹配）
 ```
 
 ### 知识层（knowledge sync，§5.6）
@@ -80,7 +81,7 @@ DOCKER_BUILDKIT=0 docker compose build   # 本机路径含中文，必须禁 Bui
 docker compose up -d
 ```
 
-找项目板块（`/scout`）支持收藏候选 / 每日自动抓取（server 内置调度，设置页配置开关与时间）/ 每日新增视图（按入库日期分组，14 天内）/ 点卡片打开右侧抽屉查看评分明细与产品说明书。
+找项目板块（`/scout`）支持收藏候选 / 每日自动抓取（server 内置调度，设置页配置开关与时间）/ 每日新增视图（按入库日期分组，14 天内）/ 点卡片打开右侧抽屉查看评分明细与产品说明书；含 项目池/需求信号 两个 tab。
 
 ## 路线图
 见 `开源变现内容工厂-开发文档.md` §10。M5 视频引擎已从 Remotion 全面替换为 HyperFrames（四模板 + Kokoro 离线中文配音，见 docs/hyperframes-deploy.md），并支持 BGM 背景乐 + 节拍卡点 + 强拍音效（librosa 节拍网格 + ffmpeg ducking 混音）。
