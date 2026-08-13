@@ -132,6 +132,20 @@ CREATE TABLE IF NOT EXISTS topic_patterns (
   sample_note_ids TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS demand_signals (
+  id INTEGER PRIMARY KEY,
+  source TEXT NOT NULL,
+  kind TEXT,
+  title TEXT NOT NULL,
+  summary TEXT,
+  evidence TEXT,
+  heat REAL,
+  opportunity TEXT,
+  status TEXT DEFAULT 'new',
+  captured_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(source, title)
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content='knowledge_atoms', content_rowid='id');
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）

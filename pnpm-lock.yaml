@@ -17,6 +17,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:packages/core
+      '@forgecast/demand':
+        specifier: workspace:*
+        version: link:packages/demand
       '@forgecast/ops':
         specifier: workspace:*
         version: link:packages/ops
@@ -143,6 +146,22 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.43)(lightningcss@1.32.0)(terser@5.49.0)
 
+  packages/demand:
+    dependencies:
+      '@forgecast/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.11
+        version: 7.6.13
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)(lightningcss@1.32.0)(terser@5.49.0)
+
   packages/ops:
     dependencies:
       '@forgecast/core':
@@ -202,6 +221,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
+      '@forgecast/demand':
+        specifier: workspace:*
+        version: link:../demand
       '@forgecast/ops':
         specifier: workspace:*
         version: link:../ops
