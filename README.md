@@ -62,7 +62,7 @@ forgecast topics add-source --platform=<douyin|xiaohongshu> --handle=<handle> [-
 forgecast topics import-notes --source=<handle> --platform=<douyin|xiaohongshu> --file=<notes.json>  # 导入抓到的爆款笔记（抓取本身需在对话里让 Claude 用浏览器工具手动跑）
 forgecast topics extract [--top=N] [--min-ratio=R]           # LLM 提炼选题模式（标题结构/情绪类型/推荐选题）
 forgecast topics list-patterns [--hook=<pain|sideline|infogap|story>]  # 列出选题库
-forgecast demand <import|list|extract|star|dismiss|request>  # 需求信号库：agent 会话内 ego-browser 采集后导入、LLM 分类提炼、star 标记看好（后续喂需求×项目匹配）
+forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需求信号库：agent 会话内 ego-browser 采集后导入、LLM 分类提炼、star 标记看好；match=对单条信号 GitHub 现搜+评分+轻资产商业模式建议（开店卖货/私人定制），Web 端信号卡片可一键找项目/入候选池
 ```
 
 ### 知识层（knowledge sync，§5.6）
