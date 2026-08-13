@@ -146,6 +146,22 @@ CREATE TABLE IF NOT EXISTS demand_signals (
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(source, title)
 );
+CREATE TABLE IF NOT EXISTS demand_matches (
+  id INTEGER PRIMARY KEY,
+  signal_id INTEGER REFERENCES demand_signals(id),
+  repo TEXT NOT NULL,
+  url TEXT NOT NULL,
+  description TEXT,
+  license TEXT,
+  license_ok INTEGER,
+  stars INTEGER,
+  last_commit TEXT,
+  score REAL,
+  score_detail TEXT,
+  biz_mode TEXT,
+  biz_plan TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content='knowledge_atoms', content_rowid='id');
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）

@@ -151,6 +151,12 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
+      '@forgecast/scout':
+        specifier: workspace:*
+        version: link:../scout
+      '@forgecast/tailor':
+        specifier: workspace:*
+        version: link:../tailor
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.11
