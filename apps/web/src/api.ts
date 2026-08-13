@@ -27,6 +27,13 @@ export interface DemandSignal {
   captured_at: string | null; created_at: string
 }
 export interface DemandCollectStatus { requestedAt: string | null; lastCollectedAt: string | null }
+/** 需求×项目匹配结果（demand_matches 行）。score_detail 是 JSON 串自行解析 */
+export interface DemandMatch {
+  id: number; signal_id: number; repo: string; url: string; description: string | null
+  license: string | null; license_ok: number; stars: number; last_commit: string | null
+  score: number; score_detail: string; biz_mode: 'shop' | 'custom' | 'both'; biz_plan: string
+  created_at: string
+}
 export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string }
 export interface IntroDetail {
   summary: string; features: string[]; targetUser: string
