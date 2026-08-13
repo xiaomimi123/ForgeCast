@@ -44,8 +44,8 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       mode: videoMode,
       bgm: env.FORGECAST_BGM ?? '',
       beatPython: env.FORGECAST_BEAT_PYTHON || env.FORGECAST_MELO_PYTHON || '',
-      // 烧进视频的旁白字幕：默认开；off/0/false 关（用户可在平台自配字幕，避免底部文字杂乱）
-      captions: !/^(off|0|false)$/i.test(env.FORGECAST_CAPTIONS ?? ''),
+      // 烧进视频的旁白字幕：默认关（模板大字标题已承担主要信息，底部逐句字幕刷屏影响观感）；on/1/true 开
+      captions: /^(on|1|true)$/i.test(env.FORGECAST_CAPTIONS ?? ''),
       // 科技感背景变体：grid(赛博网格)/aurora(极光)/matrix(数据雨)/synth(合成波)/mesh(深空)，默认 grid
       bg: env.FORGECAST_BG || 'grid',
       // 情绪键（tense/upbeat/tech/warm）：空=按 hook 自动映射；显式指定则覆盖

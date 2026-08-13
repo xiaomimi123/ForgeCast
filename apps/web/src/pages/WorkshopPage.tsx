@@ -44,12 +44,12 @@ export default function WorkshopPage() {
   const [running, setRunning] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
 
-  // 视频渲染参数：默认值与后端 config.video 默认一致（bgm/mood 空串=自动，bg=grid，字幕默认开）
+  // 视频渲染参数：默认值与后端 config.video 默认一致（bgm/mood 空串=自动，bg=grid，旁白字幕默认关）
   const [tpl, setTpl] = useState('flash')
   const [bgm, setBgm] = useState('')
   const [mood, setMood] = useState('')
   const [bg, setBg] = useState('grid')
-  const [captions, setCaptions] = useState(true)
+  const [captions, setCaptions] = useState(false)
 
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
   const selected = slug || projects.data?.[0]?.slug || ''
@@ -177,7 +177,7 @@ export default function WorkshopPage() {
             </div>
             <label className="flex items-center gap-2 text-sm text-sub">
               <input type="checkbox" checked={captions} onChange={(e) => setCaptions(e.target.checked)} />
-              烧字幕进视频
+              烧旁白字幕进视频（默认关，模板大字标题不受影响）
             </label>
           </div>
           {logs.length > 0 && (

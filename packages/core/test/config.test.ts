@@ -40,9 +40,9 @@ describe('loadConfig', () => {
     expect(cfg.github).toEqual({ mode: 'live', token: 'ghp_1' })
   })
   it('video 默认 render，可设 stub', () => {
-    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render', bgm: '', beatPython: '', captions: true, bg: 'grid', mood: '' })
-    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub', bgm: '', beatPython: '', captions: true, bg: 'grid', mood: '' })
-    expect(loadConfig('/tmp/x', { FORGECAST_CAPTIONS: 'off' }).video.captions).toBe(false)
+    expect(loadConfig('/tmp/x', {}).video).toEqual({ mode: 'render', bgm: '', beatPython: '', captions: false, bg: 'grid', mood: '' })
+    expect(loadConfig('/tmp/x', { FORGECAST_VIDEO_MODE: 'stub' }).video).toEqual({ mode: 'stub', bgm: '', beatPython: '', captions: false, bg: 'grid', mood: '' })
+    expect(loadConfig('/tmp/x', { FORGECAST_CAPTIONS: 'on' }).video.captions).toBe(true)
     expect(loadConfig('/tmp/x', { FORGECAST_BG: 'synth' }).video.bg).toBe('synth')
     expect(loadConfig('/tmp/x', { FORGECAST_MOOD: 'tense' }).video.mood).toBe('tense')
   })

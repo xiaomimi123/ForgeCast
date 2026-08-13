@@ -32,7 +32,7 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_MOOD | 手动指定情绪（覆盖 hook 自动映射）：`tense`(紧张,pain)/`upbeat`(热血,sideline)/`tech`(科技,infogap)/`warm`(温情,story)。曲子放 `templates/bgm/<情绪>/` 子文件夹，缺失则回落根目录。CLI 亦可 `--mood=<key>` |
 | FORGECAST_BEAT_PYTHON | 节拍分析用的 python（含 librosa），默认回落 `FORGECAST_MELO_PYTHON`；缺失则加 BGM 但不卡点 |
 | FORGECAST_ASR_PYTHON | 字幕真对齐用的本地 faster-whisper venv；缺省回落 FORGECAST_MELO_PYTHON；都不配则字幕退回按字数估算时间轴（不影响视频生成） |
-| FORGECAST_CAPTIONS | 是否把旁白字幕烧进视频：默认开；`off`/`0`/`false` 关（在平台自配字幕时用）。CLI 亦可 `--no-captions` |
+| FORGECAST_CAPTIONS | 是否把旁白字幕烧进视频：默认关（模板大字标题已承担主要信息）；`on`/`1`/`true` 开。CLI 亦可 `--captions` |
 | FORGECAST_BG | 科技背景变体(demo/flash/changelog)：`grid`(赛博网格,默认)/`aurora`(极光)/`matrix`(数据雨)/`synth`(合成波)/`mesh`(深空)/`random`(每条随机)。CLI 亦可 `--bg=<name>` |
 
 > 模式设为 `live` 但缺 key 时会自动降级（LLM→mock、TTS→stub），并在命令输出里打印 `⚠` 说明——
@@ -46,10 +46,10 @@ forgecast scout --add=<repo-url>            # 手动投喂一个 repo
 forgecast pick <owner/repo>                 # 立项：建 workspace + 落源 README/目录树到 source/
 forgecast analyze <slug>                    # 生成商业化分析 analysis.md（读 source/README）
 forgecast rebrand <slug>                    # 生成换皮改造清单 rebrand-plan.md（读 analysis.md）
-forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--mood=<tense|upbeat|tech|warm>] [--no-captions]  # HyperFrames 渲染竖屏视频（flash 文字快闪/story 微信气泡/demo 产品截图轮播/changelog 代码变更）
+forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--mood=<tense|upbeat|tech|warm>] [--captions]  # HyperFrames 渲染竖屏视频（flash 文字快闪/story 微信气泡/demo 产品截图轮播/changelog 代码变更）
 #   demo 需 workspace/<slug>/shots/ 放产品截图；配音默认 Kokoro 离线中文；环境依赖见 docs/hyperframes-deploy.md
 #   曲库非空时自动垫 BGM：旁白响时 ducking 闪避，段/截图切换吸附节拍（卡点），强拍加缩放脉冲 + 音效；见 docs/superpowers/specs/2026-07-24-bgm-beat-sync-design.md
-#   出场特效：标题大字逐字解码(故障风)+科技背景——demo(截图轮播每4拍快切+图片弹跳)/flash/changelog 全套；story 只结尾卖点/CTA解码保聊天真截图感；--no-captions 不烧字幕
+#   出场特效：标题大字逐字解码(故障风)+科技背景——demo(截图轮播每4拍快切+图片弹跳)/flash/changelog 全套；story 只结尾卖点/CTA解码保聊天真截图感；旁白字幕默认关，--captions 开
 forgecast publish <id> --platform=<xhs|douyin> [--url=<link>]  # 回填发布（平台/链接）
 forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/询单
 forgecast lead <id> --wechat=<..> [--intent=<..>]           # 登记询单（归因到素材）

@@ -277,7 +277,7 @@ export function injectAudioCaptions(html: string, audioRel: string | null, cues:
   const audioTag = audioRel
     ? `<audio id="narration" class="clip" data-start="0" data-duration="${durationSec}" data-track-index="0" data-audio="true" src="assets/narration.wav"></audio>`
     : ''
-  // 字幕默认烧进片；captions=false 则不注入（用户在平台自配字幕，避免底部文字杂乱）。
+  // captions=true 才注入旁白字幕（上层 config.video.captions 默认关，模板大字标题已承担主要信息）。
   // 字幕不做逐字解码（会显乱），保持整齐——解码只用于标题大字（见各模板 .tw）。
   const capClips = captions
     ? cues.map((c) => {

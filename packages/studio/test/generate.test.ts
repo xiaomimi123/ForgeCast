@@ -104,16 +104,16 @@ describe('generateVideo (stub)', () => {
   it('override 参数不 mutate ctx.config.video（单例安全，不污染后续调用）', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
-    await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bgm: 'none', bg: 'aurora', mood: 'tense', captions: false })
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bgm: 'none', bg: 'aurora', mood: 'tense', captions: true })
     expect(fctx.config.video.bgm).toBe('')
     expect(fctx.config.video.bg).toBe('grid')
     expect(fctx.config.video.mood).toBe('')
-    expect(fctx.config.video.captions).toBe(true)
+    expect(fctx.config.video.captions).toBe(false)
   })
   it('tpl=changelog 走 HyperFrames stub，产出 asset 行与 hf 项目', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
-    const r = await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog', onProgress: () => {} })
+    const r = await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog', captions: true, onProgress: () => {} })
     expect(r.filePath).toContain('changelog-')
     const hfIndex = path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html')
     expect(fs.existsSync(hfIndex)).toBe(true)

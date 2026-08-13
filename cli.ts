@@ -111,7 +111,7 @@ async function main() {
     }
     case 'video': {
       const slug = rest.find((a) => !a.startsWith('--'))
-      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--no-captions] [--mood=<tense|upbeat|tech|warm>]'); process.exit(1) }
+      if (!slug) { console.error('用法: forgecast video <slug> --tpl=flash|story|demo|changelog [--asset=<id>] [--bgm=<name>|--no-bgm] [--captions] [--mood=<tense|upbeat|tech|warm>]'); process.exit(1) }
       const ctx = ctxWithNotes()
       const assetArg = arg('asset')
       // tpl 白名单：story/demo/changelog 显式放行，其余（含未传）回落 flash
@@ -119,6 +119,7 @@ async function main() {
       if (rest.includes('--no-bgm')) ctx.config.video.bgm = 'none'
       else if (arg('bgm')) ctx.config.video.bgm = arg('bgm') as string
       if (rest.includes('--no-captions')) ctx.config.video.captions = false
+      if (rest.includes('--captions')) ctx.config.video.captions = true
       if (arg('bg')) ctx.config.video.bg = arg('bg') as string
       if (arg('mood')) ctx.config.video.mood = arg('mood') as string
       if (rest.includes('--cut') || arg('cut') !== undefined) {
