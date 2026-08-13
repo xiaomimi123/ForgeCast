@@ -10,6 +10,7 @@ import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
 import { generateVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
 import { addSource, extractPatterns, importNotes, listPatterns, listSources } from '@forgecast/topics'
+import { extractSignals, importSignals, listSignals, requestCollect, setSignalStatus } from '@forgecast/demand'
 
 const [cmd, ...rest] = process.argv.slice(2)
 
@@ -281,6 +282,43 @@ async function main() {
               : '从未抓取'
           console.log(`  #${s.id} [${s.platform}] ${s.handle} — ${status}`)
         }
+      } else {
+        console.error(usage)
+        process.exit(1)
+      }
+      break
+    }
+    case 'demand': {
+      const sub = rest.find((a) => !a.startsWith('--'))
+      const ctx = ctxWithNotes()
+      const usage = '用法: forgecast demand <import|list|extract|star|dismiss|request>'
+      if (sub === 'import') {
+        const source = arg('source')
+        const file = arg('file')
+        if (!source || !file) {
+          console.error('用法: forgecast demand import --source=<douyin_hot|xhs|github_trending|ecommerce> --file=<signals.json>')
+          process.exit(1)
+        }
+        const signals = JSON.parse(fs.readFileSync(file, 'utf8'))
+        const { imported, updated } = importSignals(ctx, { source: source as any, signals })
+        console.log(`导入完成：新增 ${imported} 条，更新 ${updated} 条`)
+      } else if (sub === 'list') {
+        const rows = listSignals(ctx, { source: arg('source'), kind: arg('kind'), status: arg('status') })
+        console.log(`需求信号共 ${rows.length} 条:`)
+        for (const s of rows) {
+          console.log(`  #${s.id} [${s.source}] ${s.title}${s.kind ? ` (${s.kind})` : ''} — ${s.status}${s.opportunity ? `\n      ↳ ${s.opportunity}` : ''}`)
+        }
+      } else if (sub === 'extract') {
+        const n = await extractSignals(ctx, { onProgress: (m) => console.log(`  ${m}`) })
+        console.log(`提炼完成：更新 ${n} 条信号`)
+      } else if (sub === 'star' || sub === 'dismiss') {
+        const id = rest.filter((a) => !a.startsWith('--'))[1]
+        if (!id) { console.error(`用法: forgecast demand ${sub} <id>`); process.exit(1) }
+        setSignalStatus(ctx, Number(id), sub === 'star' ? 'starred' : 'dismissed')
+        console.log(`#${id} → ${sub === 'star' ? 'starred' : 'dismissed'}`)
+      } else if (sub === 'request') {
+        requestCollect(ctx)
+        console.log('已打「请求采集」标记（下次 agent 会话处理）')
       } else {
         console.error(usage)
         process.exit(1)
