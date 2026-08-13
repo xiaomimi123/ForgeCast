@@ -92,7 +92,7 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
   }
 
   const approveButton = asset.status === 'draft' && (
-    <button className="btn-fire px-3 py-1 text-sm" onClick={() => approve.mutate('approved')}>审核通过</button>
+    <button className="btn-fire px-2 py-0.5 text-xs" onClick={() => approve.mutate('approved')}>审核通过</button>
   )
   const deleteButton = (
     <button className="rounded-md border-[1.5px] border-danger px-2 py-0.5 text-xs text-danger disabled:opacity-50"
@@ -102,13 +102,16 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
 
   if (asset.type === 'video') {
     return (
-      <div className="card-forge p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-sub">视频 · {asset.hook} · {asset.status}</div>
-          <div className="flex items-center gap-2">{approveButton}{deleteButton}</div>
+      <div className="card-forge p-2 space-y-2">
+        <video src={`/files/${asset.file_path}`} controls preload="metadata"
+          className="aspect-[9/16] w-full rounded-lg border-[1.5px] border-ink bg-black object-contain" />
+        <div className="space-y-1 px-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="truncate text-xs text-sub">{asset.hook} · {asset.status}</div>
+            <div className="flex shrink-0 items-center gap-1.5">{approveButton}{deleteButton}</div>
+          </div>
+          <PublishInfo asset={asset} />
         </div>
-        <PublishInfo asset={asset} />
-        <video src={`/files/${asset.file_path}`} controls className="w-full max-h-96 rounded border-[1.5px] border-ink bg-black" />
       </div>
     )
   }
@@ -169,7 +172,7 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
         <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={!feedback}
           onClick={() => { onRegenerate(feedback); setFeedback('') }}>重新生成</button>
         {onVideo && (
-          <button className="btn-ink px-3 py-1 text-sm" onClick={() => onVideo(asset.id)}>生成视频</button>
+          <button className="btn-ink px-3 py-1 text-sm" onClick={() => onVideo(asset.id)}>去出视频 →</button>
         )}
       </div>
       <div className="flex items-center gap-2 pt-1">
