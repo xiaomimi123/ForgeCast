@@ -67,6 +67,27 @@ describe('runAutoScout', () => {
     const n = (ctx.db.prepare('SELECT COUNT(*) AS n FROM candidates').get() as any).n
     expect(n).toBeGreaterThan(0)
   })
+  it('成功：cleanup 结果合并进 last_result（rescored/dismissed）', async () => {
+    await runAutoScout(
+      ctx,
+      async () => ({ found: 5, scored: 2, rejected: 1, added: 2 }),
+      async () => ({ rescored: 3, dismissed: 1 }),
+    )
+    const s = getAllSettings(ctx.db)
+    const result = JSON.parse(s.auto_scout_last_result!)
+    expect(result).toMatchObject({ added: 2, rescored: 3, dismissed: 1 })
+  })
+  it('清理失败：抓取结果（found/added）仍保留，附加 cleanupError', async () => {
+    await runAutoScout(
+      ctx,
+      async () => ({ found: 5, scored: 2, rejected: 1, added: 2 }),
+      async () => { throw new Error('清理挂了') },
+    )
+    const s = getAllSettings(ctx.db)
+    const result = JSON.parse(s.auto_scout_last_result!)
+    expect(result).toMatchObject({ found: 5, added: 2 })
+    expect(result.cleanupError).toMatch(/清理挂了/)
+  })
 })
 
 describe('startAutoScout', () => {

@@ -1,8 +1,9 @@
 import type Database from 'better-sqlite3'
 import { getAllSettings, setSettings, type CoreCtx } from '@forgecast/core'
-import { scoutCandidates } from '@forgecast/scout'
+import { cleanupCandidates, scoutCandidates } from '@forgecast/scout'
 
 type ScoutFn = (ctx: CoreCtx, opts: { onlyNew: boolean }) => Promise<{ found: number; scored: number; rejected: number; added: number }>
+type CleanupFn = (ctx: CoreCtx, opts: { threshold?: number }) => Promise<{ rescored: number; dismissed: number }>
 
 export interface AutoScoutCfg { enabled: boolean; time: string; lastRunDate: string }
 
@@ -31,14 +32,26 @@ export function shouldAutoScout(now: Date, cfg: AutoScoutCfg): boolean {
   return now >= target
 }
 
-/** 跑一次每日抓取（onlyNew）。失败也把 last_run 标为今天——整天每分钟重试只会连续打限流，次日再试。 */
-export async function runAutoScout(ctx: CoreCtx, scout: ScoutFn = scoutCandidates): Promise<void> {
+/** 跑一次每日抓取（onlyNew）+ 低分候选自动清理。失败也把 last_run 标为今天——整天每分钟重试只会连续打限流，次日再试。
+ *  清理阶段单独 try/catch：清理失败不能掩盖抓取本身的成功结果，last_result 里 found/added 等字段始终保留，
+ *  清理失败只追加 cleanupError。 */
+export async function runAutoScout(
+  ctx: CoreCtx,
+  scout: ScoutFn = scoutCandidates,
+  cleanup: CleanupFn = cleanupCandidates,
+): Promise<void> {
   const started = new Date()
   try {
     const r = await scout(ctx, { onlyNew: true })
+    let cleanupResult: { rescored: number; dismissed: number } | { cleanupError: string }
+    try {
+      cleanupResult = await cleanup(ctx, { threshold: 50 })
+    } catch (err) {
+      cleanupResult = { cleanupError: err instanceof Error ? err.message : String(err) }
+    }
     setSettings(ctx.db, {
       auto_scout_last_run: localDate(started),
-      auto_scout_last_result: JSON.stringify({ at: started.toISOString(), ...r }),
+      auto_scout_last_result: JSON.stringify({ at: started.toISOString(), ...r, ...cleanupResult }),
     })
     console.log(`[forgecast] 每日自动抓取完成：发现 ${r.found}，新增 ${r.added}`)
   } catch (err) {
