@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addRepo, backfillCategories, candidatesNeedingRescore, scoutCandidates } from '../src/scout'
+import { addRepo, backfillCategories, candidatesNeedingRescore, cleanupCandidates, scoutCandidates } from '../src/scout'
 import { candidateFixtures } from '../src/fixtures/candidate-fixtures'
 import { isLicenseOk } from '../src/license'
 
@@ -117,5 +117,64 @@ describe('scoutCandidates onlyNew', () => {
     const r2 = await scoutCandidates(ctx, {})   // 第二次全是已存在
     expect(r2.added).toBe(0)
     expect(r2.found).toBe(candidateFixtures.length)
+  })
+})
+
+describe('cleanupCandidates (mock)', () => {
+  it('已评分：低于阈值 → dismissed；达到阈值 → 保持 candidate', async () => {
+    await scoutCandidates(ctx) // 先把 fixtures 全部入池（含评分）
+    // 手动改两行的分数到确定值，规避 heuristicScore 具体数值不可控的问题
+    ctx.db.prepare("UPDATE candidates SET score = 30 WHERE repo = 'formbricks/formbricks'").run()
+    ctx.db.prepare("UPDATE candidates SET score = 80 WHERE repo = 'chatwoot/chatwoot'").run()
+    const r = await cleanupCandidates(ctx, { threshold: 50 })
+    expect(r.dismissed).toBeGreaterThanOrEqual(1)
+    const low: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'formbricks/formbricks'").get()
+    expect(low.status).toBe('dismissed')
+    const high: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    expect(high.status).toBe('candidate')
+  })
+
+  it('license_ok=0 或 status=picked 的候选不受阈值判定影响', async () => {
+    await scoutCandidates(ctx)
+    ctx.db.prepare("UPDATE candidates SET score = 0 WHERE repo = 'twentyhq/twenty'").run()
+    ctx.db.prepare("UPDATE candidates SET status = 'picked' WHERE repo = 'twentyhq/twenty'").run()
+    await cleanupCandidates(ctx, { threshold: 50 })
+    const picked: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'twentyhq/twenty'").get()
+    expect(picked.status).toBe('picked') // 没被 dismiss 覆盖
+    const gpl: any = ctx.db.prepare("SELECT status, score FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    expect(gpl.score).toBeNull() // license_ok=0 本就不评分，不该被"补评分"逻辑碰到
+    expect(gpl.status).toBe('candidate') // 也不该被 dismiss（license gate 已经在別处标记不可商用）
+  })
+
+  it('未评分（score IS NULL）候选先被补评分，再按补评后的分数判定', async () => {
+    // 手动插入一条协议 OK 但从未评分的候选（不经过 scoutCandidates，模拟"曾入库但超出评分 limit 未被评"的历史行）
+    ctx.db.prepare(`
+      INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, status)
+      VALUES ('chatwoot/chatwoot', 'https://github.com/chatwoot/chatwoot', null, 'MIT', 1, 100, null, 'candidate')
+    `).run()
+    const before: any = ctx.db.prepare("SELECT score FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    expect(before.score).toBeNull()
+    const r = await cleanupCandidates(ctx, { threshold: 50 })
+    expect(r.rescored).toBe(1)
+    const after: any = ctx.db.prepare("SELECT score FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    expect(after.score).not.toBeNull() // 补评分后一定有分数（chatwoot fixture README 信息丰富，mock 启发式分数会较高，不会被后续阈值判定淘汰）
+    expect(after.score).toBeGreaterThanOrEqual(50)
+  })
+
+  it('单个候选补评分失败不中断整批：其余候选仍正常清理', async () => {
+    await scoutCandidates(ctx)
+    // 插入一条 repo 不在 fixtures 里的候选（mock 的 fetchReadme 对未知 repo 返回空串 ''，
+    // rescoreCandidate 不会抛错——用一条真实会抛错的场景：repo 本身在 candidates 表里但已被删除的场景不易构造，
+    // 这里改用「readme 为空」验证 rescoreCandidate 对未知 repo 是 fail-soft（返回低分而非抛错），
+    // 顺带验证 cleanupCandidates 处理完这条后其它候选依旧被正确判定
+    ctx.db.prepare(`
+      INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, status)
+      VALUES ('unknown/not-in-fixtures', 'https://github.com/unknown/not-in-fixtures', null, 'MIT', 1, 10, null, 'candidate')
+    `).run()
+    ctx.db.prepare("UPDATE candidates SET score = 30 WHERE repo = 'formbricks/formbricks'").run()
+    const r = await cleanupCandidates(ctx, { threshold: 50 })
+    expect(r.rescored).toBeGreaterThanOrEqual(1) // unknown repo 也会被"补评分"尝试（不抛错，只是分数低）
+    const low: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'formbricks/formbricks'").get()
+    expect(low.status).toBe('dismissed') // 不受 unknown repo 那条影响，正常判定
   })
 })

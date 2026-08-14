@@ -130,6 +130,32 @@ export async function rescoreCandidate(ctx: CoreCtx, id: number): Promise<void> 
   }, true)
 }
 
+/** 候选池低分自动淘汰：先给协议可商用但从未评过分的候选补评分（复用 rescoreCandidate），
+ *  再把补评分后仍低于阈值的标记为 status='dismissed'（不删除、只改状态，保留记录可查）。
+ *  单个候选补评分失败不中断整批——跳过该条，留到下次自动清理再补。 */
+export async function cleanupCandidates(
+  ctx: CoreCtx,
+  opts: { threshold?: number } = {},
+): Promise<{ rescored: number; dismissed: number }> {
+  const threshold = opts.threshold ?? 50
+  const unscored = ctx.db.prepare(
+    "SELECT id FROM candidates WHERE license_ok = 1 AND status = 'candidate' AND score IS NULL",
+  ).all() as Array<{ id: number }>
+  let rescored = 0
+  for (const { id } of unscored) {
+    try {
+      await rescoreCandidate(ctx, id)
+      rescored++
+    } catch { /* 单个候选补评分失败：跳过，留到下次自动清理再补 */ }
+  }
+  const low = ctx.db.prepare(
+    "SELECT id FROM candidates WHERE license_ok = 1 AND status = 'candidate' AND score < ?",
+  ).all(threshold) as Array<{ id: number }>
+  const dismiss = ctx.db.prepare("UPDATE candidates SET status = 'dismissed' WHERE id = ?")
+  for (const { id } of low) dismiss.run(id)
+  return { rescored, dismissed: low.length }
+}
+
 /** 回填现有候选的领域标签：score_detail 里 category 缺/非法的，用 categorizeHeuristic 算并写回。无 score_detail 跳过。返回更新条数。 */
 export function backfillCategories(ctx: CoreCtx): number {
   const rows = ctx.db.prepare('SELECT id, repo, description, score_detail FROM candidates').all() as Array<{ id: number; repo: string; description: string | null; score_detail: string | null }>
