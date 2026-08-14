@@ -30,6 +30,11 @@ describe('scoreCandidate mock', () => {
     expect(d.techStack).toContain('react')
     expect(d.techStack).toContain('docker')
   })
+  it('mock 下 summaryZh 留空串（无 LLM，不编造翻译）', async () => {
+    const ctx = ctxWith({})
+    const d = await scoreCandidate(ctx, meta, 'React + Node + Docker 的 CRM，含 dashboard、screenshot 与 demo。'.repeat(3))
+    expect(d.summaryZh).toBe('')
+  })
   it('信息稀少的 README 分数更低', async () => {
     const ctx = ctxWith({})
     const rich = await scoreCandidate(ctx, meta, 'React Node Docker CRM dashboard screenshot demo'.repeat(5))
@@ -46,7 +51,7 @@ describe('scoreCandidate live', () => {
     const ctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
     const d = await scoreCandidate(ctx, meta, 'readme')
     // LLM 未返回 category，且启发式在 'a/b'/'readme'/['react'] 中也无命中 → 兜底"其它"
-    expect(d).toEqual({ rebrandCost: 24, buyerClarity: 34, visualAppeal: 21, techStack: ['react'], rationale: 'ok', targetBuyer: '', painPoint: '', category: '其它' })
+    expect(d).toEqual({ rebrandCost: 24, buyerClarity: 34, visualAppeal: 21, techStack: ['react'], rationale: 'ok', targetBuyer: '', painPoint: '', summaryZh: '', category: '其它' })
     expect(llm.complete).toHaveBeenCalledOnce()
   })
 })
@@ -100,5 +105,33 @@ describe('scoreCandidate category（mock 走启发式）', () => {
   it('mock 评分产出启发式 category', async () => {
     const d = await scoreCandidate(ctx, { repo: 'x/chat', url: 'u', description: null, license: 'MIT', stars: 1, lastCommit: '2026-01-01', topics: [] }, 'live chat helpdesk')
     expect(d.category).toBe('客服/IM')
+  })
+})
+
+describe('scoreCandidate live（假 LLM）', () => {
+  it('summaryZh 缺失/非字符串时按空串兜底', async () => {
+    const config = loadConfig('/tmp/fc-score-live', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const lctx: CoreCtx = {
+      db: openDb(config.paths.db), config,
+      llm: { complete: vi.fn(async () => JSON.stringify({
+        rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, techStack: ['react'],
+        rationale: 'r', targetBuyer: 't', painPoint: 'p', category: 'CRM/销售',
+        // summaryZh 缺失
+      })) } as any,
+    }
+    const d = await scoreCandidate(lctx, meta, 'readme')
+    expect(d.summaryZh).toBe('')
+  })
+  it('summaryZh 是字符串时原样透传', async () => {
+    const config = loadConfig('/tmp/fc-score-live2', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const lctx: CoreCtx = {
+      db: openDb(config.paths.db), config,
+      llm: { complete: vi.fn(async () => JSON.stringify({
+        rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, techStack: ['react'],
+        rationale: 'r', targetBuyer: 't', painPoint: 'p', summaryZh: '开源客服平台', category: 'CRM/销售',
+      })) } as any,
+    }
+    const d = await scoreCandidate(lctx, meta, 'readme')
+    expect(d.summaryZh).toBe('开源客服平台')
   })
 })

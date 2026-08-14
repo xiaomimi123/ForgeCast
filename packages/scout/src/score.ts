@@ -37,7 +37,7 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
     `- rebrandCost 换皮成本(0-30)：技术栈(React/Node/Next 高)、有无 Docker、i18n、UI 可主题化`,
     `- buyerClarity 买家清晰度(0-40)：能否一句话说清"什么老板会掏钱"，越垂直越高`,
     `- visualAppeal 内容可视性(0-30)：有无好看可演示的 UI（纯 CLI/后端低分）`,
-    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本","category":"从下列类别选一个最贴切的"}`,
+    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本","summaryZh":"这个项目是做什么的，一句话，中文","category":"从下列类别选一个最贴切的"}`,
     `类别（选一个）：${CATEGORIES.join(' / ')}`,
     `项目：${meta.repo}（topics: ${meta.topics.join(',')}, stars: ${meta.stars}）`,
     `README:\n${readme.slice(0, 6000)}`,
@@ -60,7 +60,7 @@ function heuristicScore(meta: RepoMeta, readme: string): ScoreDetail {
     rebrandCost, buyerClarity, visualAppeal, techStack: [...new Set(techStack)],
     rationale: `离线启发式评分：${meta.repo}`,
     // mock 不编造买家与痛点——关键词拼出来的假数据比空着更坏
-    targetBuyer: '', painPoint: '',
+    targetBuyer: '', painPoint: '', summaryZh: '',
     category: categorizeHeuristic(meta.repo, readme, techStack),
   }
 }
@@ -79,6 +79,7 @@ function parseScoreJson(text: string): ScoreDetail {
     rationale: typeof o.rationale === 'string' ? o.rationale : '',
     targetBuyer: typeof o.targetBuyer === 'string' ? o.targetBuyer : '',
     painPoint: typeof o.painPoint === 'string' ? o.painPoint : '',
+    summaryZh: typeof o.summaryZh === 'string' ? o.summaryZh : '',
     category: typeof o.category === 'string' ? o.category : '',
   }
 }
