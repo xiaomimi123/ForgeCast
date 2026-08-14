@@ -10,6 +10,7 @@ export const DIMS = [
 export interface Detail {
   rebrandCost: number; buyerClarity: number; visualAppeal: number
   rationale: string; targetBuyer: string; painPoint: string
+  summaryZh: string
   category: string
 }
 /** 数值字段兜底：非 number 或 NaN/Infinity 一律按 0 处理，避免脏数据渲染出 NaN% 的色条 */
@@ -28,6 +29,7 @@ export function parseDetail(sd: string | null): Detail | null {
     return {
       rebrandCost: num(o.rebrandCost), buyerClarity: num(o.buyerClarity), visualAppeal: num(o.visualAppeal),
       rationale: str(o.rationale), targetBuyer: str(o.targetBuyer), painPoint: str(o.painPoint),
+      summaryZh: str(o.summaryZh),
       category: str(o.category),
     }
   } catch { return null }
@@ -82,7 +84,7 @@ export default function CandidateCard({ c, isNew, onOpenDetail, onToggleFavorite
           </span>
         )}
       </div>
-      <div className="line-clamp-2 min-h-[2.5rem] text-xs leading-relaxed text-sub">{c.description ?? ''}</div>
+      <div className="line-clamp-2 min-h-[2.5rem] text-xs leading-relaxed text-sub">{d?.summaryZh || c.description || ''}</div>
       <div className="flex items-baseline gap-1.5 border-t-2 border-ink pt-2">
         <span className="text-[26px] font-black tracking-tighter text-fire">{c.score ?? '—'}</span>
         <span className="text-[10px] font-bold tracking-[2px] text-faint">变现分</span>
