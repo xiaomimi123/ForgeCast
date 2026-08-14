@@ -3,19 +3,23 @@ import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, subscribeTask, type Asset, type BgmList, type Project } from '../api'
 import CopyTab from './workshop/CopyTab'
+import ScriptTab from './workshop/ScriptTab'
+import UploadTab from './workshop/UploadTab'
 import VideoTab, { type VideoParams } from './workshop/VideoTab'
 import CutPlanEditor from './CutPlanEditor'
 
-// 做内容板块三个 tab：按制作流程走（文案 → 出视频 → 卡点），组件不重写，只套壳（同 MarketPage 模式）
+// 做内容五 tab：按人机协作主线排序（文案→拍摄脚本→成片上传审片）；自动渲染（出视频）降为辅助
 const TABS = [
   { key: 'copy', label: '文案' },
+  { key: 'script', label: '拍摄脚本' },
+  { key: 'upload', label: '成片' },
   { key: 'video', label: '出视频' },
   { key: 'cut', label: '卡点' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
 function normalizeTab(v: string | null): TabKey {
-  return v === 'video' || v === 'cut' ? v : 'copy'
+  return v === 'script' || v === 'upload' || v === 'video' || v === 'cut' ? v : 'copy'
 }
 
 export default function WorkshopPage() {
@@ -92,7 +96,19 @@ export default function WorkshopPage() {
   }
 
   const copyAssets = (assets.data ?? []).filter((a) => a.type === 'copy')
-  const videoAssets = (assets.data ?? []).filter((a) => a.type === 'video')
+  const scriptAssets = (assets.data ?? []).filter((a) => a.type === 'script')
+  const uploadAssets = (assets.data ?? []).filter((a) => a.type === 'video' && a.origin === 'upload')
+  const renderAssets = (assets.data ?? []).filter((a) => a.type === 'video' && a.origin !== 'upload')
+
+  function setAssetStatus(id: number) {
+    api(`/api/assets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }) })
+      .then(() => qc.invalidateQueries({ queryKey: ['assets', selected] }))
+  }
+  function deleteAsset(id: number) {
+    api(`/api/assets/${id}`, { method: 'DELETE' })
+      .then(() => qc.invalidateQueries({ queryKey: ['assets', selected] }))
+      .catch((e) => alert('删除失败：' + (e instanceof Error ? e.message : String(e))))
+  }
 
   return (
     <div className="space-y-4">
@@ -116,12 +132,20 @@ export default function WorkshopPage() {
           onVideo={(id) => { setVideoFromAsset(id); setTab('video') }}
         />
       )}
+      {tab === 'script' && (
+        <ScriptTab selected={selected} copyAssets={copyAssets} scriptAssets={scriptAssets}
+          running={running} onRunningChange={setRunning} />
+      )}
+      {tab === 'upload' && (
+        <UploadTab selected={selected} uploadAssets={uploadAssets} scriptAssets={scriptAssets}
+          onStatus={setAssetStatus} onDelete={deleteAsset} />
+      )}
       {tab === 'video' && (
         <VideoTab
           selected={selected} vp={vp} setVp={setVp} copyAssets={copyAssets}
           videoFromAsset={videoFromAsset} setVideoFromAsset={setVideoFromAsset}
           running={running} onMakeVideo={makeVideo} bgmList={bgmList.data}
-          videoAssets={videoAssets} slug={selected}
+          videoAssets={renderAssets} slug={selected}
           onRegenerate={(fb, a) => generate(fb, a.hook ?? hook, 1)}
         />
       )}

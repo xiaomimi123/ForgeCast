@@ -107,7 +107,7 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
           className="aspect-[9/16] w-full rounded-lg border-[1.5px] border-ink bg-black object-contain" />
         <div className="space-y-1 px-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="truncate text-xs text-sub">{asset.hook} · {asset.status}</div>
+            <div className="truncate text-xs text-sub">{asset.origin === 'upload' ? '实拍' : '渲染'} · {asset.hook ?? '—'} · {asset.status}</div>
             <div className="flex shrink-0 items-center gap-1.5">{approveButton}{deleteButton}</div>
           </div>
           <PublishInfo asset={asset} />
