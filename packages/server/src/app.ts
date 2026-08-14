@@ -3,11 +3,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
 import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
-import { generateCopy, generateDemoScreens, regenerateCover } from '@forgecast/copywriter'
+import { generateCopy, generateDemoScreens, generateShootScript, regenerateCover } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
-import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, synthesizeVoice } from '@forgecast/studio'
+import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
 import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
@@ -318,10 +318,51 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json({ taskId })
   })
 
+  // —— 拍摄脚本（LLM 从文案扩展分镜表）/ 成片上传 / 审片（人机协作主线）——
+  app.post('/api/projects/:slug/script', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => generateShootScript(ctx, {
+      slug, assetId: typeof body.assetId === 'number' ? body.assetId : undefined, onProgress: log,
+    }))
+    return c.json({ taskId })
+  })
+
+  app.post('/api/projects/:slug/upload-video', async (c) => {
+    const slug = c.req.param('slug')
+    const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+    if (!project) return c.json({ error: '项目不存在' }, 404)
+    const body = await c.req.parseBody()
+    const file = body.file
+    if (!(file instanceof File)) return c.json({ error: '缺少 file 字段' }, 400)
+    const safeName = path.basename(file.name)
+    if (!/\.(mp4|mov|m4v)$/i.test(safeName)) return c.json({ error: '仅支持 mp4/mov/m4v' }, 400)
+    const dir = path.join(ctx.config.paths.workspace, slug, 'uploads')
+    fs.mkdirSync(dir, { recursive: true })
+    // 同名文件不覆盖旧成片：加时间戳前缀（旧素材行还指着旧文件）
+    const finalName = fs.existsSync(path.join(dir, safeName)) ? `${Date.now()}-${safeName}` : safeName
+    fs.writeFileSync(path.join(dir, finalName), Buffer.from(await file.arrayBuffer()))
+    const relPath = path.join(slug, 'uploads', finalName)
+    const info = ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (?, 'video', NULL, ?, '[]', 'upload')",
+    ).run(project.id, relPath)
+    return c.json({ ok: true, assetId: Number(info.lastInsertRowid), name: finalName })
+  })
+
+  app.post('/api/assets/:id/review', async (c) => {
+    const id = Number(c.req.param('id'))
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => reviewVideo(ctx, id, {
+      scriptAssetId: typeof body.scriptAssetId === 'number' ? body.scriptAssetId : undefined, onProgress: log,
+    }))
+    return c.json({ taskId })
+  })
+
   // —— workspace 静态文件（封面/视频预览）——
   const MIME: Record<string, string> = {
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
-    '.mp4': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
+    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.md': 'text/markdown; charset=utf-8',
   }
   app.get('/files/*', (c) => {
     const rel = decodeURIComponent(c.req.path.replace(/^\/files\//, ''))
