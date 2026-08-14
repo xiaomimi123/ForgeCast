@@ -48,4 +48,18 @@ describe('generateShootScript live（假 LLM）', () => {
     await expect(generateShootScript(lctx, { slug: 'demo' })).rejects.toThrow(/过短/)
     expect(ctx.db.prepare("SELECT COUNT(*) n FROM assets WHERE type='script'").get()).toEqual({ n: 0 })
   })
+  it('mode 缺省 screen：prompt 注入「仅录屏+口播」硬约束；mode=live 注入实拍约束', async () => {
+    const config = loadConfig(root, { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    config.paths.templates = path.resolve(__dirname, '../../../templates')
+    const complete = vi.fn(async () => '# 拍摄脚本\n' + 'x'.repeat(120))
+    const lctx: CoreCtx = { db: ctx.db, config, llm: { complete } as any }
+    await generateShootScript(lctx, { slug: 'demo' })
+    expect(complete.mock.calls[0][0].prompt).toContain('仅有「录屏 + 口播配音」')
+    expect(complete.mock.calls[0][0].prompt).toContain('不得出现真人出镜')
+    await generateShootScript(lctx, { slug: 'demo', mode: 'live' })
+    expect(complete.mock.calls[1][0].prompt).toContain('可真人出镜实拍')
+  })
+  it('非法 mode → 抛错', async () => {
+    await expect(generateShootScript(ctx, { slug: 'demo', mode: 'bogus' as any })).rejects.toThrow(/非法拍摄条件/)
+  })
 })

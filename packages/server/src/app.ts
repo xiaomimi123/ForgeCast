@@ -324,7 +324,9 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
     const body = await c.req.json().catch(() => ({}))
     const taskId = queue.enqueue((log) => generateShootScript(ctx, {
-      slug, assetId: typeof body.assetId === 'number' ? body.assetId : undefined, onProgress: log,
+      slug, assetId: typeof body.assetId === 'number' ? body.assetId : undefined,
+      mode: ['screen', 'live', 'mixed'].includes(body.mode) ? body.mode : undefined, // 缺省 screen（录屏+口播）
+      onProgress: log,
     }))
     return c.json({ taskId })
   })

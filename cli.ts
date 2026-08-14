@@ -135,11 +135,12 @@ async function main() {
     }
     case 'script': {
       const slug = rest.find((a) => !a.startsWith('--'))
-      if (!slug) { console.error('用法: forgecast script <slug> [--asset=<copyId>]'); process.exit(1) }
+      if (!slug) { console.error('用法: forgecast script <slug> [--asset=<copyId>] [--mode=<screen|live|mixed>]'); process.exit(1) }
       const ctx = ctxWithNotes()
       const assetArg = arg('asset')
       const { filePath } = await generateShootScript(ctx, {
-        slug, assetId: assetArg ? Number(assetArg) : undefined, onProgress: (m) => console.log(`  ${m}`),
+        slug, assetId: assetArg ? Number(assetArg) : undefined,
+        mode: arg('mode') as any, onProgress: (m) => console.log(`  ${m}`),
       })
       console.log(`拍摄脚本完成: workspace/${filePath}`)
       break

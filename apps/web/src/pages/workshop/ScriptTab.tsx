@@ -71,13 +71,14 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
 }) {
   const qc = useQueryClient()
   const [fromCopy, setFromCopy] = useState<number | ''>('')
+  const [mode, setMode] = useState('screen')
   const chosen = fromCopy === '' ? copyAssets[0]?.id : fromCopy
   async function generate() {
     if (!selected || running) return
     onRunningChange(true)
     try {
       const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/script`, {
-        method: 'POST', body: JSON.stringify({ assetId: chosen }),
+        method: 'POST', body: JSON.stringify({ assetId: chosen, mode }),
       })
       subscribeTask(taskId, (e) => {
         if (e.type === 'done' || e.type === 'error') {
@@ -102,6 +103,16 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
             {copyAssets.length === 0 && <option value="">暂无文案，先去「文案」tab 生成</option>}
             {copyAssets.map((a) => <option key={a.id} value={a.id}>#{a.id} · {a.hook}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="text-sm text-sub">拍摄条件</label>
+          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+            value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="screen">仅录屏 + 口播（默认）</option>
+            <option value="live">可真人出镜实拍</option>
+            <option value="mixed">出镜 + 录屏混合</option>
+          </select>
+          <p className="mt-1 text-xs text-faint">分镜只会安排你选的条件内做得到的拍法</p>
         </div>
         <p className="text-xs text-faint">从口播稿扩展成逐镜分镜表（画面/台词/拍摄要点）+ 开拍准备清单，生成后可编辑。</p>
         <button className="btn-fire w-full py-2 disabled:opacity-50"
