@@ -80,4 +80,18 @@ describe('拍摄脚本/成片上传/审片', () => {
     const { taskId } = await (await app.request('/api/assets/9999/review', { method: 'POST', body: '{}' })).json() as any
     await expect(runTask(taskId)).rejects.toThrow(/不存在/)
   })
+  it('retro 任务：先审片再复盘 → assets.retro 写入（mock）', async () => {
+    const up = await (await app.request('/api/projects/demo/upload-video', { method: 'POST', body: fakeVideoForm('take3.mp4') })).json() as any
+    const rv = await (await app.request(`/api/assets/${up.assetId}/review`, { method: 'POST', body: '{}' })).json() as any
+    await runTask(rv.taskId)
+    const { taskId } = await (await app.request(`/api/assets/${up.assetId}/retro`, { method: 'POST' })).json() as any
+    await runTask(taskId)
+    const row: any = ctx.db.prepare('SELECT retro FROM assets WHERE id = ?').get(up.assetId)
+    expect(JSON.parse(row.retro).focus.length).toBeGreaterThan(0)
+  })
+  it('未审片直接复盘 → 任务失败', async () => {
+    const up = await (await app.request('/api/projects/demo/upload-video', { method: 'POST', body: fakeVideoForm('take4.mp4') })).json() as any
+    const { taskId } = await (await app.request(`/api/assets/${up.assetId}/retro`, { method: 'POST' })).json() as any
+    await expect(runTask(taskId)).rejects.toThrow(/先审片/)
+  })
 })

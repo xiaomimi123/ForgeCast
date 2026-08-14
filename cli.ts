@@ -7,7 +7,7 @@ import { generateCopy, generateShootScript, syncKnowledge } from '@forgecast/cop
 import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, registerClip, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
-import { generateVideo, reviewVideo } from '@forgecast/studio'
+import { generateRetro, generateVideo, reviewVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
 import { addSource, extractPatterns, importNotes, listPatterns, listSources } from '@forgecast/topics'
 import { extractSignals, importSignals, listMatches, listSignals, matchSignal, requestCollect, setSignalStatus } from '@forgecast/demand'
@@ -155,6 +155,17 @@ async function main() {
       })
       console.log(`总分 ${r.scores.overall}（钩子${r.scores.hook}/节奏${r.scores.pacing}/贴合${r.scores.fidelity}/CTA${r.scores.cta}）${r.degraded ? `\n  ⚠ ${r.degraded}` : ''}`)
       for (const s of r.suggestions) console.log(`  · ${s}`)
+      break
+    }
+    case 'retro': {
+      const id = rest.find((a) => !a.startsWith('--'))
+      if (!id) { console.error('用法: forgecast retro <videoAssetId>'); process.exit(1) }
+      const ctx = ctxWithNotes()
+      const r = await generateRetro(ctx, Number(id), { onProgress: (m) => console.log(`  ${m}`) })
+      console.log(`总评：${r.verdict}${r.hadPerf ? '' : '（暂无发布数据）'}`)
+      console.log(`保持：${r.keep.join('；')}`)
+      console.log(`改进：${r.change.join('；')}`)
+      console.log(`下一条优先：${r.focus}`)
       break
     }
     case 'approve': {

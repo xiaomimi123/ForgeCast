@@ -7,7 +7,7 @@ import { generateCopy, generateDemoScreens, generateShootScript, regenerateCover
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
-import { analyzeBeats, autoCutPlan, chooseBgmPath, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
+import { analyzeBeats, autoCutPlan, chooseBgmPath, generateRetro, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
 import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
@@ -358,6 +358,12 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const taskId = queue.enqueue((log) => reviewVideo(ctx, id, {
       scriptAssetId: typeof body.scriptAssetId === 'number' ? body.scriptAssetId : undefined, onProgress: log,
     }))
+    return c.json({ taskId })
+  })
+
+  app.post('/api/assets/:id/retro', (c) => {
+    const id = Number(c.req.param('id'))
+    const taskId = queue.enqueue((log) => generateRetro(ctx, id, { onProgress: log }))
     return c.json({ taskId })
   })
 
