@@ -110,8 +110,9 @@ export default function ScoutPage() {
 
   const rows = candidates.data ?? []
   const today = new Date().toLocaleDateString('sv-SE')
-  const ok = rows.filter((c) => c.license_ok === 1)
+  const ok = rows.filter((c) => c.license_ok === 1 && c.status !== 'dismissed')
   const blocked = rows.filter((c) => c.license_ok !== 1)
+  const dismissed = rows.filter((c) => c.license_ok === 1 && c.status === 'dismissed')
   const catCounts = new Map<string, number>()
   for (const c of ok) { const k = catOf(c); if (k) catCounts.set(k, (catCounts.get(k) ?? 0) + 1) }
   const byCat = (list: Candidate[]) => (cat ? list.filter((c) => catOf(c) === cat) : list)
@@ -197,6 +198,19 @@ export default function ScoutPage() {
                   <div key={c.id} className="flex gap-2 text-xs">
                     <a className="text-sub" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
                     <span className="text-faint">{c.license ?? '无协议'}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          {dismissed.length > 0 && (
+            <details className="rounded-lg bg-transparent border-[1.5px] border-hairline p-3 text-sm text-sub">
+              <summary className="cursor-pointer">另有 {dismissed.length} 个已淘汰（低分），点开查看</summary>
+              <div className="mt-2 space-y-1">
+                {dismissed.map((c) => (
+                  <div key={c.id} className="flex gap-2 text-xs">
+                    <a className="text-sub" href={c.url} target="_blank" rel="noreferrer">{c.repo}</a>
+                    <span className="text-faint">{c.score ?? '—'} 分</span>
                   </div>
                 ))}
               </div>
