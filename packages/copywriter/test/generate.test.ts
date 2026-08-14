@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { copyFixtures, createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { generateCopy } from '../src/generate'
 import { addSource, extractPatterns, importNotes } from '@forgecast/topics'
 
@@ -98,5 +98,19 @@ describe('generateCopy', () => {
     const results = await generateCopy(ctx, { slug: 'demo-project', hook: 'pain', n: 1, renderCovers: false })
     expect(capturedPrompts[0]).not.toContain('【选题风格参考】')
     expect(results.length).toBeGreaterThan(0) // 生成流程照常成功
+  })
+  it('项目有带 retro 的成片 → live prompt 注入【上一条复盘】块；没有则不出现', async () => {
+    const config = loadConfig(root, { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    config.paths.templates = path.resolve(__dirname, '../../../templates')
+    const complete = vi.fn(async () => copyFixtures.pain)
+    const lctx: CoreCtx = { db: ctx.db, config, llm: { complete } as any }
+    await generateCopy(lctx, { slug: 'demo-project', hook: 'pain', renderCovers: false })
+    expect(complete.mock.calls[0][0].prompt).not.toContain('【上一条复盘')
+    ctx.db.prepare("INSERT INTO assets (project_id, type, file_path, origin, retro) VALUES (1, 'video', 'demo-project/uploads/a.mp4', 'upload', ?)")
+      .run(JSON.stringify({ verdict: '钩子偏弱', keep: ['节奏清晰'], change: ['前3秒直给'], focus: '改钩子', generatedAt: 'x', hadPerf: false }))
+    await generateCopy(lctx, { slug: 'demo-project', hook: 'pain', renderCovers: false })
+    const p = complete.mock.calls[1][0].prompt
+    expect(p).toContain('【上一条复盘')
+    expect(p).toContain('最优先：改钩子')
   })
 })

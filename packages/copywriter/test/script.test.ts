@@ -62,4 +62,14 @@ describe('generateShootScript live（假 LLM）', () => {
   it('非法 mode → 抛错', async () => {
     await expect(generateShootScript(ctx, { slug: 'demo', mode: 'bogus' as any })).rejects.toThrow(/非法拍摄条件/)
   })
+  it('项目有带 retro 的成片 → 拍摄脚本 prompt 注入复盘块', async () => {
+    ctx.db.prepare("INSERT INTO assets (project_id, type, file_path, origin, retro) VALUES (1, 'video', 'demo/uploads/a.mp4', 'upload', ?)")
+      .run(JSON.stringify({ verdict: 'v', keep: ['k1'], change: ['c1'], focus: '改钩子', generatedAt: 'x', hadPerf: false }))
+    const config = loadConfig(root, { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    config.paths.templates = path.resolve(__dirname, '../../../templates')
+    const complete = vi.fn(async () => '# 拍摄脚本\n' + 'x'.repeat(120))
+    const lctx: CoreCtx = { db: ctx.db, config, llm: { complete } as any }
+    await generateShootScript(lctx, { slug: 'demo' })
+    expect(complete.mock.calls[0][0].prompt).toContain('【上一条复盘')
+  })
 })

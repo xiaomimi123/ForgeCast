@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx, type HookType } from '@forgecast/core'
 import { listPatterns } from '@forgecast/topics'
-import { assemblePrompt } from './assemble'
+import { assemblePrompt, formatRetroMd } from './assemble'
 import { checkBannedWords } from './banned-words'
 import { HOOK_KEYWORDS, searchAtoms } from './knowledge'
 import { parseCopyOutput } from './parser'
@@ -60,7 +60,12 @@ export async function generateCopy(ctx: CoreCtx, input: GenerateCopyInput): Prom
   // 选题库风格参考：查当前 hook 类型最新一条提炼结果，格式化成参考文本；没有则跳过，不影响生成
   const patterns = listPatterns(ctx, hook)
   const patternsMd = patterns.length ? formatPatternsMd(patterns[0]) : ''
-  const { system, prompt } = assemblePrompt({ hook, hookTemplate, formatSpec, patternsMd, knowledgeMd, atoms, analysis, feedback })
+  // 上一条复盘注入（闭环）：查本项目最新一条带 retro 的成片，把 保持/改进/最优先 作为改进参考；没有则跳过
+  const retroRow: any = ctx.db.prepare(
+    "SELECT retro FROM assets WHERE project_id = ? AND type = 'video' AND retro IS NOT NULL ORDER BY id DESC LIMIT 1",
+  ).get(project.id)
+  const retroMd = retroRow ? formatRetroMd(JSON.parse(retroRow.retro)) : ''
+  const { system, prompt } = assemblePrompt({ hook, hookTemplate, formatSpec, patternsMd, retroMd, knowledgeMd, atoms, analysis, feedback })
 
   const copyDir = path.join(wsDir, 'copy')
   fs.mkdirSync(copyDir, { recursive: true })

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
+import { formatRetroMd } from './assemble'
 import { mockShootScript } from './fixtures/script-fixture'
 import { parseCopyOutput } from './parser'
 
@@ -48,11 +49,17 @@ export async function generateShootScript(
     onProgress('生成拍摄脚本（live 模式）…')
     const tpl = fs.readFileSync(path.join(ctx.config.paths.templates, 'prompts', 'shoot-script.md'), 'utf8')
     const system = '你是短视频拍摄导演，输出可直接照着拍的拍摄脚本，只输出 markdown。'
+    // 上一条复盘注入（闭环）：查本项目最新一条带 retro 的成片，拍摄层面参考；没有则跳过
+    const retroRow: any = ctx.db.prepare(
+      "SELECT retro FROM assets WHERE project_id = ? AND type = 'video' AND retro IS NOT NULL ORDER BY id DESC LIMIT 1",
+    ).get(project.id)
+    const retroMd = retroRow ? formatRetroMd(JSON.parse(retroRow.retro)) : ''
     const prompt = [
       tpl,
       `【拍摄条件（硬约束，分镜与准备清单绝不得超出）】\n${SHOOT_MODE_CONSTRAINTS[mode]}`,
+      retroMd ? `【上一条复盘（拍摄层面参考，不必逐条照做）】\n${retroMd}` : '',
       `【口播脚本】\n${doc.douyinScript}`,
-    ].join('\n\n---\n\n')
+    ].filter(Boolean).join('\n\n---\n\n')
     md = await ctx.llm.complete({ model: ctx.config.llm.models.copy, system, prompt })
     if (md.trim().length < 100) throw new Error('拍摄脚本输出过短，疑似生成失败')
   }

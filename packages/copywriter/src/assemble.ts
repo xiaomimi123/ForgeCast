@@ -6,6 +6,7 @@ export interface AssembleInput {
   hookTemplate: string
   formatSpec: string
   patternsMd?: string
+  retroMd?: string
   knowledgeMd: string
   atoms: Atom[]
   analysis: string
@@ -26,9 +27,20 @@ export function assemblePrompt(i: AssembleInput): { system: string; prompt: stri
     i.hookTemplate,
     i.formatSpec,
     i.patternsMd ? `【选题风格参考】\n${i.patternsMd}` : '',
+    i.retroMd ? `【上一条复盘（参考改进，不必逐条照做）】\n${i.retroMd}` : '',
     `【方法论要点】\n${atomsBlock}`,
     `【商业化分析报告】\n${i.analysis}`,
     i.feedback ? `【用户修改意见，必须遵守】\n${i.feedback}` : '',
   ].filter(Boolean).join('\n\n---\n\n')
   return { system, prompt }
+}
+
+/** 把 assets.retro 的 JSON 格式化成注入提示词的参考文本（copy 与拍摄脚本共用） */
+export function formatRetroMd(r: { verdict: string; keep: string[]; change: string[]; focus: string }): string {
+  return [
+    `总评：${r.verdict}`,
+    `保持：\n${r.keep.map((s) => `- ${s}`).join('\n')}`,
+    `改进：\n${r.change.map((s) => `- ${s}`).join('\n')}`,
+    `最优先：${r.focus}`,
+  ].join('\n')
 }
