@@ -52,6 +52,7 @@ forgecast video <slug> --tpl=flash|story|demo|changelog|insight [--asset=<id>] [
 #   出场特效：标题大字逐字解码(故障风)+科技背景——demo(截图轮播每4拍快切+图片弹跳)/flash/changelog/insight 全套；story 只结尾卖点/CTA解码保聊天真截图感；旁白字幕默认关，--captions 开
 forgecast script <slug> [--asset=<copyId>]        # 从文案生成可执行拍摄脚本（分镜表+开拍准备清单，做内容人机协作主线）
 forgecast review-video <videoAssetId> [--script=<id>]  # 审片：转写(需 FORGECAST_ASR_PYTHON，缺则降级)+结构指标+LLM 对照脚本打分与建议
+forgecast retro <videoAssetId>                    # 复盘：审片报告×发布数据→下一条行动建议；下一次生成文案/拍摄脚本会自动引用
 forgecast publish <id> --platform=<xhs|douyin> [--url=<link>]  # 回填发布（平台/链接）
 forgecast perf <id> --views=N --likes=N --leads=N          # 回填曝光/赞/询单
 forgecast lead <id> --wechat=<..> [--intent=<..>]           # 登记询单（归因到素材）

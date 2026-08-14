@@ -11,6 +11,8 @@ interface ReviewReport {
   reviewedAt: string
 }
 
+interface RetroReport { verdict: string; keep: string[]; change: string[]; focus: string; generatedAt: string; hadPerf: boolean }
+
 const DIM_LABELS: Array<[keyof ReviewReport['scores'], string]> = [
   ['hook', '钩子'], ['pacing', '节奏'], ['fidelity', '贴合'], ['cta', 'CTA'],
 ]
@@ -41,6 +43,26 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
   const [scriptId, setScriptId] = useState<number | ''>('')
   let report: ReviewReport | null = null
   if (asset.review) { try { report = JSON.parse(asset.review) } catch { report = null } }
+  const [retroing, setRetroing] = useState(false)
+  let retro: RetroReport | null = null
+  if (asset.retro) { try { retro = JSON.parse(asset.retro) } catch { retro = null } }
+  async function runRetro() {
+    if (retroing) return
+    setRetroing(true)
+    try {
+      const { taskId } = await api<{ taskId: string }>(`/api/assets/${asset.id}/retro`, { method: 'POST' })
+      subscribeTask(taskId, (e) => {
+        if (e.type === 'done' || e.type === 'error') {
+          setRetroing(false)
+          qc.invalidateQueries({ queryKey: ['assets'] })
+          if (e.type === 'error') alert('复盘失败：' + e.message)
+        }
+      })
+    } catch (err) {
+      setRetroing(false)
+      alert('复盘失败：' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
 
   async function runReview() {
     if (reviewing) return
@@ -98,6 +120,17 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
             </ul>
             {report.transcript && (
               <div className="truncate text-xs text-faint" title={report.transcript}>转写：{report.transcript.slice(0, 60)}…</div>
+            )}
+            <button className="btn-ink px-2 py-0.5 text-xs disabled:opacity-50" disabled={retroing} onClick={runRetro}>
+              {retroing ? '复盘中…' : retro ? '重新复盘' : '生成复盘（结合发布数据）'}
+            </button>
+            {retro && (
+              <div className="space-y-1 border-t border-hairline pt-2 text-xs">
+                <div className="font-bold">复盘：{retro.verdict}{retro.hadPerf ? '' : '（暂无发布数据）'}</div>
+                <div className="text-sub">保持：{retro.keep.join('；')}</div>
+                <div className="text-sub">改进：{retro.change.join('；')}</div>
+                <div className="rounded bg-fire-soft px-2 py-1 font-bold text-fire">下一条优先：{retro.focus}</div>
+              </div>
             )}
           </div>
         )}

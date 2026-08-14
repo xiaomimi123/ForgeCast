@@ -20,6 +20,8 @@ export interface Asset {
   origin: 'rendered' | 'upload'
   /** JSON 字符串审片报告 {scores,suggestions,transcript?,metrics,degraded?,reviewedAt}，自行解析 */
   review: string | null
+  /** JSON 字符串复盘 {verdict,keep,change,focus,generatedAt,hadPerf}，自行解析 */
+  retro: string | null
 }
 /** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
 export interface BgmList { root: string[]; byMood: Record<string, string[]> }
