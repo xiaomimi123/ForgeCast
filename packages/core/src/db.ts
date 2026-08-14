@@ -175,5 +175,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
   // 迁移：选题库抓取请求排队（新库已含，此为兼容旧库）
   ensureColumn(db, 'topic_sources', 'scrape_requested_at', 'TEXT')
   ensureColumn(db, 'topic_sources', 'last_scraped_at', 'TEXT')
+  // 迁移：视频素材来源（rendered 模板渲染 / upload 用户上传成片）与审片报告 JSON（覆盖式，同 perf 先例）
+  ensureColumn(db, 'assets', 'origin', "TEXT DEFAULT 'rendered'")
+  ensureColumn(db, 'assets', 'review', 'TEXT')
   return db
 }
