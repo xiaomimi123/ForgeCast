@@ -24,7 +24,7 @@ export default function CopyTab({
   onRegenerate: (feedback: string, asset: Asset) => void
   onVideo: (assetId: number) => void
 }) {
-  const list = assets.filter((a) => a.type !== 'video')
+  const list = assets.filter((a) => a.type === 'copy' || a.type === 'cover')
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
       <div className="card-forge h-fit space-y-3 p-4">

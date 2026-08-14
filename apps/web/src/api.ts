@@ -11,11 +11,15 @@ export interface Project {
   counts?: { copies: number; videos: number; published: number; leads: number }
 }
 export interface Asset {
-  id: number; project_id: number; type: 'copy' | 'cover' | 'video'; hook: string | null
+  id: number; project_id: number; type: 'copy' | 'cover' | 'video' | 'script'; hook: string | null
   file_path: string; status: 'draft' | 'approved' | 'published'; warnings: string | null
   published_at: string | null; platform: string | null; published_url: string | null
   /** JSON 字符串 {views,likes,leads,recordedAt}，自行解析 */
   perf: string | null
+  /** 视频来源：rendered 模板渲染 / upload 用户上传成片（非 video 类型恒为默认 rendered） */
+  origin: 'rendered' | 'upload'
+  /** JSON 字符串审片报告 {scores,suggestions,transcript?,metrics,degraded?,reviewedAt}，自行解析 */
+  review: string | null
 }
 /** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
 export interface BgmList { root: string[]; byMood: Record<string, string[]> }
