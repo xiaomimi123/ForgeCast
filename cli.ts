@@ -3,11 +3,11 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
-import { generateCopy, syncKnowledge } from '@forgecast/copywriter'
+import { generateCopy, generateShootScript, syncKnowledge } from '@forgecast/copywriter'
 import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, registerClip, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
-import { generateVideo } from '@forgecast/studio'
+import { generateVideo, reviewVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
 import { addSource, extractPatterns, importNotes, listPatterns, listSources } from '@forgecast/topics'
 import { extractSignals, importSignals, listMatches, listSignals, matchSignal, requestCollect, setSignalStatus } from '@forgecast/demand'
@@ -131,6 +131,29 @@ async function main() {
         onProgress: (m) => console.log(`  ${m}`),
       })
       console.log(`视频完成: workspace/${filePath}`)
+      break
+    }
+    case 'script': {
+      const slug = rest.find((a) => !a.startsWith('--'))
+      if (!slug) { console.error('用法: forgecast script <slug> [--asset=<copyId>]'); process.exit(1) }
+      const ctx = ctxWithNotes()
+      const assetArg = arg('asset')
+      const { filePath } = await generateShootScript(ctx, {
+        slug, assetId: assetArg ? Number(assetArg) : undefined, onProgress: (m) => console.log(`  ${m}`),
+      })
+      console.log(`拍摄脚本完成: workspace/${filePath}`)
+      break
+    }
+    case 'review-video': {
+      const id = rest.find((a) => !a.startsWith('--'))
+      if (!id) { console.error('用法: forgecast review-video <videoAssetId> [--script=<scriptId>]'); process.exit(1) }
+      const ctx = ctxWithNotes()
+      const sArg = arg('script')
+      const r = await reviewVideo(ctx, Number(id), {
+        scriptAssetId: sArg ? Number(sArg) : undefined, onProgress: (m) => console.log(`  ${m}`),
+      })
+      console.log(`总分 ${r.scores.overall}（钩子${r.scores.hook}/节奏${r.scores.pacing}/贴合${r.scores.fidelity}/CTA${r.scores.cta}）${r.degraded ? `\n  ⚠ ${r.degraded}` : ''}`)
+      for (const s of r.suggestions) console.log(`  · ${s}`)
       break
     }
     case 'approve': {
