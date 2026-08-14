@@ -178,5 +178,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
   // 迁移：视频素材来源（rendered 模板渲染 / upload 用户上传成片）与审片报告 JSON（覆盖式，同 perf 先例）
   ensureColumn(db, 'assets', 'origin', "TEXT DEFAULT 'rendered'")
   ensureColumn(db, 'assets', 'review', 'TEXT')
+  ensureColumn(db, 'assets', 'retro', 'TEXT')
   return db
 }

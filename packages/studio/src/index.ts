@@ -6,3 +6,4 @@ export * from './tts'
 // （hyperframes.ts 内部还有渲染细节，不必全部暴露为包的公共表面）
 export { analyzeBeats, autoCutPlan, chooseBgmPath, readShots, type BeatGrid, type Shot } from './hyperframes'
 export * from './review'
+export * from './retro'
