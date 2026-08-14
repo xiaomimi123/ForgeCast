@@ -362,7 +362,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   // —— workspace 静态文件（封面/视频预览）——
   const MIME: Record<string, string> = {
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
-    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.md': 'text/markdown; charset=utf-8',
+    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
   }
   app.get('/files/*', (c) => {
     const rel = decodeURIComponent(c.req.path.replace(/^\/files\//, ''))
