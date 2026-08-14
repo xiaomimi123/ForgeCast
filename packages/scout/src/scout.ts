@@ -36,7 +36,7 @@ async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: b
     scoreDetail = JSON.stringify({
       rebrandCost: d.rebrandCost, buyerClarity: d.buyerClarity, visualAppeal: d.visualAppeal,
       rationale: d.rationale, targetBuyer: d.targetBuyer, painPoint: d.painPoint,
-      category: d.category,
+      summaryZh: d.summaryZh, category: d.category,
     })
   }
   ctx.db.prepare(UPSERT).run({

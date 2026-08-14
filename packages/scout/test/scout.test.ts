@@ -39,6 +39,15 @@ describe('scoutCandidates (mock)', () => {
     const after = (ctx.db.prepare('SELECT COUNT(*) c FROM candidates').get() as any).c
     expect(after).toBe(before)
   })
+
+  it('持久化的 score_detail 须带 summaryZh 字段（回归：ingest 曾漏写该字段，导致前端中文简介功能整体失效）', async () => {
+    await scoutCandidates(ctx)
+    const row: any = ctx.db.prepare(
+      "SELECT score_detail FROM candidates WHERE repo = 'chatwoot/chatwoot'",
+    ).get()
+    const detail = JSON.parse(row.score_detail)
+    expect(detail.summaryZh).toBe('')
+  })
 })
 
 describe('addRepo (mock)', () => {
