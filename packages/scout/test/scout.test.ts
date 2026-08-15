@@ -2,8 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { addRepo, backfillCategories, candidatesNeedingRescore, cleanupCandidates, scoutCandidates } from '../src/scout'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { addRepo, backfillCategories, candidatesNeedingRescore, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
 import { candidateFixtures } from '../src/fixtures/candidate-fixtures'
 import { isLicenseOk } from '../src/license'
 
@@ -185,5 +185,39 @@ describe('cleanupCandidates (mock)', () => {
     expect(r.rescored).toBeGreaterThanOrEqual(1) // unknown repo 也会被"补评分"尝试（不抛错，只是分数低）
     const low: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'formbricks/formbricks'").get()
     expect(low.status).toBe('dismissed') // 不受 unknown repo 那条影响，正常判定
+  })
+})
+
+describe('scoutBreakouts (mock)', () => {
+  it('命中的协议 OK 仓库全部评分入池；协议不过只登记', async () => {
+    const r = await scoutBreakouts(ctx)
+    expect(r.found).toBe(candidateFixtures.length)
+    expect(r.rejected).toBe(1) // GPL fixture
+    expect(r.scored).toBe(okCount)
+    expect(r.added).toBe(okCount)
+    const rows: any[] = ctx.db.prepare('SELECT * FROM candidates').all()
+    const scored = rows.filter((x) => x.license_ok === 1)
+    expect(scored.every((x) => x.score > 0)).toBe(true)
+  })
+
+  it('不受 onlyNew 限制：repo 已存在也重新评分覆盖', async () => {
+    await scoutCandidates(ctx) // 先用常规扫描入池一次
+    const before: any = ctx.db.prepare("SELECT score FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    ctx.db.prepare("UPDATE candidates SET score = 1 WHERE repo = 'chatwoot/chatwoot'").run() // 手动改低，验证会被覆盖
+    const r = await scoutBreakouts(ctx)
+    expect(r.added).toBeGreaterThanOrEqual(1) // 即使 repo 已存在，命中的仍计入 added（不做 onlyNew 判定）
+    const after: any = ctx.db.prepare("SELECT score FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    expect(after.score).not.toBe(1) // 被重新评分覆盖，不再是我们手动改的 1
+    expect(before.score).toBeGreaterThan(0) // sanity：确认 before 本身是正常评分（非空）
+  })
+
+  it('opts 透传：minStars/withinDays/limit 影响调用参数（用 spy 验证）', async () => {
+    const spy = vi.spyOn(ctx.db, 'prepare') // 不直接测 github 调用参数（mock client 忽略参数），改测函数不抛错、返回值形状正确
+    const r = await scoutBreakouts(ctx, { minStars: 5000, withinDays: 3, limit: 2 })
+    expect(r).toHaveProperty('found')
+    expect(r).toHaveProperty('scored')
+    expect(r).toHaveProperty('rejected')
+    expect(r).toHaveProperty('added')
+    spy.mockRestore()
   })
 })

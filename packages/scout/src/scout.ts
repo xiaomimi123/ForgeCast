@@ -156,6 +156,31 @@ export async function cleanupCandidates(
   return { rescored, dismissed: low.length }
 }
 
+/** 爆款检测：按「创建时间 ≤ withinDays 天 且 star ≥ minStars」筛新晋高星仓库，走现有换皮/评分流程入池。
+ *  手动偶发触发，不做 onlyNew 限制——命中的协议 OK 仓库每次都重新评分覆盖。 */
+export async function scoutBreakouts(
+  ctx: CoreCtx,
+  opts: { minStars?: number; withinDays?: number; limit?: number } = {},
+): Promise<{ found: number; scored: number; rejected: number; added: number }> {
+  const gh = createGithubClient(ctx.config.github)
+  const minStars = opts.minStars ?? 2000
+  const withinDays = opts.withinDays ?? 7
+  const limit = opts.limit ?? 30
+  const createdAfter = new Date(Date.now() - withinDays * 864e5).toISOString().slice(0, 10)
+  const found = await gh.searchBreakouts({ minStars, createdAfter, perPage: limit })
+
+  let scored = 0
+  let rejected = 0
+  let added = 0
+  for (const m of found) {
+    const ok = isLicenseOk(m.license)
+    await ingest(ctx, gh, m, ok)
+    if (ok) { scored++; added++ }
+    else rejected++
+  }
+  return { found: found.length, scored, rejected, added }
+}
+
 /** 回填现有候选的领域标签：score_detail 里 category 缺/非法的，用 categorizeHeuristic 算并写回。无 score_detail 跳过。返回更新条数。 */
 export function backfillCategories(ctx: CoreCtx): number {
   const rows = ctx.db.prepare('SELECT id, repo, description, score_detail FROM candidates').all() as Array<{ id: number; repo: string; description: string | null; score_detail: string | null }>
