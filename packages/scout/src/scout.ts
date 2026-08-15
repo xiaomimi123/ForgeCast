@@ -183,7 +183,7 @@ export async function cleanupCandidates(
 export async function scoutBreakouts(
   ctx: CoreCtx,
   opts: { minStars?: number; withinDays?: number; limit?: number } = {},
-): Promise<{ found: number; scored: number; rejected: number; added: number }> {
+): Promise<{ found: number; scored: number; rejected: number; added: number; hits: Array<{ repo: string; url: string }> }> {
   const gh = createGithubClient(ctx.config.github)
   const minStars = opts.minStars ?? 2000
   const withinDays = opts.withinDays ?? 7
@@ -194,13 +194,14 @@ export async function scoutBreakouts(
   let scored = 0
   let rejected = 0
   let added = 0
+  const hits: Array<{ repo: string; url: string }> = []
   for (const m of found) {
     const ok = isLicenseOk(m.license)
     await ingest(ctx, gh, m, ok)
-    if (ok) { scored++; added++ }
+    if (ok) { scored++; added++; hits.push({ repo: m.repo, url: m.url }) }
     else rejected++
   }
-  return { found: found.length, scored, rejected, added }
+  return { found: found.length, scored, rejected, added, hits }
 }
 
 /** 回填现有候选的领域标签：score_detail 里 category 缺/非法的，用 categorizeHeuristic 算并写回。无 score_detail 跳过。返回更新条数。 */

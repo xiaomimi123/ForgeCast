@@ -220,6 +220,14 @@ describe('scoutBreakouts (mock)', () => {
     expect(r).toHaveProperty('added')
     spy.mockRestore()
   })
+
+  it('hits 只含协议 OK 的命中项，条数等于 added', async () => {
+    const r = await scoutBreakouts(ctx)
+    expect(r.hits.length).toBe(r.added)
+    expect(r.hits.every((h) => typeof h.repo === 'string' && typeof h.url === 'string')).toBe(true)
+    const gplHit = r.hits.find((h) => h.repo === 'gpl-example/copyleft-tool')
+    expect(gplHit).toBeUndefined() // 协议不过的不该出现在 hits 里
+  })
 })
 
 describe('candidatesNeedingSummary (mock)', () => {
