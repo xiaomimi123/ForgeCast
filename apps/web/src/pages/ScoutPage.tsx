@@ -70,7 +70,7 @@ export default function ScoutPage() {
   })
 
   async function scout() {
-    if (scanning) return
+    if (scanning || scanningBreakouts) return
     setScanning(true); setLogs([])
     try {
       const { taskId } = await api<{ taskId: string }>('/api/scout', { method: 'POST', body: '{}' })
@@ -158,7 +158,7 @@ export default function ScoutPage() {
         找项目<span className="ml-3 text-xs font-normal text-faint">从 GitHub 矿脉里挑能换钱的坯料</span>
       </h1>
       <div className="flex items-center gap-3">
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || rescoringAll} onClick={scout}>
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll} onClick={scout}>
           {scanning ? '抓取中…' : '抓取候选'}
         </button>
         <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll} onClick={scoutBreakouts}>
