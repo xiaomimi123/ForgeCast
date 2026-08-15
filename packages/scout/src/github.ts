@@ -6,6 +6,8 @@ export interface GithubClient {
   searchRepos(topics: string[], opts: SearchOpts): Promise<RepoMeta[]>
   /** 按关键词全文搜（tailor 找轮子用）：失败抛错（调用方按能力项隔离失败），searchRepos 则是静默跳过 */
   searchByKeywords(keywords: string[], opts: { perPage: number }): Promise<RepoMeta[]>
+  /** 爆款检测：按「创建时间 + 当前 star 数」筛新晋高星仓库，按 star 降序，单次查询不去重多请求 */
+  searchBreakouts(opts: { minStars: number; createdAfter: string; perPage: number }): Promise<RepoMeta[]>
   fetchReadme(repo: string): Promise<string>
   fetchTree(repo: string): Promise<string[]>
 }
@@ -22,6 +24,12 @@ export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: ty
         }))
       },
       async searchByKeywords(_keywords, opts) {
+        return candidateFixtures.slice(0, opts.perPage).map((f) => ({
+          repo: f.repo, url: f.url, description: f.description, license: f.license,
+          stars: f.stars, lastCommit: f.lastCommit, topics: f.topics,
+        }))
+      },
+      async searchBreakouts(opts) {
         return candidateFixtures.slice(0, opts.perPage).map((f) => ({
           repo: f.repo, url: f.url, description: f.description, license: f.license,
           stars: f.stars, lastCommit: f.lastCommit, topics: f.topics,
@@ -57,6 +65,21 @@ export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: ty
     async searchByKeywords(keywords, opts) {
       const q = keywords.filter(Boolean).join(' ')
       if (!q) return []
+      const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&per_page=${opts.perPage}`
+      const res = await fetchImpl(url, { headers })
+      if (!res.ok) {
+        const hint = res.status === 403 || res.status === 429 ? '（GitHub 搜索限流：配 token 或稍后重搜）' : ''
+        throw new Error(`GitHub 搜索失败 HTTP ${res.status}${hint}`)
+      }
+      const data: any = await res.json()
+      return (data.items ?? []).map((it: any) => ({
+        repo: it.full_name, url: it.html_url, description: it.description ?? null,
+        license: it.license?.spdx_id ?? null,
+        stars: it.stargazers_count ?? 0, lastCommit: it.pushed_at ?? null, topics: it.topics ?? [],
+      }))
+    },
+    async searchBreakouts(opts) {
+      const q = `stars:>=${opts.minStars} created:>${opts.createdAfter}`
       const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&per_page=${opts.perPage}`
       const res = await fetchImpl(url, { headers })
       if (!res.ok) {

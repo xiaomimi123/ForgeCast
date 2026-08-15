@@ -113,3 +113,40 @@ describe('searchByKeywords', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 })
+
+describe('searchBreakouts', () => {
+  it('mock 返回 fixture，条数受 perPage 限制', async () => {
+    const gh = createGithubClient({ mode: 'mock', token: '' })
+    const repos = await gh.searchBreakouts({ minStars: 2000, createdAfter: '2026-08-08', perPage: 2 })
+    expect(repos.length).toBe(2)
+    expect(repos[0].repo).toBe(candidateFixtures[0].repo)
+  })
+
+  it('live 拼对 URL（stars/created/sort/per_page）并解析', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      items: [{
+        full_name: 'acme/newstar', html_url: 'https://github.com/acme/newstar', description: '新晋爆款',
+        license: { spdx_id: 'MIT' }, stargazers_count: 5000, pushed_at: '2026-08-14T00:00:00Z', topics: [],
+      }],
+    })))
+    const gh = createGithubClient({ mode: 'live', token: 't1' }, fetchImpl as any)
+    const repos = await gh.searchBreakouts({ minStars: 2000, createdAfter: '2026-08-08', perPage: 30 })
+    expect(repos[0]).toEqual({
+      repo: 'acme/newstar', url: 'https://github.com/acme/newstar', description: '新晋爆款',
+      license: 'MIT', stars: 5000, lastCommit: '2026-08-14T00:00:00Z', topics: [],
+    })
+    const [url, init] = fetchImpl.mock.calls[0] as any
+    expect(url).toContain('stars%3A%3E%3D2000')
+    expect(url).toContain('created%3A%3E2026-08-08')
+    expect(url).toContain('sort=stars')
+    expect(url).toContain('per_page=30')
+    expect(init.headers.authorization).toBe('Bearer t1')
+  })
+
+  it('live 请求失败（限流）→ 抛错带提示', async () => {
+    const fetchImpl = vi.fn(async () => new Response('rate limited', { status: 403 }))
+    const gh = createGithubClient({ mode: 'live', token: 't1' }, fetchImpl as any)
+    await expect(gh.searchBreakouts({ minStars: 2000, createdAfter: '2026-08-08', perPage: 30 }))
+      .rejects.toThrow(/限流/)
+  })
+})
