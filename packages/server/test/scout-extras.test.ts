@@ -46,3 +46,35 @@ describe('favorite + auto-status (mock)', () => {
     expect(s.lastResult).toBeNull()
   })
 })
+
+function wait(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
+async function runTask(taskId: string) {
+  for (let i = 0; i < 100; i++) {
+    await wait(20)
+    const s = queue.get(taskId)!.status
+    if (s === 'done') return
+    if (s === 'failed') throw new Error(queue.get(taskId)!.events.at(-1)!.message)
+  }
+  throw new Error('任务超时')
+}
+
+describe('POST /api/scout/breakouts (mock)', () => {
+  it('返回 taskId；任务完成后候选入库', async () => {
+    const { taskId } = await (await app.request('/api/scout/breakouts', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json() as any
+    expect(taskId).toBeTruthy()
+    await runTask(taskId)
+    const list = await (await app.request('/api/candidates')).json() as any[]
+    expect(list.length).toBeGreaterThan(0)
+  })
+  it('body 透传 minStars/withinDays/limit（不抛错，正常入库）', async () => {
+    const { taskId } = await (await app.request('/api/scout/breakouts', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ minStars: 5000, withinDays: 3, limit: 2 }),
+    })).json() as any
+    await runTask(taskId)
+    const list = await (await app.request('/api/candidates')).json() as any[]
+    expect(list.length).toBeGreaterThan(0)
+  })
+})

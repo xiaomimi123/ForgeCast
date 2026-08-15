@@ -6,7 +6,7 @@ import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setS
 import { generateCopy, generateDemoScreens, generateShootScript, regenerateCover } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateRetro, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
 import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
@@ -391,6 +391,16 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       topics: Array.isArray(body.topics) ? body.topics : undefined,
       limit: typeof body.limit === 'number' ? body.limit : undefined,
     }).then((r) => { log(`发现 ${r.found} 个，评分 ${r.scored}，协议不过 ${r.rejected}`); return r }))
+    return c.json({ taskId })
+  })
+
+  app.post('/api/scout/breakouts', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const taskId = queue.enqueue((log) => scoutBreakouts(ctx, {
+      minStars: typeof body.minStars === 'number' ? body.minStars : undefined,
+      withinDays: typeof body.withinDays === 'number' ? body.withinDays : undefined,
+      limit: typeof body.limit === 'number' ? body.limit : undefined,
+    }).then((r) => { log(`发现 ${r.found} 个爆款候选，评分 ${r.scored}，协议不过 ${r.rejected}`); return r }))
     return c.json({ taskId })
   })
 
