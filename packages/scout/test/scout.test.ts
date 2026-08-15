@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { addRepo, backfillCategories, candidatesNeedingRescore, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
+import { addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
 import { candidateFixtures } from '../src/fixtures/candidate-fixtures'
 import { isLicenseOk } from '../src/license'
 
@@ -219,5 +219,46 @@ describe('scoutBreakouts (mock)', () => {
     expect(r).toHaveProperty('rejected')
     expect(r).toHaveProperty('added')
     spy.mockRestore()
+  })
+})
+
+describe('candidatesNeedingSummary (mock)', () => {
+  it('协议 OK 且缺 summaryZh 的被选中；已有 summaryZh / 协议不过 / 未评分的都不选中', async () => {
+    await scoutCandidates(ctx) // fixtures 全部入池评分（mock 下 summaryZh 恒为空串）
+    const need = candidatesNeedingSummary(ctx)
+    const chatwoot: any = ctx.db.prepare("SELECT id FROM candidates WHERE repo='chatwoot/chatwoot'").get()
+    expect(need).toContain(chatwoot.id) // mock 评分 summaryZh 是空串，应被选中
+
+    // 手动给它 patch 一个非空 summaryZh，验证不再被选中
+    const row: any = ctx.db.prepare("SELECT score_detail FROM candidates WHERE id = ?").get(chatwoot.id)
+    const d = JSON.parse(row.score_detail); d.summaryZh = '已经有简介了'
+    ctx.db.prepare('UPDATE candidates SET score_detail = ? WHERE id = ?').run(JSON.stringify(d), chatwoot.id)
+    expect(candidatesNeedingSummary(ctx)).not.toContain(chatwoot.id)
+
+    const gpl: any = ctx.db.prepare("SELECT id FROM candidates WHERE repo='gpl-example/copyleft-tool'").get()
+    expect(candidatesNeedingSummary(ctx)).not.toContain(gpl.id) // 协议不过，从未评分，没有 score_detail
+  })
+})
+
+describe('backfillCandidateSummary (mock)', () => {
+  it('只改 summaryZh，其它评分字段原样保留', async () => {
+    await scoutCandidates(ctx)
+    const before: any = ctx.db.prepare("SELECT score_detail FROM candidates WHERE repo='chatwoot/chatwoot'").get()
+    const beforeDetail = JSON.parse(before.score_detail)
+    const id = (ctx.db.prepare("SELECT id FROM candidates WHERE repo='chatwoot/chatwoot'").get() as any).id
+    await backfillCandidateSummary(ctx, id)
+    const after: any = ctx.db.prepare("SELECT score_detail FROM candidates WHERE repo='chatwoot/chatwoot'").get()
+    const afterDetail = JSON.parse(after.score_detail)
+    expect(afterDetail.summaryZh).toBe('') // mock 模式下仍是空串（无 LLM），但字段一定存在
+    expect(afterDetail.rebrandCost).toBe(beforeDetail.rebrandCost)
+    expect(afterDetail.buyerClarity).toBe(beforeDetail.buyerClarity)
+    expect(afterDetail.visualAppeal).toBe(beforeDetail.visualAppeal)
+    expect(afterDetail.rationale).toBe(beforeDetail.rationale)
+    expect(afterDetail.targetBuyer).toBe(beforeDetail.targetBuyer)
+    expect(afterDetail.painPoint).toBe(beforeDetail.painPoint)
+    expect(afterDetail.category).toBe(beforeDetail.category)
+  })
+  it('候选不存在 → 抛错', async () => {
+    await expect(backfillCandidateSummary(ctx, 999999)).rejects.toThrow(/不存在/)
   })
 })

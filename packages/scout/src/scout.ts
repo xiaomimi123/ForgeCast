@@ -1,7 +1,7 @@
 import type { CoreCtx } from '@forgecast/core'
 import { createGithubClient, type GithubClient } from './github'
 import { isLicenseOk } from './license'
-import { CATEGORIES, categorizeHeuristic, scoreCandidate } from './score'
+import { CATEGORIES, categorizeHeuristic, generateSummaryZh, scoreCandidate } from './score'
 import type { RepoMeta } from './types'
 
 export const DEFAULT_TOPICS = [
@@ -128,6 +128,28 @@ export async function rescoreCandidate(ctx: CoreCtx, id: number): Promise<void> 
     repo: row.repo, url: row.url, description: row.description,
     license: row.license, stars: row.stars, lastCommit: row.last_commit, topics: [],
   }, true)
+}
+
+/** 返回"协议 OK 且 score_detail 里没有 summaryZh"的候选 id 列表，跟 candidatesNeedingRescore 同风格。 */
+export function candidatesNeedingSummary(ctx: CoreCtx): number[] {
+  const rows = ctx.db.prepare(
+    "SELECT id, score_detail FROM candidates WHERE license_ok = 1 AND score_detail IS NOT NULL",
+  ).all() as Array<{ id: number; score_detail: string }>
+  return rows.filter((r) => {
+    try { return !(JSON.parse(r.score_detail) as any)?.summaryZh } catch { return true }
+  }).map((r) => r.id)
+}
+
+/** 给单个候选补 summaryZh：重抓 README→生成→patch 回 score_detail，不动其它字段。 */
+export async function backfillCandidateSummary(ctx: CoreCtx, id: number): Promise<void> {
+  const row = ctx.db.prepare('SELECT repo, stars, score_detail FROM candidates WHERE id = ?').get(id) as any
+  if (!row) throw new Error(`候选不存在: ${id}`)
+  const gh = createGithubClient(ctx.config.github)
+  const readme = await gh.fetchReadme(row.repo)
+  const summaryZh = await generateSummaryZh(ctx, row.repo, row.stars, readme)
+  const d = JSON.parse(row.score_detail)
+  d.summaryZh = summaryZh
+  ctx.db.prepare('UPDATE candidates SET score_detail = ? WHERE id = ?').run(JSON.stringify(d), id)
 }
 
 /** 候选池低分自动淘汰：先给协议可商用但从未评过分的候选补评分（复用 rescoreCandidate），
