@@ -109,6 +109,18 @@ export default function ScoutPage() {
       })
     } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setRescoringAll(false) }
   }
+  const [backfillingSummary, setBackfillingSummary] = useState(false)
+  async function backfillSummary() {
+    if (backfillingSummary || scanning || scanningBreakouts || rescoringAll) return
+    setBackfillingSummary(true); setLogs([])
+    try {
+      const { taskId } = await api<{ taskId: string }>('/api/candidates/backfill-summary', { method: 'POST' })
+      subscribeTask(taskId, (e) => {
+        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
+        if (e.type === 'done' || e.type === 'error') { setBackfillingSummary(false); qc.invalidateQueries({ queryKey: ['candidates'] }) }
+      })
+    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setBackfillingSummary(false) }
+  }
   const [cat, setCat] = useState<string | null>(null)
   const catOf = (c: { score_detail: string | null }): string => {
     try { return (c.score_detail && (JSON.parse(c.score_detail) as any)?.category) || '' } catch { return '' }
@@ -158,17 +170,20 @@ export default function ScoutPage() {
         找项目<span className="ml-3 text-xs font-normal text-faint">从 GitHub 矿脉里挑能换钱的坯料</span>
       </h1>
       <div className="flex items-center gap-3">
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll} onClick={scout}>
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={scout}>
           {scanning ? '抓取中…' : '抓取候选'}
         </button>
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll} onClick={scoutBreakouts}>
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={scoutBreakouts}>
           {scanningBreakouts ? '检测中…' : '🔥 找爆款'}
         </button>
-        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll} onClick={rescoreAll}>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={rescoreAll}>
           {rescoringAll ? '评分中…' : '全部重新评分'}
         </button>
-        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll} onClick={backfillCats}>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={backfillCats}>
           分类回填
+        </button>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={backfillSummary}>
+          {backfillingSummary ? '生成中…' : '补中文简介'}
         </button>
         <span className="text-sm text-sub">共 {rows.length} 个候选</span>
         <span className="ml-auto text-xs text-faint">
