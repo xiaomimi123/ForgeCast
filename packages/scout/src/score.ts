@@ -49,6 +49,26 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
   return detail
 }
 
+/** 只生成中文简介，不重新跑三维打分——用于给老候选（评过分但缺 summaryZh）做轻量补充，
+ *  不烧三维评分的 LLM 调用、不改动已有 rationale/targetBuyer/painPoint。 */
+export async function generateSummaryZh(ctx: CoreCtx, repo: string, stars: number, readme: string): Promise<string> {
+  if (ctx.config.llm.mode === 'mock') return ''
+  const system = '你是开源项目介绍助手。只输出 JSON，不要多余文字。'
+  const prompt = [
+    `用一句话中文说明这个开源项目是做什么的（面向不了解这个项目的普通用户，说清楚核心功能）。`,
+    `输出 JSON：{"summaryZh":"这个项目是做什么的，一句话，中文"}`,
+    `项目：${repo}（stars: ${stars}）`,
+    `README:\n${readme.slice(0, 3000)}`,
+  ].join('\n')
+  const raw = await ctx.llm.complete({ model: ctx.config.llm.models.analysis, system, prompt })
+  const m = raw.match(/\{[\s\S]*\}/)
+  if (!m) return ''
+  try {
+    const o = JSON.parse(m[0])
+    return typeof o.summaryZh === 'string' ? o.summaryZh : ''
+  } catch { return '' }
+}
+
 function heuristicScore(meta: RepoMeta, readme: string): ScoreDetail {
   const r = readme.toLowerCase()
   const has = (re: RegExp) => re.test(r)

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { categorizeHeuristic, scoreCandidate } from '../src/score'
+import { categorizeHeuristic, generateSummaryZh, scoreCandidate } from '../src/score'
 
 let ctx: CoreCtx
 let root: string
@@ -133,5 +133,35 @@ describe('scoreCandidate live（假 LLM）', () => {
     }
     const d = await scoreCandidate(lctx, meta, 'readme')
     expect(d.summaryZh).toBe('开源客服平台')
+  })
+})
+
+describe('generateSummaryZh', () => {
+  it('mock 模式留空串，不编造翻译', async () => {
+    const ctx = ctxWith({}) // llm mock
+    const s = await generateSummaryZh(ctx, 'acme/widget', 100, 'React + Node 的示例项目')
+    expect(s).toBe('')
+  })
+  it('live 模式：正常解析 summaryZh', async () => {
+    const config = loadConfig('/tmp/fc-summary-live', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const lctx: CoreCtx = {
+      db: openDb(config.paths.db), config,
+      llm: { complete: vi.fn(async () => JSON.stringify({ summaryZh: '一个开源客服平台' })) } as any,
+    }
+    const s = await generateSummaryZh(lctx, 'acme/widget', 100, 'readme 内容')
+    expect(s).toBe('一个开源客服平台')
+  })
+  it('live 模式：summaryZh 缺失/非字符串/坏 JSON 都兜底空串（不抛错）', async () => {
+    const config = loadConfig('/tmp/fc-summary-live2', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const missing: CoreCtx = {
+      db: openDb(config.paths.db), config,
+      llm: { complete: vi.fn(async () => JSON.stringify({})) } as any,
+    }
+    expect(await generateSummaryZh(missing, 'acme/widget', 100, 'r')).toBe('')
+    const badJson: CoreCtx = {
+      db: openDb(config.paths.db), config,
+      llm: { complete: vi.fn(async () => '不是 JSON 的纯文本') } as any,
+    }
+    expect(await generateSummaryZh(badJson, 'acme/widget', 100, 'r')).toBe('')
   })
 })
