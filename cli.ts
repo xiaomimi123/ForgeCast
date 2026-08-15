@@ -6,7 +6,7 @@ import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy, generateShootScript, syncKnowledge } from '@forgecast/copywriter'
 import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, registerClip, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, pickCandidate, scoutCandidates } from '@forgecast/scout'
+import { addRepo, pickCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
 import { generateRetro, generateVideo, reviewVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
 import { addSource, extractPatterns, importNotes, listPatterns, listSources } from '@forgecast/topics'
@@ -70,6 +70,22 @@ async function main() {
         if (!addUrl || addUrl.startsWith('--')) { console.error('用法: forgecast scout --add=<repo-url>（或 --add <repo-url>）'); process.exit(1) }
         await addRepo(ctx, addUrl)
         console.log(`已投喂: ${addUrl}`)
+        break
+      }
+      const wantsBreakouts = rest.includes('--breakouts')
+      if (wantsBreakouts) {
+        const limit = arg('limit') ? Number(arg('limit')) : undefined
+        console.log('检测爆款项目中（mock/live 由 .env 决定）…')
+        const r = await scoutBreakouts(ctx, { limit })
+        console.log(`发现 ${r.found}，评分 ${r.scored}，协议不过 ${r.rejected}\n`)
+        const rows = ctx.db.prepare(
+          "SELECT repo, stars, license, score, score_detail FROM candidates WHERE license_ok = 1 ORDER BY score DESC LIMIT 20",
+        ).all() as any[]
+        console.log('名次  score  stars  license      repo')
+        rows.forEach((x, i) => {
+          const why = x.score_detail ? JSON.parse(x.score_detail).rationale : ''
+          console.log(`${String(i + 1).padStart(2)}   ${String(x.score).padStart(5)}  ${String(x.stars).padStart(6)}  ${(x.license ?? '').padEnd(12)} ${x.repo}  ${why}`)
+        })
         break
       }
       const topics = arg('topics')?.split(',').map((s) => s.trim()).filter(Boolean)
