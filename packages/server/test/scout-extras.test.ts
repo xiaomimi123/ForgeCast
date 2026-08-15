@@ -68,6 +68,14 @@ describe('POST /api/scout/breakouts (mock)', () => {
     const list = await (await app.request('/api/candidates')).json() as any[]
     expect(list.length).toBeGreaterThan(0)
   })
+  it('任务日志包含命中仓库名', async () => {
+    const { taskId } = await (await app.request('/api/scout/breakouts', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).json() as any
+    await runTask(taskId)
+    const msgs = queue.get(taskId)!.events.map((e) => e.message).join('\n')
+    expect(msgs).toMatch(/🔥/) // 至少一条命中仓库名日志（mock fixtures 里协议 OK 的会全部命中）
+  })
   it('body 透传 minStars/withinDays/limit（不抛错，正常入库）', async () => {
     const { taskId } = await (await app.request('/api/scout/breakouts', {
       method: 'POST', headers: { 'content-type': 'application/json' },

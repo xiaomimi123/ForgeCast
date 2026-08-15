@@ -6,7 +6,7 @@ import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setS
 import { generateCopy, generateDemoScreens, generateShootScript, regenerateCover } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
-import { addRepo, backfillCategories, candidatesNeedingRescore, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
+import { addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, generateRetro, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
 import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
@@ -400,7 +400,11 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       minStars: typeof body.minStars === 'number' ? body.minStars : undefined,
       withinDays: typeof body.withinDays === 'number' ? body.withinDays : undefined,
       limit: typeof body.limit === 'number' ? body.limit : undefined,
-    }).then((r) => { log(`发现 ${r.found} 个爆款候选，评分 ${r.scored}，协议不过 ${r.rejected}`); return r }))
+    }).then((r) => {
+      log(`发现 ${r.found} 个爆款候选，评分 ${r.scored}，协议不过 ${r.rejected}`)
+      for (const h of r.hits) log(`  🔥 ${h.repo}`)
+      return r
+    }))
     return c.json({ taskId })
   })
 
@@ -445,6 +449,23 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
         try { await rescoreCandidate(ctx, id); ok++ } catch (e) { fail++; log(`⚠ ${repo} 评分失败：${e instanceof Error ? e.message : String(e)}`) }
       }
       log(`完成：真评 ${ok} 个，失败跳过 ${fail} 个`)
+    })
+    return c.json({ taskId })
+  })
+
+  app.post('/api/candidates/backfill-summary', (c) => {
+    const taskId = queue.enqueue(async (log) => {
+      const need = candidatesNeedingSummary(ctx)
+      if (!need.length) { log('无需补充：候选都已有中文简介'); return }
+      if (ctx.config.llm.mode === 'mock') { log('⚠ 当前为 mock 模式，中文简介不会真生成；请先到「设置」把大模型切 live 并填 key'); return }
+      log(`共 ${need.length} 个候选需补中文简介，开始…`)
+      let ok = 0, fail = 0
+      for (const [i, id] of need.entries()) {
+        const repo = (ctx.db.prepare('SELECT repo FROM candidates WHERE id = ?').get(id) as any)?.repo ?? id
+        log(`生成中 ${i + 1}/${need.length}：${repo}`)
+        try { await backfillCandidateSummary(ctx, id); ok++ } catch (e) { fail++; log(`⚠ ${repo} 生成失败：${e instanceof Error ? e.message : String(e)}`) }
+      }
+      log(`完成：补充 ${ok} 个，失败跳过 ${fail} 个`)
     })
     return c.json({ taskId })
   })
