@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import fs from 'node:fs'
+import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
@@ -159,6 +160,31 @@ async function main() {
         mode: arg('mode') as any, onProgress: (m) => console.log(`  ${m}`),
       })
       console.log(`拍摄脚本完成: workspace/${filePath}`)
+      break
+    }
+    case 'broll-import': {
+      const positional = rest.filter((a) => !a.startsWith('--'))
+      const [slug, srcPath] = positional
+      if (!slug || !srcPath) {
+        console.error('用法: forgecast broll-import <slug> <本地mp4绝对路径> [--hook=<hook>]')
+        process.exit(1)
+      }
+      if (!fs.existsSync(srcPath)) { console.error(`源文件不存在: ${srcPath}`); process.exit(1) }
+      if (!/\.(mp4|mov|m4v)$/i.test(srcPath)) { console.error('仅支持 mp4/mov/m4v'); process.exit(1) }
+      const ctx = ctxWithNotes()
+      const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+      if (!project) { console.error(`项目不存在: ${slug}`); process.exit(1) }
+      const safeName = path.basename(srcPath)
+      const dir = path.join(ctx.config.paths.workspace, slug, 'uploads')
+      fs.mkdirSync(dir, { recursive: true })
+      const finalName = fs.existsSync(path.join(dir, safeName)) ? `${Date.now()}-${safeName}` : safeName
+      fs.copyFileSync(srcPath, path.join(dir, finalName))
+      const relPath = path.join(slug, 'uploads', finalName)
+      const info = ctx.db.prepare(
+        "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (?, 'video', ?, ?, '[]', 'upload')",
+      ).run(project.id, arg('hook') ?? null, relPath)
+      console.log(`已登记成片: workspace/${relPath}（assetId=${Number(info.lastInsertRowid)}）`)
+      console.log('可在网页「做内容」页面成片 tab 看到')
       break
     }
     case 'review-video': {
@@ -423,6 +449,7 @@ async function main() {
   analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
   rebrand <slug>                   生成换皮改造清单 rebrand-plan.md（读 analysis）
   video <slug> --tpl=flash         生成 flash 视频（渲染 copy 素材为 15s 竖屏）
+  broll-import <slug> <mp4路径> [--hook=<hook>]  登记外部产出的成片（如 erduo B-roll 定稿）为 video 素材
   approve <id>                          审核通过素材（draft → approved）
   publish <id> --platform=<xhs|douyin>  回填发布（平台/链接）
   perf <id> --views=N --likes=N --leads=N  回填曝光/赞/询单
