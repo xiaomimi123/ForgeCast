@@ -14,6 +14,7 @@ workspace/*/hf/
 workspace/*/shots/
 workspace/*/scripts/
 workspace/*/uploads/
+workspace/*/broll/
 
 # dbskill 上游缓存与拉取的知识包（CC BY-NC 4.0，不提交进公开仓库、不打包进对外产品）
 .cache/
