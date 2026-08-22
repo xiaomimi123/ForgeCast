@@ -8,10 +8,12 @@ interface Draft {
   model_analysis: string; model_copy: string; model_scoring: string
   tts_mode: string; tts_key: string; tts_base_url: string; tts_model: string; tts_voice: string; melo_python: string; cosy_home: string
   github_mode: string; github_token: string
+  scout_weight_rebrand: string; scout_weight_buyer: string; scout_weight_visual: string
 }
 const emptyDraft: Draft = {
   llm_mode: 'mock', llm_key: '', llm_base_url: '', model_analysis: '', model_copy: '', model_scoring: '',
   tts_mode: 'kokoro', tts_key: '', tts_base_url: '', tts_model: '', tts_voice: '', melo_python: '', cosy_home: '', github_mode: 'mock', github_token: '',
+  scout_weight_rebrand: '30', scout_weight_buyer: '40', scout_weight_visual: '30',
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -42,6 +44,7 @@ export default function SettingsPage() {
       model_analysis: s.llm.models.analysis, model_copy: s.llm.models.copy, model_scoring: s.llm.models.scoring,
       tts_mode: s.tts.mode, tts_key: '', tts_base_url: s.tts.base_url, tts_model: s.tts.model, tts_voice: s.tts.voice, melo_python: s.tts.melo_python, cosy_home: s.tts.cosy_home,
       github_mode: s.github.mode, github_token: '',
+      scout_weight_rebrand: String(s.scout.weights.rebrandCost), scout_weight_buyer: String(s.scout.weights.buyerClarity), scout_weight_visual: String(s.scout.weights.visualAppeal),
     })
   }, [settings.data])
 
@@ -137,6 +140,17 @@ export default function SettingsPage() {
           </select>
         </div>
         <Field label="Personal Access Token" hint="可选，只读公开数据即可，提高限速"><input type="password" className={inputCls} value={d.github_token} placeholder={keyPlaceholder(s.github.token_set, s.github.token_masked)} onChange={(e) => set({ github_token: e.target.value })} /></Field>
+      </section>
+
+      {/* 评分权重 */}
+      <section className="space-y-3 card-forge p-4">
+        <h3 className="font-medium">评分权重（三维各自独立，不要求总和100）</h3>
+        <div className="grid grid-cols-3 gap-2">
+          <Field label="换皮成本上限"><input type="number" min={0} className={inputCls} value={d.scout_weight_rebrand} onChange={(e) => set({ scout_weight_rebrand: e.target.value })} /></Field>
+          <Field label="买家清晰度上限"><input type="number" min={0} className={inputCls} value={d.scout_weight_buyer} onChange={(e) => set({ scout_weight_buyer: e.target.value })} /></Field>
+          <Field label="内容可视性上限"><input type="number" min={0} className={inputCls} value={d.scout_weight_visual} onChange={(e) => set({ scout_weight_visual: e.target.value })} /></Field>
+        </div>
+        <p className="text-xs text-faint">改了权重不会自动重新评分老候选，想让老候选按新权重重评，去「找项目」页点「全部重新评分」。</p>
       </section>
 
       <div className="flex items-center gap-3">
