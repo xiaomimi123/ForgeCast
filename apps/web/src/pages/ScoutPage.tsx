@@ -131,6 +131,20 @@ export default function ScoutPage() {
       alert(`已回填 ${r.updated} 个候选的领域分类`); qc.invalidateQueries({ queryKey: ['candidates'] })
     } catch (e) { alert('回填失败：' + (e instanceof Error ? e.message : String(e))) }
   }
+  const [addUrlOpen, setAddUrlOpen] = useState(false)
+  const [addUrl, setAddUrl] = useState('')
+  async function addUrlSubmit() {
+    const url = addUrl.trim()
+    if (!url) return
+    setAddUrlOpen(false); setAddUrl(''); setLogs([])
+    try {
+      const { taskId } = await api<{ taskId: string }>('/api/candidates/add', { method: 'POST', body: JSON.stringify({ url }) })
+      subscribeTask(taskId, (e) => {
+        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
+        if (e.type === 'done' || e.type === 'error') qc.invalidateQueries({ queryKey: ['candidates'] })
+      })
+    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]) }
+  }
 
   const rows = candidates.data ?? []
   const today = new Date().toLocaleDateString('sv-SE')
@@ -184,6 +198,9 @@ export default function ScoutPage() {
         </button>
         <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={backfillSummary}>
           {backfillingSummary ? '生成中…' : '补中文简介'}
+        </button>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={() => setAddUrlOpen(true)}>
+          + 投喂
         </button>
         <span className="text-sm text-sub">共 {rows.length} 个候选</span>
         <span className="ml-auto text-xs text-faint">
@@ -270,6 +287,26 @@ export default function ScoutPage() {
           onToggleFavorite={(c) => favorite.mutate(c)}
           picking={pickingRepos.has(detail.repo)} rescoring={rescoringIds.has(detail.id)}
           favPending={favPendingIds.has(detail.id)} />
+      )}
+
+      {addUrlOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAddUrlOpen(false)}>
+          <div className="w-full max-w-md rounded-lg border-2 border-ink bg-paper p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 font-bold text-ink">投喂一个 repo</div>
+            <input
+              className="w-full rounded-md border-[1.5px] border-ink bg-card px-3 py-2 text-sm"
+              placeholder="https://github.com/owner/repo 或 owner/repo"
+              value={addUrl}
+              autoFocus
+              onChange={(e) => setAddUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addUrlSubmit() }}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button className="btn-ink px-3 py-1.5 text-sm" onClick={() => setAddUrlOpen(false)}>取消</button>
+              <button className="btn-fire px-3 py-1.5 text-sm disabled:opacity-50" disabled={!addUrl.trim()} onClick={addUrlSubmit}>投喂</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
