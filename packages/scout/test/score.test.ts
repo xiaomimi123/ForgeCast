@@ -165,3 +165,46 @@ describe('generateSummaryZh', () => {
     expect(await generateSummaryZh(badJson, 'acme/widget', 100, 'r')).toBe('')
   })
 })
+
+describe('自定义权重', () => {
+  it('mock 模式：heuristicScore 封顶值跟着自定义 weights 变', async () => {
+    const config = loadConfig('/tmp/fc-score-weights', {})
+    config.scout.weights = { rebrandCost: 5, buyerClarity: 5, visualAppeal: 5 }
+    const wctx: CoreCtx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
+    const d = await scoreCandidate(wctx, meta, 'React + Node + Docker 的 CRM，含 dashboard、screenshot 与 demo。'.repeat(3))
+    expect(d.rebrandCost).toBeLessThanOrEqual(5)
+    expect(d.buyerClarity).toBeLessThanOrEqual(5)
+    expect(d.visualAppeal).toBeLessThanOrEqual(5)
+  })
+  it('live 模式：parseScoreJson 按自定义 weights 夹取，而非硬编码 30/40/30', async () => {
+    const config = loadConfig('/tmp/fc-score-weights-live', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    config.scout.weights = { rebrandCost: 5, buyerClarity: 5, visualAppeal: 5 }
+    const llm = { complete: vi.fn(async () => JSON.stringify({
+      rebrandCost: 20, buyerClarity: 20, visualAppeal: 20, techStack: [], rationale: 'r',
+    })) }
+    const lctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
+    const d = await scoreCandidate(lctx, meta, 'readme')
+    expect(d.rebrandCost).toBe(5) // LLM 返回20，但自定义上限5，夹到5
+    expect(d.buyerClarity).toBe(5)
+    expect(d.visualAppeal).toBe(5)
+  })
+  it('live 模式：prompt 文案里的维度上限数字跟着自定义 weights 变', async () => {
+    const config = loadConfig('/tmp/fc-score-weights-prompt', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    config.scout.weights = { rebrandCost: 15, buyerClarity: 25, visualAppeal: 35 }
+    const llm = { complete: vi.fn(async () => JSON.stringify({ rebrandCost: 1, buyerClarity: 1, visualAppeal: 1, techStack: [], rationale: 'r' })) }
+    const lctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
+    await scoreCandidate(lctx, meta, 'readme')
+    const prompt = llm.complete.mock.calls[0][0].prompt as string
+    expect(prompt).toContain('0-15')
+    expect(prompt).toContain('0-25')
+    expect(prompt).toContain('0-35')
+  })
+  it('默认权重（30/40/30）时行为跟改动前完全一致', async () => {
+    const config = loadConfig('/tmp/fc-score-weights-default', {})
+    const wctx: CoreCtx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
+    const d = await scoreCandidate(wctx, meta, 'React + Node + Docker 的 CRM，含 dashboard、screenshot 与 demo。'.repeat(3))
+    expect(d.rebrandCost).toBeLessThanOrEqual(30)
+    expect(d.buyerClarity).toBeLessThanOrEqual(40)
+    expect(d.visualAppeal).toBeLessThanOrEqual(30)
+  })
+})
