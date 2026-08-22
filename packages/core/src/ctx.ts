@@ -42,5 +42,6 @@ export function refreshCtx(ctx: CoreCtx): void {
   Object.assign(ctx.config.llm, fresh.llm)
   Object.assign(ctx.config.tts, fresh.tts)
   Object.assign(ctx.config.github, fresh.github)
+  Object.assign(ctx.config.scout, fresh.scout)
   ctx.llm = createLlmClient(ctx.config.llm)
 }

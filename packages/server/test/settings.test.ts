@@ -93,4 +93,14 @@ describe('settings API', () => {
     expect(v.mode_notes).toHaveLength(2)
     expect(v.mode_notes.join()).toContain('key')
   })
+
+  it('GET 返回体含 scout.weights，默认 30/40/30', async () => {
+    const v = await (await app.request('/api/settings')).json() as any
+    expect(v.scout.weights).toEqual({ rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
+  })
+  it('PUT scout_weight_* 后 GET 能读到新值', async () => {
+    await app.request('/api/settings', J({ scout_weight_rebrand: '15', scout_weight_buyer: '55', scout_weight_visual: '10' }))
+    const v = await (await app.request('/api/settings')).json() as any
+    expect(v.scout.weights).toEqual({ rebrandCost: 15, buyerClarity: 55, visualAppeal: 10 })
+  })
 })

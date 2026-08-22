@@ -138,6 +138,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
         mode: cfg.github.mode,
         token_set: !!cfg.github.token, token_masked: maskKey(cfg.github.token),
       },
+      scout: { weights: { ...cfg.scout.weights } },
       // 选了 live 却缺 key 时会被降级——不说明白的话，页面上模式会莫名其妙跳回 mock
       mode_notes: ctx.modeNotes ?? [],
     }
