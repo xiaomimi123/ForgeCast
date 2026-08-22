@@ -14,6 +14,7 @@ export interface ForgecastConfig {
     models: { analysis: string; copy: string; scoring: string }
   }
   github: { mode: GithubMode; token: string }
+  scout: { weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number } }
   video: { mode: VideoMode; bgm: string; beatPython: string; captions: boolean; bg: string; mood: string }
   tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string; asrPython: string }
   paths: { workspace: string; db: string; templates: string }
@@ -40,6 +41,7 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       },
     },
     github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
+    scout: { weights: { rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 } },
     video: {
       mode: videoMode,
       bgm: env.FORGECAST_BGM ?? '',

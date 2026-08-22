@@ -6,6 +6,7 @@ export const SETTING_KEYS = [
   'llm_mode', 'llm_key', 'llm_base_url', 'model_analysis', 'model_copy', 'model_scoring',
   'tts_mode', 'tts_key', 'tts_model', 'tts_base_url', 'tts_voice', 'melo_python', 'cosy_home',
   'github_mode', 'github_token',
+  'scout_weight_rebrand', 'scout_weight_buyer', 'scout_weight_visual',
   'auto_scout', 'auto_scout_time', 'auto_scout_last_run', 'auto_scout_last_result',
 ] as const
 export type SettingKey = (typeof SETTING_KEYS)[number]
@@ -50,6 +51,15 @@ export function applyStoredSettings(config: ForgecastConfig, db: Database.Databa
   put(s.tts_base_url, (v) => { config.tts.baseURL = v })
   put(s.github_mode, (v) => { if (v === 'live' || v === 'mock') config.github.mode = v })
   put(s.github_token, (v) => { config.github.token = v })
+  const putWeight = (v: string | undefined, apply: (n: number) => void) => {
+    if (!v || !v.trim()) return
+    const n = Number(v.trim())
+    if (!Number.isFinite(n) || n < 0) return
+    apply(n)
+  }
+  putWeight(s.scout_weight_rebrand, (n) => { config.scout.weights.rebrandCost = n })
+  putWeight(s.scout_weight_buyer, (n) => { config.scout.weights.buyerClarity = n })
+  putWeight(s.scout_weight_visual, (n) => { config.scout.weights.visualAppeal = n })
 }
 
 /**

@@ -60,6 +60,19 @@ describe('applyStoredSettings', () => {
     applyStoredSettings(config, db)
     expect(config.tts.mode).toBe('kokoro')
   })
+  it('scout_weight_* 非空数字覆盖默认权重', () => {
+    const config = loadConfig(root, {})
+    expect(config.scout.weights).toEqual({ rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
+    setSettings(db, { scout_weight_rebrand: '20', scout_weight_buyer: '50', scout_weight_visual: '15' })
+    applyStoredSettings(config, db)
+    expect(config.scout.weights).toEqual({ rebrandCost: 20, buyerClarity: 50, visualAppeal: 15 })
+  })
+  it('scout_weight_* 非法值（NaN/负数/空白）不覆盖，保留默认', () => {
+    const config = loadConfig(root, {})
+    setSettings(db, { scout_weight_rebrand: 'abc', scout_weight_buyer: '-5', scout_weight_visual: '   ' })
+    applyStoredSettings(config, db)
+    expect(config.scout.weights).toEqual({ rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
+  })
 })
 
 describe('normalizeModes', () => {
