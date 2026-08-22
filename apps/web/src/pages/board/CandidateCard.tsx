@@ -1,11 +1,13 @@
 import type { Candidate } from '../../api'
 
-// 三个评分维度各自的满分（§3 四维模型，协议为一票否决不计分）
-export const DIMS = [
-  { key: 'rebrandCost', label: '换皮', max: 30 },
-  { key: 'buyerClarity', label: '买家', max: 40 },
-  { key: 'visualAppeal', label: '可视', max: 30 },
-] as const
+/** 三个评分维度的展示定义，max 读当前配置的权重（不再硬编码 30/40/30） */
+export function buildDims(weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number }) {
+  return [
+    { key: 'rebrandCost' as const, label: '换皮', max: weights.rebrandCost },
+    { key: 'buyerClarity' as const, label: '买家', max: weights.buyerClarity },
+    { key: 'visualAppeal' as const, label: '可视', max: weights.visualAppeal },
+  ]
+}
 
 export interface Detail {
   rebrandCost: number; buyerClarity: number; visualAppeal: number

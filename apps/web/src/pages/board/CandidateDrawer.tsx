@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, type Candidate, type IntroResponse } from '../../api'
-import { Bar, DIMS, parseDetail } from './CandidateCard'
+import { useQuery } from '@tanstack/react-query'
+import { api, type Candidate, type IntroResponse, type SettingsView } from '../../api'
+import { Bar, buildDims, parseDetail } from './CandidateCard'
 import IntroSections from './IntroSections'
 
 /** 右侧抽屉详情：产品说明书 + 评分明细 + 操作区（立项/重评/收藏）。原 CandidateDetailModal 改造。 */
@@ -14,6 +15,8 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
   const [res, setRes] = useState<IntroResponse | null>(null)
   const [entered, setEntered] = useState(false)   // 滑入过渡
   const d = parseDetail(candidate.score_detail)
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<SettingsView>('/api/settings') })
+  const dims = buildDims(settings.data?.scout.weights ?? { rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
 
   async function load(force: boolean) {
     setLoading(true); setError(null); setRes(null)
@@ -69,7 +72,7 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
               评分明细 <span className="font-black text-fire">{candidate.score ?? '—'} 分</span>
             </div>
             <div className="space-y-1">
-              {DIMS.map((dim) => <Bar key={dim.key} label={dim.label} value={d[dim.key]} max={dim.max} />)}
+              {dims.map((dim) => <Bar key={dim.key} label={dim.label} value={d[dim.key]} max={dim.max} />)}
             </div>
             {d.rationale && <p className="mt-1 text-xs text-sub">💡 {d.rationale}</p>}
           </div>
