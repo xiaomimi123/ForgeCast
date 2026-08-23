@@ -1,12 +1,19 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createCtx } from '../src/ctx'
 
 describe('createCtx .env 加载', () => {
-  afterEach(() => {
+  const original = process.env.FORGECAST_BEAT_PYTHON
+
+  beforeEach(() => {
     delete process.env.FORGECAST_BEAT_PYTHON
+  })
+
+  afterAll(() => {
+    if (original === undefined) delete process.env.FORGECAST_BEAT_PYTHON
+    else process.env.FORGECAST_BEAT_PYTHON = original
   })
 
   it('不传 env 时自动读根目录 .env（真实环境变量已存在时不覆盖）', () => {
