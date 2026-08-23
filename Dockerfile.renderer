@@ -3,6 +3,8 @@ WORKDIR /app
 # 构建须在能访问 Debian/pip 包源的网络下进行。若 apt 报 198.18.x 沉洞或证书 MITM，
 # 说明本机 VPN/代理拦截了镜像流量——换到部署目标（配好国内源的服务器）构建。见 docs/hyperframes-deploy.md
 RUN printf 'Acquire::Retries "8";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80retries
+# CN 网络：deb.debian.org 大文件常被透明代理沉洞（198.18.x），换阿里云镜像直连
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
 # ffmpeg + 中文字体 + Chromium 运行依赖 + espeak-ng(Kokoro 中文音素) + python venv + Bun 前置
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates ffmpeg fonts-noto-cjk fonts-noto-color-emoji espeak-ng \
@@ -10,19 +12,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     && rm -rf /var/lib/apt/lists/*
+# Chromium 用 Debian 包：chrome-headless-shell 无 Linux ARM64 官方构建（Apple Silicon 上容器为 arm64）
+RUN apt-get update && apt-get install -y --no-install-recommends chromium \
+    && rm -rf /var/lib/apt/lists/*
 # Bun（HyperFrames 工具链）
 RUN curl -fsSL https://bun.sh/install | bash && ln -s /root/.bun/bin/bun /usr/local/bin/bun
-# Kokoro TTS venv（离线中文配音）；清华 pypi 镜像（CN 网络）
+# 预装 pin 版 HyperFrames：运行时 `npx hyperframes@<ver>` 命中全局已装版本，渲染不再临时联网拉包
+RUN npm install -g hyperframes@0.7.68
+# Kokoro TTS venv（离线中文配音）；阿里云 pypi 镜像（清华源对部分网络 403）
 RUN python3 -m venv /opt/kokoro && /opt/kokoro/bin/pip install --no-cache-dir \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple kokoro-onnx soundfile "misaki[zh]"
+    -i https://mirrors.aliyun.com/pypi/simple kokoro-onnx soundfile "misaki[zh]"
 # espeak-ng 数据路径随架构而异（arm64/amd64），探测后建稳定软链
 RUN ln -s "$(dirname "$(find /usr/lib -name phontab | head -1)")" /opt/espeak-data
-ENV HYPERFRAMES_PYTHON=/opt/kokoro/bin/python \
+ENV HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium \
+    HYPERFRAMES_PYTHON=/opt/kokoro/bin/python \
     ESPEAK_DATA_PATH=/opt/espeak-data \
     ESPEAKNG_DATA_PATH=/opt/espeak-data \
     PHONEMIZER_ESPEAK_PATH=/usr/bin/espeak-ng \
     FORGECAST_TTS_MODE=kokoro FORGECAST_VIDEO_MODE=render \
+    FORGECAST_RENDER_TIMEOUT_MS=1800000 \
     FORGECAST_HOST=0.0.0.0
+# 预热 Kokoro 语音包（~27MB，首次 tts 调用才下载到 /root/.cache/hyperframes/tts/voices/）：
+# 容器每次 `docker compose run` 都是一次性实例，不预热的话每条视频渲染都要在 180s TTS 超时窗口内
+# 现拉这 27MB——网络稍慢就超时降级成静音占位（实测踩过：pipeline 全流程跑通但成片没声音）。
+RUN npx --yes hyperframes@0.7.68 tts "预热" --voice zf_xiaobei --lang zh --output /tmp/warm.wav && rm -f /tmp/warm.wav
 RUN corepack enable
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages ./packages
@@ -30,7 +43,5 @@ COPY apps ./apps
 COPY templates ./templates
 COPY cli.ts tsconfig.base.json ./
 RUN pnpm install --frozen-lockfile
-# 预拉 chrome-headless-shell（HyperFrames 渲染用）——失败不阻断构建，首次渲染时会补拉
-RUN npx --yes hyperframes@0.7.68 browser ensure || true
 # 渲染宿主：进容器手动 `pnpm exec tsx cli.ts video <slug> --tpl=demo`
 CMD ["sleep", "infinity"]

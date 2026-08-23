@@ -31,6 +31,21 @@ describe('scaffoldHfProject', () => {
     expect(fs.readFileSync(path.join(dir, 'index.html'), 'utf8')).toContain('x')
     expect(fs.readFileSync(path.join(dir, 'assets/narration.wav')).length).toBe(2)
   })
+
+  it('assets/fonts 坏软链（如宿主机绝对路径在容器内失效）被替换为可用的相对软链', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hf-'))
+    fs.mkdirSync(path.join(dir, 'assets'), { recursive: true })
+    fs.symlinkSync('/no/such/host/path/fonts', path.join(dir, 'assets', 'fonts'), 'dir')
+    expect(() => scaffoldHfProject(dir, '<html>x</html>')).not.toThrow()
+    const fontsDst = path.join(dir, 'assets', 'fonts')
+    const st = fs.lstatSync(fontsDst)
+    if (st.isSymbolicLink()) {
+      expect(fs.existsSync(fontsDst)).toBe(true)
+      expect(path.isAbsolute(fs.readlinkSync(fontsDst))).toBe(false)
+    } else {
+      expect(st.isDirectory()).toBe(true)
+    }
+  })
 })
 
 describe('renderHyperframes stub', () => {

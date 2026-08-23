@@ -75,7 +75,7 @@ export FORGECAST_TTS_MODE=melo FORGECAST_MELO_PYTHON=~/.forgecast-venvs/melo/bin
 
 ## Docker（renderer 镜像）
 
-`Dockerfile.renderer` 已把上述依赖全部打进 `node:22-bookworm-slim`：ffmpeg / fonts-noto-cjk / espeak-ng / Bun / Kokoro venv / chrome-headless-shell。espeak 数据路径按架构（arm64/amd64）自动探测软链到 `/opt/espeak-data`。
+`Dockerfile.renderer` 已把上述依赖全部打进 `node:22-bookworm-slim`：ffmpeg / fonts-noto-cjk / espeak-ng / Bun / Kokoro venv / Chromium（Debian 包）。espeak 数据路径按架构（arm64/amd64）自动探测软链到 `/opt/espeak-data`。**已真实构建 + 容器内真渲验证过**（2026-08-23，Apple Silicon）。
 
 ```bash
 # 中文路径需 BUILDKIT=0
@@ -84,13 +84,20 @@ DOCKER_BUILDKIT=0 docker build -f Dockerfile.renderer -t forgecast-renderer:late
 DOCKER_BUILDKIT=0 docker compose --profile render build renderer
 ```
 
-镜像约 ~2GB（含 Chromium + Kokoro onnx 模型）。
+镜像约 3GB（含 Chromium + Kokoro onnx runtime + 语音包）。
 
 **构建网络要求（重要）**：构建过程要从 Debian/PyPI 拉包。若在开启了透明代理/VPN 的机器上构建，可能遇到：
 - apt 报 `Unable to connect to deb.debian.org:80: [IP: 198.18.x.x]`（HTTP 被沉洞）；
-- 或 `Certificate verification failed ... [IP: 198.18.x.x 443]`（HTTPS 被 MITM）。
+- 或 pip 装包报 `Could not find a version that satisfies the requirement`（清华源对部分网络返 403，实测踩过）。
 
-这是**宿主机 VPN 拦截了所有镜像流量**，与 Dockerfile 无关，换任何镜像源都绕不过。解决：关掉透明代理，或直接在**部署目标服务器**（配好国内 apt/pip 源、无 MITM）上构建。Dockerfile 已加 apt 重试与 `ca-certificates`，pip 用清华源；apt 默认 deb.debian.org，CN 服务器可自行 sed 成阿里云/清华等可达源。
+这是**宿主机 VPN 拦截了所有镜像流量**，与 Dockerfile 无关，换任何镜像源都绕不过。解决：关掉透明代理，或直接在**部署目标服务器**（配好国内 apt/pip 源、无 MITM）上构建。Dockerfile 已把 apt 与 pip 都指到**阿里云镜像**（`mirrors.aliyun.com`，清华源在实测环境下 403，阿里云可用）；apt 默认 deb.debian.org，如镜像源又失效可自行改 sed 目标。
+
+**已知构建/渲染坑（真机构建踩过，均已在 Dockerfile 里修复）**：
+- **chrome-headless-shell 无 Linux ARM64 官方构建**（Apple Silicon 上容器架构是 arm64）：`hyperframes browser ensure` 会直接报错退出。改用 Debian 的 `chromium` 包 + `HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium` 环境变量。x86_64 服务器理论上 chrome-headless-shell 有官方构建，但既然 Debian chromium 已验证可用，Dockerfile 统一走这条路径，不按架构分叉。
+- **`hyperframes` npm 包默认联网拉最新版**：即使命令里 pin 了版本号（`npx hyperframes@0.7.68`），首次调用仍会检查/拉包，容器每次 `docker compose run` 都是一次性实例（`--rm`），意味着**每条视频渲染都要在渲染开始前先联网**。已在镜像构建期 `npm install -g hyperframes@0.7.68` 全局预装，运行时 `npx` 命中缓存不再联网。
+- **Kokoro 语音包（~27MB）默认运行时首次下载到 `/root/.cache/hyperframes/tts/voices/`**：这个目录不在任何持久卷里，容器每次都是新实例，意味着**每条视频渲染都要重新下载**，网络稍慢就会撞上 TTS 180s 超时降级成静音占位——**实测踩过：渲染流程全程无报错、视频正常产出，但音轨是静音**（`ffmpeg -af volumedetect` 测出 mean_volume ≈ -91dB 才发现）。已在镜像构建期跑一次 `hyperframes tts` 预热，把语音包烤进镜像层，运行时不再联网。
+- **`workspace/<slug>/hf/assets/fonts` 若曾在宿主机上创建过绝对路径软链**（比如本机开发跑过一次），Docker 容器内因为路径不存在会变成"坏软链"——`scaffoldHfProject` 原先用 `fs.existsSync` 判断"已存在跳过"，但坏软链 `existsSync` 返回 `false`，于是尝试 `symlinkSync` 会因为目标已占用而报错，`catch` 分支的 `fs.cpSync` 又会直接把 Node worker 崩掉（`filesystem_error: Operation not supported`）。已修：坏软链先 `rmSync` 清掉，新软链一律用**相对路径**（macOS 下还要对两端 `realpathSync` 再算相对，否则 `/var`→`/private/var` 这类系统级软链会导致层级算错）。
+- **默认 600s（10min）渲染超时在低配/容器环境下不够**：本机构建的容器实测单条 flash 视频（92s 成片，2760 帧）渲染耗时约 16 分钟。已加 `FORGECAST_RENDER_TIMEOUT_MS` 环境变量（Dockerfile 里设为 1800000 = 30min），可按机器性能再调。
 
 进容器渲染：
 ```bash
@@ -98,6 +105,8 @@ docker compose --profile render run --rm renderer \
   pnpm exec tsx cli.ts video <slug> --tpl=demo
 ```
 产物落 `workspace/<slug>/videos/`（挂载卷持久）。
+
+**部署提醒：`app`/`renderer` 两个容器共享同一个 `./db` 挂载卷**，Web 设置页存的 `tts_mode`（settings 表）优先级高于容器 `ENV`（见 §"Web 设置页"一节的存储优先级）。若本机开发时已经在设置页把 `tts_mode` 配成了 `melo`/`live`（本机专属路径/云端 key），`renderer` 容器会读到同一条设置，而这些模式在纯净的 renderer 镜像里通常不可用（melo 需要宿主机 venv 路径，容器里没有）——**会 fail-soft 静默降级成静音占位**（视频照常渲染完成，看着一切正常，实际没声音）。渲染前建议在设置页确认 `tts_mode=kokoro`（唯一预装进 renderer 镜像的离线方案），或渲染后用 `ffmpeg -i out.mp4 -af volumedetect -f null -` 抽查 `mean_volume` 是否接近 -91dB（等于静音）。
 
 ## 四套模板
 

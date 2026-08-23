@@ -300,11 +300,20 @@ export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Re
   fs.copyFileSync(path.join(HF_TEMPLATES, 'hyperframes.json'), path.join(destDir, 'hyperframes.json'))
   // GSAP 本地化（模板引用 gsap.min.js）：离线/部署目标渲染不依赖 CDN
   fs.copyFileSync(path.join(HF_TEMPLATES, 'gsap.min.js'), path.join(destDir, 'gsap.min.js'))
-  // fonts 目录软链（相对 index.html 的 assets/fonts 引用统一）
+  // fonts 目录软链（相对 index.html 的 assets/fonts 引用统一）。
+  // 用相对路径：绝对路径软链在 Docker 挂载卷内失效（宿主机路径容器里不存在）；
+  // 既有坏链（existsSync 随链为 false 但 lstat 存在）须先清掉，否则 symlink/cpSync 都会炸。
   const fontsSrc = path.join(HF_TEMPLATES, 'fonts')
   const fontsDst = path.join(destDir, 'assets', 'fonts')
-  if (fs.existsSync(fontsSrc) && !fs.existsSync(fontsDst)) {
-    try { fs.symlinkSync(fontsSrc, fontsDst, 'dir') } catch { fs.cpSync(fontsSrc, fontsDst, { recursive: true }) }
+  if (fs.existsSync(fontsSrc)) {
+    if (fs.lstatSync(fontsDst, { throwIfNoEntry: false })?.isSymbolicLink() && !fs.existsSync(fontsDst)) {
+      fs.rmSync(fontsDst)
+    }
+    if (!fs.existsSync(fontsDst)) {
+      // realpath 两端再算相对：路径链上有软链（如 macOS /var→/private/var）时字面 relative 会差层
+      const rel = path.relative(fs.realpathSync(path.dirname(fontsDst)), fs.realpathSync(fontsSrc))
+      try { fs.symlinkSync(rel, fontsDst, 'dir') } catch { fs.cpSync(fontsSrc, fontsDst, { recursive: true }) }
+    }
   }
   fs.writeFileSync(path.join(destDir, 'index.html'), indexHtml, 'utf8')
   for (const [name, buf] of Object.entries(assets)) fs.writeFileSync(path.join(destDir, 'assets', name), buf)
@@ -551,8 +560,10 @@ export async function renderHyperframes(
 ): Promise<void> {
   fs.mkdirSync(path.dirname(outPath), { recursive: true })
   if (mode === 'stub') { fs.writeFileSync(outPath, STUB_BYTES); return }
+  // Docker/低配机渲染慢（容器内 ~3fps，长片超 10min），FORGECAST_RENDER_TIMEOUT_MS 可加大
+  const timeoutMs = Number(process.env.FORGECAST_RENDER_TIMEOUT_MS) || RENDER_TIMEOUT_MS
   await spawnWithTimeout(['--yes', `hyperframes@${HF_VERSION}`, 'render', '--output', outPath], {
-    cwd: projectDir, timeoutMs: RENDER_TIMEOUT_MS, label: 'hyperframes render', onStdout: opts.onProgress,
+    cwd: projectDir, timeoutMs, label: 'hyperframes render', onStdout: opts.onProgress,
   })
 }
 
