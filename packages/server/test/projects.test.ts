@@ -24,6 +24,13 @@ describe('projects API', () => {
     expect(rows).toHaveLength(1)
     expect((rows[0] as any).slug).toBe('demo-project')
   })
+  it('syncWorkspaceProjects 跳过下划线前缀目录（如 _templates 模板库存储目录），不把它 upsert 成项目', () => {
+    fs.mkdirSync(path.join(ctx.config.paths.workspace, '_templates', 'some-uuid'), { recursive: true })
+    syncWorkspaceProjects(ctx)
+    const rows = ctx.db.prepare('SELECT * FROM projects').all() as any[]
+    expect(rows.map((r) => r.slug)).not.toContain('_templates')
+    expect(rows.map((r) => r.slug)).toContain('demo-project')
+  })
   it('GET /api/projects 列表；GET 详情带 analysisMd；PATCH 可改字段', async () => {
     syncWorkspaceProjects(ctx)
     const app = createApp(ctx, createTaskQueue())

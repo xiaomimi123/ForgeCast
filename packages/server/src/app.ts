@@ -374,9 +374,17 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     fs.writeFileSync(benchmarkAbsPath, Buffer.from(await file.arrayBuffer()))
     const benchmarkRelPath = path.relative(ctx.config.paths.workspace, benchmarkAbsPath)
 
-    const taskId = queue.enqueue((log) => createCustomTemplate(ctx, {
-      name, aspectRatio, styleNote, benchmarkAbsPath, benchmarkRelPath, onProgress: log,
-    }))
+    const taskId = queue.enqueue(async (log) => {
+      try {
+        return await createCustomTemplate(ctx, {
+          name, aspectRatio, styleNote, benchmarkAbsPath, benchmarkRelPath, onProgress: log,
+        })
+      } catch (err) {
+        // 生成失败时不会落库，DELETE /api/templates/:id 也就永远够不到这个目录：这里主动清理，避免孤儿文件常驻磁盘
+        fs.rmSync(dir, { recursive: true, force: true })
+        throw err
+      }
+    })
     return c.json({ taskId })
   })
 
@@ -389,6 +397,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
 
   app.delete('/api/templates/:id', (c) => {
     const id = Number(c.req.param('id'))
+    if (!Number.isFinite(id)) return c.json({ error: '非法 id' }, 400)
     const row: any = ctx.db.prepare('SELECT * FROM custom_templates WHERE id = ?').get(id)
     if (!row) return c.json({ error: '模板不存在' }, 404)
     ctx.db.prepare('DELETE FROM custom_templates WHERE id = ?').run(id)

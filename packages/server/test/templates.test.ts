@@ -90,4 +90,7 @@ describe('模板库路由', () => {
   it('DELETE 不存在的 id → 404', async () => {
     expect((await app.request('/api/templates/9999', { method: 'DELETE' })).status).toBe(404)
   })
+  it('DELETE 非数字 id → 400（区别于合法但不存在的数字 id 走 404）', async () => {
+    expect((await app.request('/api/templates/not-a-number', { method: 'DELETE' })).status).toBe(400)
+  })
 })

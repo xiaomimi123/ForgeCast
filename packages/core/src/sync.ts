@@ -5,7 +5,7 @@ import type { CoreCtx } from './ctx'
 export function syncWorkspaceProjects(ctx: CoreCtx): void {
   if (!fs.existsSync(ctx.config.paths.workspace)) return
   const dirs = fs.readdirSync(ctx.config.paths.workspace, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
+    .filter((d) => d.isDirectory() && !d.name.startsWith('_'))
   const ins = ctx.db.prepare('INSERT INTO projects (slug) VALUES (?) ON CONFLICT(slug) DO NOTHING')
   for (const d of dirs) ins.run(d.name)
 }
