@@ -7,6 +7,7 @@ import ScriptTab from './workshop/ScriptTab'
 import UploadTab from './workshop/UploadTab'
 import VideoTab, { type VideoParams } from './workshop/VideoTab'
 import CutPlanEditor from './CutPlanEditor'
+import TemplatesTab from './workshop/TemplatesTab'
 
 // 做内容五 tab：按人机协作主线排序（文案→拍摄脚本→成片上传审片）；自动渲染（出视频）降为辅助
 const TABS = [
@@ -15,11 +16,12 @@ const TABS = [
   { key: 'upload', label: '成片' },
   { key: 'video', label: '出视频' },
   { key: 'cut', label: '卡点' },
+  { key: 'templates', label: '模板库' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
 function normalizeTab(v: string | null): TabKey {
-  return v === 'script' || v === 'upload' || v === 'video' || v === 'cut' ? v : 'copy'
+  return v === 'script' || v === 'upload' || v === 'video' || v === 'cut' || v === 'templates' ? v : 'copy'
 }
 
 export default function WorkshopPage() {
@@ -151,6 +153,7 @@ export default function WorkshopPage() {
       )}
       {/* key 强制切项目时重挂载，否则 CutPlanEditor 内部 plan state 不会清空，会残留上一个项目的卡点方案 */}
       {tab === 'cut' && selected && <CutPlanEditor key={selected} slug={selected} />}
+      {tab === 'templates' && <TemplatesTab />}
 
       {logs.length > 0 && (
         <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-48 overflow-y-auto space-y-1">

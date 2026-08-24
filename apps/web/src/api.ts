@@ -25,6 +25,10 @@ export interface Asset {
 }
 /** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
 export interface BgmList { root: string[]; byMood: Record<string, string[]> }
+export interface CustomTemplate {
+  id: number; name: string; aspect_ratio: 'portrait' | 'landscape'
+  segment_count: number; style_note: string | null; created_at: string
+}
 /** 需求信号（demand_signals 行）。evidence 是 JSON 串自行解析 */
 export interface DemandSignal {
   id: number; source: string; kind: 'traffic' | 'emotional' | 'supply' | null

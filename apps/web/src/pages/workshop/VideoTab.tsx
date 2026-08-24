@@ -1,4 +1,5 @@
-import type { Asset, BgmList } from '../../api'
+import { useQuery } from '@tanstack/react-query'
+import { api, type Asset, type BgmList, type CustomTemplate } from '../../api'
 import AssetCard from '../../components/AssetCard'
 
 export const VIDEO_TPLS = [
@@ -45,6 +46,11 @@ export default function VideoTab({
   slug: string
   onRegenerate: (feedback: string, asset: Asset) => void
 }) {
+  const templates = useQuery({ queryKey: ['templates'], queryFn: () => api<CustomTemplate[]>('/api/templates') })
+  const tplOptions = [
+    ...VIDEO_TPLS,
+    ...(templates.data ?? []).map((t) => ({ value: `custom-${t.id}`, label: `${t.name}（对标拆解 · ${t.aspect_ratio === 'portrait' ? '竖屏' : '横屏'}）` })),
+  ]
   const chosenId = videoFromAsset ?? copyAssets[0]?.id ?? null
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
@@ -62,7 +68,7 @@ export default function VideoTab({
           <label className="text-sm text-sub">模板</label>
           <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
             value={vp.tpl} onChange={(e) => setVp({ ...vp, tpl: e.target.value })}>
-            {VIDEO_TPLS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {tplOptions.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           {vp.tpl === 'demo' && <p className="mt-1 text-xs text-faint">需先在项目详情页上传 shots/ 截图</p>}
         </div>
