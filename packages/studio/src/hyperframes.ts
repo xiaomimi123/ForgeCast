@@ -8,7 +8,7 @@ const STUB_BYTES = Buffer.from('FORGECAST_STUB_MP4\n')
 // templates/hf 相对本文件：packages/studio/src → 仓库根/templates/hf
 const HF_TEMPLATES = fileURLToPath(new URL('../../../templates/hf', import.meta.url))
 // pin HyperFrames 版本：npx 默认拉最新，破坏性升级会让渲染无预警变化
-const HF_VERSION = '0.7.68'
+export const HF_VERSION = '0.7.68'
 // render/tts 单进程超时（Chrome/kokoro 卡死不能把进程内任务队列永久挂住）
 const RENDER_TIMEOUT_MS = 600_000
 const TTS_SPAWN_TIMEOUT_MS = 180_000
