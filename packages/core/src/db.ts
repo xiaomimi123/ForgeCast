@@ -162,6 +162,16 @@ CREATE TABLE IF NOT EXISTS demand_matches (
   biz_plan TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS custom_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  aspect_ratio TEXT NOT NULL,
+  segment_count INTEGER NOT NULL,
+  style_note TEXT,
+  benchmark_path TEXT,
+  segments_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content='knowledge_atoms', content_rowid='id');
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）

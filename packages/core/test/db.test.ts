@@ -56,4 +56,18 @@ describe('openDb', () => {
     const row = db.prepare("SELECT favorite FROM candidates WHERE repo = 'a/b'").get() as any
     expect(row.favorite).toBe(0)
   })
+  it('custom_templates 表存在且可插入', () => {
+    const db = openDb(tmpDbPath())
+    const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='custom_templates'").get()
+    expect(row).toBeTruthy()
+    const pacing = JSON.stringify({ durationSec: 12, segments: [{ start: 0, end: 12 }] })
+    const info = db.prepare(
+      "INSERT INTO custom_templates (name, aspect_ratio, segment_count, style_note, benchmark_path, segments_json) VALUES ('对标A', 'portrait', 1, '科技感', '_templates/x/benchmark.mp4', ?)",
+    ).run(pacing)
+    const inserted: any = db.prepare('SELECT * FROM custom_templates WHERE id = ?').get(info.lastInsertRowid)
+    expect(inserted.name).toBe('对标A')
+    expect(inserted.aspect_ratio).toBe('portrait')
+    expect(JSON.parse(inserted.segments_json).durationSec).toBe(12)
+    expect(inserted.created_at).toBeTruthy()
+  })
 })
