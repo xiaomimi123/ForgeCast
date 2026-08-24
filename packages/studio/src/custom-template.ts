@@ -126,6 +126,7 @@ export function customTemplateHtmlPath(ctx: CoreCtx, id: number): string {
  */
 export function computeSegmentWindows(segments: PacingSegment[], benchmarkDurationSec: number, targetDurationSec: number): { start: number; end: number }[] {
   if (benchmarkDurationSec <= 0) throw new Error('benchmarkDurationSec 必须大于 0')
+  if (segments.length === 0) throw new Error('segments 不能为空')
   const scale = targetDurationSec / benchmarkDurationSec
   const windows = segments.map((s) => ({ start: s.start * scale, end: s.end * scale }))
   windows[windows.length - 1].end = targetDurationSec

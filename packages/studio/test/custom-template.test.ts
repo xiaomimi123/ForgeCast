@@ -45,6 +45,9 @@ describe('computeSegmentWindows / bucketCuesBySegments', () => {
     const windows = computeSegmentWindows(PACING.segments, PACING.durationSec, 7)
     expect(windows.at(-1)!.end).toBe(7)
   })
+  it('segments 为空数组 → 抛错（而非静默返回 [] 或 TypeError）', () => {
+    expect(() => computeSegmentWindows([], PACING.durationSec, 6)).toThrow(/segments/)
+  })
   it('cue 按时间点落进对应窗口', () => {
     const cues = [{ start: 0.5, end: 1.5, text: 'A' }, { start: 4.2, end: 5, text: 'B' }]
     const windows = [{ start: 0, end: 2 }, { start: 2, end: 4 }, { start: 4, end: 6 }]
