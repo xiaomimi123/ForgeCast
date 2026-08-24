@@ -8,3 +8,4 @@ export { analyzeBeats, autoCutPlan, chooseBgmPath, readShots, type BeatGrid, typ
 export * from './review'
 export * from './retro'
 export * from './srt'
+export * from './benchmark'
