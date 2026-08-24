@@ -5,6 +5,7 @@ import { copyFixtures, createLlmClient, loadConfig, openDb, type CoreCtx } from 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as hyperframes from '../src/hyperframes'
 import { generateVideo } from '../src/generate'
+import { mockCustomTemplateHtml } from '../src/fixtures/custom-template-fixture'
 
 let ctx: CoreCtx
 let root: string
@@ -230,5 +231,35 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const r = await generateVideo(dctx, { slug: 'demo', tpl: 'demo', onProgress: () => {} })
     expect(r.filePath).toContain('demo-') // 仍出片
+  })
+})
+
+describe('generateVideo 自定义模板（stub）', () => {
+  it('tpl=custom-<id> 走自定义模板分支，按拆解节奏比例填满全部占位符', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const pacing = { durationSec: 12, segments: [{ start: 0, end: 4 }, { start: 4, end: 8 }, { start: 8, end: 12 }] }
+    const info = cctx.db.prepare(
+      "INSERT INTO custom_templates (name, aspect_ratio, segment_count, segments_json) VALUES ('对标A', 'portrait', 3, ?)",
+    ).run(JSON.stringify(pacing))
+    const id = Number(info.lastInsertRowid)
+    const htmlDir = path.join(cctx.config.paths.templates, 'hf', 'custom')
+    fs.mkdirSync(htmlDir, { recursive: true })
+    fs.writeFileSync(path.join(htmlDir, `${id}.html`), mockCustomTemplateHtml(3, 1080, 1920), 'utf8')
+
+    const out = await generateVideo(cctx, { slug: 'demo', tpl: `custom-${id}` })
+    expect(out.filePath).toMatch(new RegExp(`demo/videos/custom-${id}-.*\\.mp4$`))
+    const html = fs.readFileSync(path.join(cctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1080"')
+    expect(html).not.toMatch(/\{\{seg\d_(start|dur|text)\}\}/)
+    expect(html).toContain('data-start="0"')
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    expect(row.type).toBe('video')
+  })
+
+  it('自定义模板 id 不存在 → 抛错', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await expect(generateVideo(cctx, { slug: 'demo', tpl: 'custom-9999' })).rejects.toThrow('自定义模板不存在')
   })
 })

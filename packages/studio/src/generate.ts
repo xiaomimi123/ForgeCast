@@ -7,11 +7,13 @@ import { analyzeBeats, buildDemoSections, buildInsightSections, buildStorySectio
 import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildInsightSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
+import { bucketCuesBySegments, computeSegmentWindows, customTemplateHtmlPath } from './custom-template'
+import type { Pacing } from './benchmark'
 
 export interface GenerateVideoInput {
   slug: string
   assetId?: number
-  tpl?: 'flash' | 'story' | 'demo' | 'changelog' | 'insight'
+  tpl?: string
   /** 渲染参数覆盖：缺省则用 ctx.config.video.* 的值。server 是长驻进程、ctx 是所有请求共享的单例，
    *  这几个覆盖值只在本次调用内生效（算一份局部 video 配置），绝不 mutate ctx.config.video——
    *  CLI 短进程里直接突变 ctx.config.video 是安全的，但 server 这样做会污染后续请求，是必须绕开的坑。 */
@@ -71,6 +73,14 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   onProgress('解析文案、组装视频参数…')
   const doc = parseCopyOutput(fs.readFileSync(path.join(ctx.config.paths.workspace, copy.file_path), 'utf8'))
   const brandName = project.brand_name ?? slug
+
+  if (tpl.startsWith('custom-')) {
+    const id = Number(tpl.slice('custom-'.length))
+    if (!Number.isFinite(id)) throw new Error(`非法自定义模板标识: ${tpl}`)
+    const row: any = ctx.db.prepare('SELECT * FROM custom_templates WHERE id = ?').get(id)
+    if (!row) throw new Error(`自定义模板不存在: ${tpl}`)
+    return renderCustomTemplate(ctx, row, { slug, doc, hook: copy.hook, projectId: project.id, video, onProgress })
+  }
 
   // changelog：独立走 HyperFrames 路径，不碰下方 flash/story/demo 的旧 Remotion 逻辑（后续任务再迁移）
   if (tpl === 'changelog') {
@@ -233,4 +243,35 @@ async function renderAndRegister(
   advanceStage(ctx.db, projectId, 'producing')
   onProgress(`视频完成: ${relPath}`)
   return { assetId: Number(info.lastInsertRowid), filePath: relPath }
+}
+
+/** 自定义模板渲染：TTS→BGM 流程与 flash 一致，差异只在按拆解节奏比例填 N 个动态分段占位符。 */
+async function renderCustomTemplate(
+  ctx: CoreCtx, row: any,
+  opts: { slug: string; doc: ReturnType<typeof parseCopyOutput>; hook: string; projectId: number; video: VideoCfg; onProgress: (m: string) => void },
+): Promise<GeneratedVideo> {
+  const { slug, doc, hook, projectId, video, onProgress } = opts
+  const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
+  onProgress('TTS 配音…')
+  const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
+  const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
+  if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
+  const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
+  const duration = Math.max(6, Math.ceil(lastEnd))
+  const { audioMix } = await selectBgm(ctx, video, duration, onProgress, hook)
+
+  const pacing: Pacing = JSON.parse(row.segments_json)
+  const windows = computeSegmentWindows(pacing.segments, pacing.durationSec, duration)
+  const texts = bucketCuesBySegments(voice.cues, windows)
+  const rawHtml = fs.readFileSync(customTemplateHtmlPath(ctx, row.id), 'utf8')
+  const slots: Record<string, string> = { duration: String(duration) }
+  windows.forEach((w, i) => {
+    slots[`seg${i}_start`] = String(w.start)
+    slots[`seg${i}_dur`] = String(Math.max(0.5, w.end - w.start))
+    slots[`seg${i}_text`] = texts[i] ?? ''
+  })
+  let html = fillTemplate(rawHtml, slots)
+  html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)
+  scaffoldHfProject(hfDir, html)
+  return renderAndRegister(ctx, hfDir, slug, `custom-${row.id}`, hook, projectId, onProgress, audioMix)
 }
