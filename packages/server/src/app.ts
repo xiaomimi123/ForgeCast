@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -7,7 +8,7 @@ import { generateCopy, generateDemoScreens, generateShootScript, regenerateCover
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
 import { rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
-import { analyzeBeats, autoCutPlan, chooseBgmPath, generateRetro, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
+import { analyzeBeats, autoCutPlan, chooseBgmPath, createCustomTemplate, customTemplateHtmlPath, generateRetro, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
 import {
   addCapability, addRequest, decomposeRequest, deleteCapability, generateProposal,
   getRequestDetail, listRequests, requestFromLead, searchWheels, updateCapability,
@@ -351,6 +352,53 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (?, 'video', NULL, ?, '[]', 'upload')",
     ).run(project.id, relPath)
     return c.json({ ok: true, assetId: Number(info.lastInsertRowid), name: finalName })
+  })
+
+  app.post('/api/templates', async (c) => {
+    const body = await c.req.parseBody()
+    const file = body.file
+    if (!(file instanceof File)) return c.json({ error: '缺少 file 字段' }, 400)
+    const aspectRatio = body.aspectRatio === 'portrait' || body.aspectRatio === 'landscape' ? body.aspectRatio : null
+    if (!aspectRatio) return c.json({ error: 'aspectRatio 必须是 portrait 或 landscape' }, 400)
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return c.json({ error: '缺少模板名称' }, 400)
+    const safeName = path.basename(file.name)
+    if (!/\.(mp4|mov|m4v)$/i.test(safeName)) return c.json({ error: '仅支持 mp4/mov/m4v' }, 400)
+    const styleNote = typeof body.styleNote === 'string' && body.styleNote.trim() ? body.styleNote.trim() : undefined
+
+    const dirId = randomUUID()
+    const dir = path.join(ctx.config.paths.workspace, '_templates', dirId)
+    fs.mkdirSync(dir, { recursive: true })
+    const ext = path.extname(safeName) || '.mp4'
+    const benchmarkAbsPath = path.join(dir, `benchmark${ext}`)
+    fs.writeFileSync(benchmarkAbsPath, Buffer.from(await file.arrayBuffer()))
+    const benchmarkRelPath = path.relative(ctx.config.paths.workspace, benchmarkAbsPath)
+
+    const taskId = queue.enqueue((log) => createCustomTemplate(ctx, {
+      name, aspectRatio, styleNote, benchmarkAbsPath, benchmarkRelPath, onProgress: log,
+    }))
+    return c.json({ taskId })
+  })
+
+  app.get('/api/templates', (c) => {
+    const rows = ctx.db.prepare(
+      'SELECT id, name, aspect_ratio, segment_count, style_note, created_at FROM custom_templates ORDER BY id DESC',
+    ).all()
+    return c.json(rows)
+  })
+
+  app.delete('/api/templates/:id', (c) => {
+    const id = Number(c.req.param('id'))
+    const row: any = ctx.db.prepare('SELECT * FROM custom_templates WHERE id = ?').get(id)
+    if (!row) return c.json({ error: '模板不存在' }, 404)
+    ctx.db.prepare('DELETE FROM custom_templates WHERE id = ?').run(id)
+    const htmlPath = customTemplateHtmlPath(ctx, id)
+    if (fs.existsSync(htmlPath)) fs.rmSync(htmlPath)
+    if (row.benchmark_path) {
+      const benchDir = path.dirname(path.join(ctx.config.paths.workspace, row.benchmark_path))
+      if (fs.existsSync(benchDir)) fs.rmSync(benchDir, { recursive: true, force: true })
+    }
+    return c.json({ ok: true })
   })
 
   app.post('/api/assets/:id/review', async (c) => {
