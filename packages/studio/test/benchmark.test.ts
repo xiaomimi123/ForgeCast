@@ -41,4 +41,13 @@ describe('analyzeBenchmark', () => {
     })
     expect(p.segments.length).toBeGreaterThanOrEqual(MIN_SEGMENTS)
   })
+
+  it('probe 抛错也不冒泡（deps 假实现模拟 ffprobe 崩溃）→ fail-soft 回退默认时长三段', async () => {
+    const p = await analyzeBenchmark('/fake.mp4', {
+      probe: async () => { throw new Error('ffprobe crashed') },
+      detect: async () => [],
+    })
+    expect(p.durationSec).toBe(15)
+    expect(p.segments).toHaveLength(3)
+  })
 })

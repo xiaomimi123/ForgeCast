@@ -59,7 +59,12 @@ function evenSplit(durationSec: number, n: number): PacingSegment[] {
 export async function analyzeBenchmark(videoPath: string, deps: BenchmarkDeps = {}): Promise<Pacing> {
   const probe = deps.probe ?? probeBenchmarkDuration
   const detect = deps.detect ?? detectSceneCuts
-  const durationSec = (await probe(videoPath)) ?? DEFAULT_DURATION_SEC
+  let durationSec: number
+  try {
+    durationSec = (await probe(videoPath)) ?? DEFAULT_DURATION_SEC
+  } catch {
+    durationSec = DEFAULT_DURATION_SEC
+  }
 
   let cuts: number[] = []
   try {
