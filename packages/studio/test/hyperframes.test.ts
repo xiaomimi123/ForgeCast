@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, planCutTimes, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, buildInsightSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
+import { buildDemoSections, buildFlashSections, buildInsightSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
@@ -392,6 +392,87 @@ describe('buildInsightSections（数据卡片按旁白节奏累加）', () => {
     const r = buildInsightSections({ cues, durationSec: 20, ...base })
     expect(r.accents).toContain('tl.from("#insCard0_0"')
     expect(r.accents).toContain(', 3);')
+  })
+})
+
+describe('buildFlashSections（开场钩子→中段流动字幕→结尾CTA，按真实时长动态铺满）', () => {
+  const base = { painTitle: '大标题', sellingPoint: '卖点一句话', cta: '扣1', brandName: 'demo' }
+
+  it('painTitle 出现在开头 data-start="0"', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
+    expect(r.html).toContain('data-start="0"')
+    expect(r.html).toContain('大标题')
+  })
+
+  it('回归：外层 flex 容器（.center，column 方向）与 .tw 解码目标必须是两层不同元素，不能合一层——' +
+     '否则解码脚本往 .tw 元素里塞的逐字 <span> 会被当成 flex 子项纵向堆成一条竖线（真渲验证过的视觉 bug）', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
+    // 外层 clip 容器（fill pad center）不能同时带 painT/tw：那样 .tw 就是 flex 容器本身
+    expect(r.html).not.toMatch(/class="clip fill pad center[^"]*\btw\b[^"]*"/)
+    // painT/tw 必须出现在内层独立的 div 上
+    expect(r.html).toMatch(/<div class="painT tw">/)
+  })
+
+  it('回归：此前 CTA 写死在 8-12s 收尾，长视频（60s）后段空转——现在 CTA 必须跟着 durationSec 走到结尾附近', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 60, ...base })
+    // ctaDur = clamp(60*0.12=7.2, 2.5, 4) = 4；cta 应在 56s 起，而不是停在旧版的 8s
+    expect(r.html).toContain('data-start="56"')
+    expect(r.html).not.toMatch(/id="s3"[^>]*data-start="8"/)
+  })
+
+  it('短时长（20s）下 hook/cta 按比例算，不是写死的 4s', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
+    // hookDur = clamp(20*0.15=3, 2.5, 4) = 3；ctaDur = clamp(20*0.12=2.4, 2.5, 4) = 2.5
+    expect(r.html).toContain('data-duration="3"')
+    expect(r.html).toContain('data-start="17.5"')
+  })
+
+  it('sellingPoint 作为高亮卡片出现在中段，class 带 highlight 标记', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
+    expect(r.html).toContain('卖点一句话')
+    expect(r.html).toMatch(/class="[^"]*highlightCard[^"]*"/)
+  })
+
+  it('中段 cue 逐条生成流动字幕 clip，data-start 对齐（钳制在中段窗口内）cue 时间', () => {
+    // durationSec=20 时高亮卡片窗口是 [8.8, 11.3]（见下一条回归用例），这两句 cue 选在窗口外
+    const cues = [{ start: 5, end: 7, text: '第一句话' }, { start: 13, end: 15, text: '第二句话' }]
+    const r = buildFlashSections({ cues, durationSec: 20, ...base })
+    expect(r.html).toContain('data-start="5"')
+    expect(r.html).toContain('第一句话')
+    expect(r.html).toContain('data-start="13"')
+    expect(r.html).toContain('第二句话')
+  })
+
+  it('中段没有任何 cue 落入窗口时不报错，仍正常渲染 hook/cta/sellingPoint', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
+    expect(r.html).toContain('大标题')
+    expect(r.html).toContain('扣1')
+    expect(r.html).toContain('卖点一句话')
+  })
+
+  it('回归：高亮卡片时段内的 cue 不再生成流动字幕（此前两者都是满屏居中，同时出现会叠成一坨看不清）', () => {
+    // durationSec=20：hookDur=3, ctaDur=2.5, midStart=3, midEnd=17.5
+    // highlightStart = 3 + (17.5-3)*0.4 = 8.8, highlightDur = min(2.5, 17.5-8.8) = 2.5 → 高亮窗口 [8.8, 11.3]
+    const cues = [
+      { start: 5, end: 6, text: '窗口前的正常字幕' },
+      { start: 9, end: 10.5, text: '这句正好撞上高亮卡片' },
+      { start: 13, end: 14, text: '窗口后的正常字幕' },
+    ]
+    const r = buildFlashSections({ cues, durationSec: 20, ...base })
+    expect(r.html).toContain('窗口前的正常字幕')
+    expect(r.html).toContain('窗口后的正常字幕')
+    expect(r.html).not.toContain('这句正好撞上高亮卡片')
+  })
+
+  it('极短时长（3s）下 hook+cta 按比例压缩不越界，不产生负数时长', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 3, ...base })
+    expect(r.html).not.toMatch(/data-duration="-/)
+    expect(r.html).not.toMatch(/data-start="-/)
+  })
+
+  it('accents 含 hook/cta/highlight 的入场动画', () => {
+    const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
+    expect(r.accents).toContain('tl.from(')
   })
 })
 

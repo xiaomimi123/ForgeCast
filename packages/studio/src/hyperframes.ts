@@ -488,6 +488,67 @@ export function buildStorySections(opts: {
   ].join('\n')
 }
 
+/**
+ * 组装 flash 模板分镜段（填 <!--HF_SECTIONS-->/<!--HF_ACCENTS-->）。开场大字钩子→中段流动字幕
+ * （按旁白 cue 时间点逐条铺，卖点作为高亮卡片插在中段）→结尾 CTA。
+ *
+ * hookDur/ctaDur 按 durationSec 比例算（不再是旧版写死的各 4s）——此前的 bug：三段固定塞在
+ * 0-12s，配音超过 12s 时后半段纯背景空转，没有任何文字画面。现在 CTA 永远贴着 durationSec 收尾，
+ * 中段字幕逐条覆盖旁白，视频多长内容就铺多长，不留死区。
+ */
+export function buildFlashSections(opts: {
+  cues: Cue[]; durationSec: number; painTitle: string; sellingPoint: string; cta: string; brandName: string
+}): { html: string; accents: string } {
+  const { cues, durationSec, painTitle, sellingPoint, cta, brandName } = opts
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+  // 外层 clip 容器只管定位（fill/pad/center，center 是 flex-direction:column）——绝不能跟 .tw
+  // 混到同一元素上：解码脚本会把逐字 <span> 塞进 .tw 元素本身，若那也是 flex 容器，每个字都变成
+  // flex 子项被纵向堆成一条竖线（真渲验证过的视觉 bug）。文字样式/解码目标一律放内层独立 div。
+  const clip = (id: string, start: number, dur: number, track: number, innerHtml: string) =>
+    `<div id="${id}" class="clip fill pad center" data-start="${+start.toFixed(2)}" data-duration="${+Math.max(0.3, dur).toFixed(2)}" data-track-index="${track}">${innerHtml}</div>`
+
+  let hookDur = clamp(durationSec * 0.15, 2.5, 4)
+  let ctaDur = clamp(durationSec * 0.12, 2.5, 4)
+  if (hookDur + ctaDur >= durationSec) {
+    const scale = Math.max(0, (durationSec * 0.8)) / (hookDur + ctaDur)
+    hookDur *= scale
+    ctaDur *= scale
+  }
+  const midStart = hookDur
+  const midEnd = Math.max(midStart, durationSec - ctaDur)
+
+  const parts: string[] = []
+  const accentLines: string[] = []
+
+  parts.push(clip('flashHook', 0, hookDur, 1, `<div class="painT tw">${escapeHtml(painTitle)}</div>`))
+  accentLines.push('tl.from("#flashHook", { opacity: 0, y: 20, duration: .4 }, 0);')
+
+  // 高亮卡片先算好时段：流动字幕要避开这段窗口，两者都是满屏居中，同时出现会叠成一坨看不清
+  const highlightStart = midStart + (midEnd - midStart) * 0.4
+  const highlightDur = Math.min(2.5, Math.max(0.5, midEnd - highlightStart))
+  const highlightEnd = highlightStart + highlightDur
+
+  const midCues = cues
+    .map((c) => ({ start: Math.max(c.start, midStart), end: Math.min(c.end, midEnd), text: c.text }))
+    .filter((c) => c.end - c.start > 0.1)
+    .filter((c) => c.end <= highlightStart || c.start >= highlightEnd)
+  midCues.forEach((c, i) => {
+    const id = `flashCap${i}`
+    parts.push(clip(id, c.start, c.end - c.start, 2, `<div class="flowCap tw">${escapeHtml(c.text)}</div>`))
+    accentLines.push(`tl.from("#${id}", { opacity: 0, y: 16, duration: .35 }, ${+c.start.toFixed(2)});`)
+  })
+
+  parts.push(clip('flashHighlight', highlightStart, highlightDur, 3,
+    `<div class="highlightCard"><div class="sell tw">${escapeHtml(sellingPoint)}</div></div>`))
+  accentLines.push(`tl.from("#flashHighlight", { opacity: 0, scale: .9, duration: .35 }, ${+highlightStart.toFixed(2)});`)
+
+  parts.push(clip('flashCta', midEnd, ctaDur, 1,
+    `<div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div>`))
+  accentLines.push(`tl.from("#flashCta", { opacity: 0, y: 20, duration: .4 }, ${+midEnd.toFixed(2)});`)
+
+  return { html: parts.join('\n'), accents: accentLines.join('\n') }
+}
+
 // insight 模板卡片配色循环：组内按序号取色，保证每组第一张卡固定暖黄，跟参考视频观感一致
 const INSIGHT_PALETTE = ['#ffd54f', '#2dd4bf', '#34d399', '#60a5fa', '#a78bfa', '#fb7185']
 // 挖数据卡片用的数字正则：百分比/万/亿/倍/折，或"数字(-数字)?+常见量词"（口播稿更常见的写法，

@@ -22,6 +22,12 @@ describe('buildFlashProps', () => {
     expect(p.cta.length).toBeGreaterThan(0)
     expect(p.brandName).toBe('forgecast')
   })
+  it('CTA 段里画面/台词分行时，取台词那句而不是画面那句（回归：曾错把画面指示当CTA文案）', () => {
+    const script = '【0-3s 钩子】开场\n【52-60s CTA】\n画面：回到本人，搞怪敬礼。\n台词：需要的评论区扣1，模板选型和换皮避坑清单，直接安排给你。'
+    const p = buildFlashProps({ ...doc, douyinScript: script } as any)
+    expect(p.cta).toBe('需要的评论区扣1，模板选型和换皮避坑清单，直接安排给你。')
+    expect(p.cta).not.toContain('画面：')
+  })
 })
 
 describe('buildInsightSlots', () => {

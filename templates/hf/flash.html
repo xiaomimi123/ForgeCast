@@ -11,25 +11,21 @@
       .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
       .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
       .painT { font-size: 100px; font-weight: 900; line-height: 1.28; color: #fff; }
-      .sell { font-size: 72px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+      .sell { font-size: 64px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
       .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
       .brand { font-size: 40px; color: #8888aa; }
       .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+      /* 中段流动字幕：跟着旁白 cue 逐条切换，比底部字幕条更大更醒目，是画面主内容而非辅助字幕 */
+      .flowCap { font-size: 62px; font-weight: 700; color: #fff; line-height: 1.45; max-width: 900px; }
+      /* 卖点高亮卡片：中段插一次视觉断点，跟流动字幕区分开来，暖黄描边呼应品牌色 */
+      .highlightCard { padding: 40px 56px; border: 3px solid #ffd54f; border-radius: 24px; background: rgba(255,213,79,.10); }
       <!--HF_FXCSS-->
     </style>
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
       <!--HF_BG-->
-      <div id="s1" class="clip fill pad center" data-start="0" data-duration="4" data-track-index="1">
-        <div class="painT tw">{{painTitle}}</div>
-      </div>
-      <div id="s2" class="clip fill pad center" data-start="4" data-duration="4" data-track-index="1">
-        <div class="sell tw">{{sellingPoint}}</div>
-      </div>
-      <div id="s3" class="clip fill pad center" data-start="8" data-duration="4" data-track-index="1">
-        <div class="cta tw">{{cta}}</div><div class="brand">@{{brandName}}</div>
-      </div>
+      <!--HF_SECTIONS-->
       <!--HF_CAPTIONS-->
       <!--HF_AUDIO-->
     </div>

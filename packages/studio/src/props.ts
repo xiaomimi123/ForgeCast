@@ -10,8 +10,11 @@ export interface FlashProps {
 
 /** 从解析后的文案取 flash 三段文字（均有兜底，不抛错） */
 export function buildFlashProps(doc: CopyDoc, brandName = 'forgecast'): FlashProps {
-  const ctaMatch = doc.douyinScript.match(/【[^】]*CTA[^】]*】\s*(.+)/)
-  const cta = (ctaMatch?.[1] ?? doc.comments.replies[0] ?? '想要同款？评论区扣1').trim()
+  // CTA 段落内常见"画面：.../台词：..."分行写法（画面是拍摄指示不是口播文案），
+  // 优先取"台词："那句；没有台词行则退回段落第一行（兼容 CTA 就一行文字的旧写法）
+  const ctaSection = doc.douyinScript.match(/【[^】]*CTA[^】]*】([\s\S]*?)(?=【|$)/)?.[1] ?? ''
+  const ctaLine = ctaSection.match(/台词[：:]\s*(.+)/)?.[1] ?? ctaSection.trim().split('\n')[0]
+  const cta = (ctaLine || doc.comments.replies[0] || '想要同款？评论区扣1').trim()
   return {
     painTitle: doc.cover.main || doc.titles[0] || '',
     sellingPoint: doc.cover.sub || doc.titles[1] || '',

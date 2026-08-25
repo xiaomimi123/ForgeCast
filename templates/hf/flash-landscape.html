@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0f0f1a; font-family: "NotoSC", "Noto Sans CJK SC", "PingFang SC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 70px 160px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      .painT { font-size: 84px; font-weight: 900; line-height: 1.28; color: #fff; }
+      .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+      .cta { font-size: 62px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+      .brand { font-size: 34px; color: #8888aa; }
+      .cap { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+      /* 中段流动字幕：跟着旁白 cue 逐条切换，比底部字幕条更大更醒目，是画面主内容而非辅助字幕 */
+      .flowCap { font-size: 50px; font-weight: 700; color: #fff; line-height: 1.45; max-width: 1300px; }
+      /* 卖点高亮卡片：中段插一次视觉断点，跟流动字幕区分开来，暖黄描边呼应品牌色 */
+      .highlightCard { padding: 30px 48px; border: 3px solid #ffd54f; border-radius: 22px; background: rgba(255,213,79,.10); }
+      <!--HF_FXCSS-->
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1920" data-height="1080">
+      <!--HF_BG-->
+      <!--HF_SECTIONS-->
+      <!--HF_CAPTIONS-->
+      <!--HF_AUDIO-->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      <!--HF_BGANIM-->
+      <!--HF_ACCENTS-->
+      <!--HF_DECODE-->
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

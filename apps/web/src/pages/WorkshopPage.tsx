@@ -36,7 +36,7 @@ export default function WorkshopPage() {
   const logRef = useRef<HTMLDivElement>(null)
 
   // 视频渲染参数：默认值与后端 config.video 默认一致（bgm/mood 空串=自动，bg=grid，旁白字幕默认关）
-  const [vp, setVp] = useState<VideoParams>({ tpl: 'flash', bgm: '', mood: '', bg: 'grid', captions: false })
+  const [vp, setVp] = useState<VideoParams>({ tpl: 'flash', bgm: '', mood: '', bg: 'grid', captions: false, ratio: 'portrait' })
   // 「出视频」tab 当前选中的文案来源；从「文案」tab 点「去出视频 →」时被预选
   const [videoFromAsset, setVideoFromAsset] = useState<number | null>(null)
 
@@ -81,7 +81,7 @@ export default function WorkshopPage() {
     setLogs([])
     try {
       const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
-        method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions }),
+        method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions, ratio: vp.ratio }),
       })
       subscribeTask(taskId, (e) => {
         setLogs((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])

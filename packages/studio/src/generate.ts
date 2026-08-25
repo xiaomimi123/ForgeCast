@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, buildDemoSections, buildInsightSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildInsightSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
@@ -21,6 +21,8 @@ export interface GenerateVideoInput {
   mood?: string
   bg?: string
   captions?: boolean
+  /** 画布比例：仅 flash 模板支持横竖屏切换，其余模板固定竖屏不受此参数影响。缺省 portrait。 */
+  ratio?: 'portrait' | 'landscape'
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
@@ -196,8 +198,9 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress, audioMix)
   }
 
-  // flash：纯文字快闪（HyperFrames）
+  // flash：开场钩子→中段流动字幕（按旁白节奏）→结尾CTA（HyperFrames）。支持横竖屏。
   const s = buildFlashSlots(doc, brandName)
+  const ratio = input.ratio ?? 'portrait'
   const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
   onProgress('TTS 配音…')
   const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
@@ -205,12 +208,16 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
   const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
   const duration = Math.max(12, Math.ceil(lastEnd))
-  // BGM：选曲→分析节拍（fail-soft）。段边界写死在模板、不吸附；静态文字场不加脉冲，只混音
+  // BGM：选曲→分析节拍（fail-soft）。段落时长按 duration 动态算，不再写死；静态文字场不加脉冲，只混音
   const { audioMix } = await selectBgm(ctx, video, duration, onProgress, copy.hook)
-  let html = fillTemplate(readTemplate('flash'), { ...s, duration: String(duration) })
+  const sections = buildFlashSections({
+    cues: voice.cues, durationSec: duration, painTitle: s.painTitle, sellingPoint: s.sellingPoint, cta: s.cta, brandName: s.brandName,
+  })
+  let html = fillTemplate(readTemplate(ratio === 'landscape' ? 'flash-landscape' : 'flash'), { duration: String(duration) })
+  html = html.replace('<!--HF_SECTIONS-->', () => sections.html)
   html = injectTechFx(html, { bg: video.bg, durationSec: duration })
   html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)
-  html = fillAccents(html, '')
+  html = fillAccents(html, sections.accents)
   scaffoldHfProject(hfDir, html)
   return renderAndRegister(ctx, hfDir, slug, 'flash', copy.hook, project.id, onProgress, audioMix)
 }

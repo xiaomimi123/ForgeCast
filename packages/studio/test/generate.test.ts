@@ -35,11 +35,31 @@ describe('generateVideo (stub)', () => {
     expect(html).not.toContain('<!--HF_ACCENTS-->')
     // flash 全套 fx：科技背景注入 + 文字带解码标记 + fx 标记消费干净
     expect(html).toContain('id="techbg"')
-    expect(html).toContain('class="painT tw"')
+    expect(html).toMatch(/class="[^"]*painT tw[^"]*"/)
+    // 分段按 buildFlashSections 动态铺满：CTA 必须跟着实际 duration 走，不再写死在 8-12s
+    expect(html).toContain('id="flashCta"')
+    expect(html).not.toMatch(/id="flashCta"[^>]*data-start="8"/)
     expect(html).not.toContain('<!--HF_BG-->'); expect(html).not.toContain('<!--HF_DECODE-->'); expect(html).not.toContain('<!--HF_FXCSS-->')
+    expect(html).not.toContain('<!--HF_SECTIONS-->')
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
     expect(row.type).toBe('video')
     expect(row.file_path).toBe(out.filePath)
+  })
+  it('tpl=flash + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash', ratio: 'landscape' })
+    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+  })
+  it('tpl=flash 不传 ratio 默认竖屏，画布 1080x1920', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1080"')
+    expect(html).toContain('data-height="1920"')
   })
   it('tpl=story 走 HyperFrames，产出气泡对话 + asset', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })

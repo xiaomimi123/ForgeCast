@@ -26,7 +26,7 @@ export const BGS = [
   { value: 'none', label: '不加背景' },
 ]
 
-export interface VideoParams { tpl: string; bgm: string; mood: string; bg: string; captions: boolean }
+export interface VideoParams { tpl: string; bgm: string; mood: string; bg: string; captions: boolean; ratio: 'portrait' | 'landscape' }
 
 /** 出视频 tab：渲染参数面板（选文案来源+模板+BGM+情绪+背景+字幕）+ 竖屏成片网格 */
 export default function VideoTab({
@@ -72,6 +72,19 @@ export default function VideoTab({
           </select>
           {vp.tpl === 'demo' && <p className="mt-1 text-xs text-faint">需先在项目详情页上传 shots/ 截图</p>}
         </div>
+        {vp.tpl === 'flash' && (
+          <div>
+            <label className="text-sm text-sub">画布比例</label>
+            <div className="mt-1 flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={vp.ratio === 'portrait'} onChange={() => setVp({ ...vp, ratio: 'portrait' })} /> 竖屏 9:16
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={vp.ratio === 'landscape'} onChange={() => setVp({ ...vp, ratio: 'landscape' })} /> 横屏 16:9
+              </label>
+            </div>
+          </div>
+        )}
         <div>
           <label className="text-sm text-sub">BGM</label>
           <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"

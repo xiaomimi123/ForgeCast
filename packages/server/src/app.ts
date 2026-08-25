@@ -596,6 +596,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     // tpl 白名单校验：story/demo/changelog/insight 显式放行，其余（含未传）一律回落 flash
     const tpl = ['story', 'demo', 'changelog', 'insight'].includes(body.tpl) || /^custom-\d+$/.test(body.tpl)
       ? body.tpl : 'flash'
+    const ratio = body.ratio === 'landscape' ? 'landscape' : 'portrait'
     const taskId = queue.enqueue((log) => generateVideo(ctx, {
       slug,
       assetId: typeof body.assetId === 'number' ? body.assetId : undefined,
@@ -604,6 +605,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       mood: typeof body.mood === 'string' ? body.mood : undefined,
       bg: typeof body.bg === 'string' ? body.bg : undefined,
       captions: typeof body.captions === 'boolean' ? body.captions : undefined,
+      ratio,
       onProgress: log,
     }))
     return c.json({ taskId })

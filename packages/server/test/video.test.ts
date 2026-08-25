@@ -45,6 +45,24 @@ describe('video API (stub)', () => {
     const assets = await (await app.request('/api/projects/demo/assets')).json() as any[]
     expect(assets.some((a) => a.type === 'video')).toBe(true)
   })
+  it('POST video {ratio:landscape} → 透传给 generateVideo，产出横屏 1920x1080 画布', async () => {
+    const { taskId } = await (await app.request('/api/projects/demo/video', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ratio: 'landscape' }),
+    })).json() as any
+    await runTask(taskId)
+    const html = fs.readFileSync(path.join(ctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+  })
+  it('POST video 不传 ratio 或传非法值 → 回落竖屏', async () => {
+    const { taskId } = await (await app.request('/api/projects/demo/video', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ratio: 'square' }),
+    })).json() as any
+    await runTask(taskId)
+    const html = fs.readFileSync(path.join(ctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1080"')
+    expect(html).toContain('data-height="1920"')
+  })
   it('POST video {tpl:story} → 任务完成 → video 素材', async () => {
     const { taskId } = await (await app.request('/api/projects/demo/video', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tpl: 'story' }),
