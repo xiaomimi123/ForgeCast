@@ -16,4 +16,10 @@ describe('buildDemoProps', () => {
     expect(p.cta).toBe('评论区扣1')
     expect(p.brandName).toBe('快客通')
   })
+  it('回归：报价段里画面/台词分行时取台词那句而不是画面指示（同 flash CTA 曾踩过的坑，真渲验证过 buildDemoProps 这份独立正则没跟着一起改）', () => {
+    const script = '【0-3s 钩子】开场\n【45-52s 报价锚点】\n画面：对比图：左边旧方案，右边新方案。\n台词：外面做要几万，我这套成本一顿火锅钱。\n【52-60s CTA】评论区扣1'
+    const p = buildDemoProps({ ...doc, douyinScript: script } as any)
+    expect(p.priceAnchor).toBe('外面做要几万，我这套成本一顿火锅钱。')
+    expect(p.priceAnchor).not.toContain('画面：')
+  })
 })

@@ -228,6 +228,17 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     // 截图拷进 assets
     expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
   })
+  it('tpl=demo + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
+    const shotsDir = path.join(root, 'workspace/demo/shots')
+    fs.mkdirSync(shotsDir, { recursive: true })
+    fs.writeFileSync(path.join(shotsDir, '01.png'), pngOf(1080, 1920))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(dctx, { slug: 'demo', tpl: 'demo', ratio: 'landscape' })
+    const html = fs.readFileSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+  })
   it('有 cutplan.json：按方案渲染（钉曲 + 方案 cuts），不重跑选曲', async () => {
     const shotsDir = path.join(root, 'workspace/demo/shots')
     fs.mkdirSync(shotsDir, { recursive: true })

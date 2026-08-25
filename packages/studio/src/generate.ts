@@ -133,6 +133,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const shots = readShots(path.join(ctx.config.paths.workspace, slug, 'shots'))
     if (!shots.length) throw new Error(`demo 模板需要产品截图，请放入 workspace/${slug}/shots/（png/jpg/webp）`)
     const s = buildDemoSlots(doc, brandName)
+    const ratio = input.ratio ?? 'portrait'
     const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
     onProgress('TTS 配音…')
     const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
@@ -163,7 +164,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
       grid = sel.grid; audioMix = sel.audioMix
     }
     const demo = buildDemoSections({ ...s, shots, durationSec: duration, beats: (!demoPlan && grid) ? gridBeats(grid, duration) : undefined, plan: demoPlan })
-    let html = fillTemplate(readTemplate('demo'), { duration: String(duration) })
+    let html = fillTemplate(readTemplate(ratio === 'landscape' ? 'demo-landscape' : 'demo'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', () => demo.html)
     html = injectTechFx(html, { bg: video.bg, durationSec: duration })
     html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)

@@ -74,8 +74,10 @@ export interface DemoProps {
 export function buildDemoProps(doc: CopyDoc, brandName = 'forgecast'): DemoProps {
   const flash = buildFlashProps(doc, brandName)
   const painPoints = doc.xhsBody.split(/[。！？\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 3)
-  const anchorMatch = doc.douyinScript.match(/【[^】]*报价[^】]*】\s*(.+)/)
-  const priceAnchor = (anchorMatch?.[1] ?? '外面做要几万，我这套成本一顿火锅钱').trim()
+  // 同 CTA 段一样，报价锚点段常见"画面：xxx / 台词：xxx"分行写法，取台词那句（见 buildFlashProps 同类修复）
+  const anchorSection = doc.douyinScript.match(/【[^】]*报价[^】]*】([\s\S]*?)(?=【|$)/)?.[1] ?? ''
+  const anchorLine = anchorSection.match(/台词[：:]\s*(.+)/)?.[1] ?? anchorSection.trim().split('\n')[0]
+  const priceAnchor = (anchorLine || '外面做要几万，我这套成本一顿火锅钱').trim()
   return {
     painTitle: flash.painTitle,
     painPoints: painPoints.length ? painPoints : [flash.painTitle],
