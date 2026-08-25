@@ -28,3 +28,4 @@ templates/bgm/**/*.m4a
 templates/bgm/**/*.beats.json
 templates/sfx/*.mp3
 templates/sfx/*.wav
+.worktrees/
