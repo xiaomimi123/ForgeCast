@@ -114,6 +114,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   // insight：数据卡片解说（HyperFrames）。卡片直接从 TTS cue 文本挖数字，时机跟着旁白逐句走
   if (tpl === 'insight') {
     const s = buildInsightSlots(doc, brandName)
+    const ratio = input.ratio ?? 'portrait'
     const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
     onProgress('TTS 配音…')
     const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
@@ -123,7 +124,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     const duration = Math.max(16, Math.ceil(lastEnd))
     const { audioMix } = await selectBgm(ctx, video, duration, onProgress, copy.hook)
     const sections = buildInsightSections({ cues: voice.cues, durationSec: duration, painTitle: s.painTitle, cta: s.cta, brandName: s.brandName })
-    let html = fillTemplate(readTemplate('insight'), { duration: String(duration) })
+    let html = fillTemplate(readTemplate(ratio === 'landscape' ? 'insight-landscape' : 'insight'), { duration: String(duration) })
     html = html.replace('<!--HF_SECTIONS-->', () => sections.html)
     html = injectTechFx(html, { bg: video.bg, durationSec: duration })
     html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)

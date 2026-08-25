@@ -192,6 +192,14 @@ describe('generateVideo (stub)', () => {
     expect(html).not.toContain('<!--HF_SECTIONS-->')
     expect(html).not.toContain('<!--HF_ACCENTS-->')
   })
+  it('tpl=insight + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(hfCtx, { slug: 'demo', tpl: 'insight', ratio: 'landscape' })
+    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+  })
   it('tpl=insight 文案有数字句时按 cue 时机生成数据卡片，累加淡入', async () => {
     // 自建一条口播稿里带百分比数据的文案，验证卡片真的会生成、且挂了淡入 accent
     const doc = `## 标题\n1. 标题一\n\n## 小红书正文\n正文\n\n## 抖音口播脚本\n效率提升了50%，客户满意度也涨到80%。\n\n## 封面文案\n主标题：数据说话\n副标题：看得见的增长\n\n## 评论区运营\n### 预埋提问\n1. 真的假的\n### 回复话术\n1. 真的，数据都在后台可查`
