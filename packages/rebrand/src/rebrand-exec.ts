@@ -1,7 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
+import { detectAndRunBuild } from './detect-build'
 import type { AgentResult } from './fixtures/rebrand-exec-fixture'
+import { mockClone, mockRunAgent, mockRunBuild } from './fixtures/rebrand-exec-fixture'
+import { spawnCapture } from './spawn-capture'
 
 export interface RebrandExecDeps {
   clone: (url: string, dir: string) => Promise<void>
@@ -100,4 +103,31 @@ function renderReport(input: {
     lines.push('', '## 最后一次 build 输出', '```', build.output, '```')
   }
   return `${lines.join('\n')}\n`
+}
+
+async function gitClone(url: string, dir: string): Promise<void> {
+  const { code, stderr } = await spawnCapture('git', ['clone', '--depth', '1', url, dir], { timeoutMs: 300_000, label: 'git clone' })
+  if (code !== 0) throw new Error(`git clone 失败: ${stderr.slice(0, 400)}`)
+}
+
+async function runClaudeHeadless(prompt: string, cwd: string): Promise<AgentResult> {
+  const timeoutMs = Number(process.env.FORGECAST_REBRAND_EXEC_TIMEOUT_MS) || 1_200_000
+  const schema = JSON.stringify({
+    type: 'object', required: ['status', 'summary', 'changedFiles'],
+    properties: { status: { enum: ['done', 'blocked'] }, summary: { type: 'string' }, changedFiles: { type: 'array', items: { type: 'string' } } },
+  })
+  const { code, stdout, stderr } = await spawnCapture('claude', [
+    '-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json', '--json-schema', schema,
+  ], { cwd, timeoutMs, label: 'claude rebrand-exec' })
+  if (code !== 0) throw new Error(`claude 无头模式执行失败: ${stderr.slice(0, 400)}`)
+  const parsed = JSON.parse(stdout)
+  return (typeof parsed.result === 'string' ? JSON.parse(parsed.result) : parsed.result) as AgentResult
+}
+
+/** CLI 用的对外入口：按 ctx.config.rebrandExec.mode 自动选 mock/live deps，调用方不需要自己传 deps。 */
+export function rebrandExecAuto(ctx: CoreCtx, slug: string, opts: { onProgress?: (msg: string) => void; fresh?: boolean } = {}): Promise<RebrandExecResult> {
+  const deps: RebrandExecDeps = ctx.config.rebrandExec.mode === 'live'
+    ? { clone: gitClone, runAgent: runClaudeHeadless, runBuild: detectAndRunBuild }
+    : { clone: mockClone, runAgent: mockRunAgent, runBuild: mockRunBuild }
+  return rebrandExec(ctx, slug, { ...opts, deps })
 }
