@@ -21,7 +21,7 @@ export async function rebrandExec(ctx: CoreCtx, slug: string, opts: RebrandExecO
   const onProgress = opts.onProgress ?? (() => {})
   const projectDir = path.join(ctx.config.paths.workspace, slug)
   const planPath = path.join(projectDir, 'rebrand-plan.md')
-  if (!fs.existsSync(planPath)) throw new Error(`先跑 forgecast rebrand ${slug} 生成改造清单`)
+  if (!fs.existsSync(planPath)) throw new Error(`缺少 rebrand-plan.md: ${planPath}（先跑 forgecast rebrand ${slug} 生成改造清单）`)
 
   const row = ctx.db.prepare(
     'SELECT c.url AS url FROM projects p JOIN candidates c ON p.candidate_id = c.id WHERE p.slug = ?',
@@ -45,7 +45,7 @@ export async function rebrandExec(ctx: CoreCtx, slug: string, opts: RebrandExecO
     onProgress(`第 ${round} 轮改造…`)
     const prompt = round === 1
       ? buildInitialPrompt(slug, planPath, sourceDir)
-      : buildRetryPrompt(lastBuild?.output ?? '')
+      : buildRetryPrompt(sourceDir, lastBuild?.output ?? '')
     lastAgent = await opts.deps.runAgent(prompt, sourceDir)
     lastBuild = await opts.deps.runBuild(sourceDir)
     if (lastBuild === null) { status = 'no-buildscript'; break }
@@ -76,8 +76,13 @@ function buildInitialPrompt(slug: string, planPath: string, sourceDir: string): 
   ].join('\n')
 }
 
-function buildRetryPrompt(buildOutput: string): string {
-  return `上一轮改完后跑外层验证失败，报错如下，请修复：\n${buildOutput.slice(0, 4000)}`
+function buildRetryPrompt(sourceDir: string, buildOutput: string): string {
+  return [
+    `你在 ${sourceDir} 这个目录里工作。只允许修改这个目录内的文件，不要碰目录外的任何东西。`,
+    '',
+    '上一轮改完后跑外层验证失败，报错如下，请修复：',
+    buildOutput.slice(0, 4000),
+  ].join('\n')
 }
 
 function renderReport(input: {
