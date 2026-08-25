@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #e9e4dc; font-family: "NotoSC", "Noto Sans CJK SC", "PingFang SC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 60px 160px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      /* 聊天场景：横屏高度紧，气泡收窄一些 */
+      .chat { position: absolute; inset: 0; background: #e9e4dc; padding: 60px 220px; display: flex; flex-direction: column; gap: 24px; justify-content: center; }
+      .bubble { max-width: 900px; font-size: 40px; line-height: 1.4; padding: 24px 34px; border-radius: 26px; }
+      .them { align-self: flex-start; background: #fff; color: #1a1a1a; border-top-left-radius: 8px; }
+      .me { align-self: flex-end; background: #95ec69; color: #0a2a0a; border-top-right-radius: 8px; }
+      /* 卖点 / CTA（深色场） */
+      .sellFill { background: linear-gradient(160deg,#1a1a2e,#16213e); }
+      .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+      .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+      .brand { font-size: 32px; color: #8888aa; }
+      .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+      <!--HF_FXCSS-->
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1920" data-height="1080">
+      <!--HF_SECTIONS-->
+      <!--HF_CAPTIONS-->
+      <!--HF_AUDIO-->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      // 气泡/卖点/CTA 入场动画由 buildStorySections 按实际气泡数与时长动态生成（见 <!--HF_ACCENTS-->）
+      <!--HF_ACCENTS-->
+      <!--HF_DECODE-->
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

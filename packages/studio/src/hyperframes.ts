@@ -466,14 +466,20 @@ export function buildDemoSections(opts: {
  * 组装 story 模板分镜段（填 <!--HF_SECTIONS-->）。三段：聊天场→卖点→CTA。
  * 聊天场吸收前段（0..dur-6），卖点/CTA 固定各 3s。气泡文本 escapeHtml。
  */
+/**
+ * 组装 story 模板分镜段（填 <!--HF_SECTIONS-->/<!--HF_ACCENTS-->）。三段：聊天场→卖点→CTA。
+ * 气泡入场时间按聊天窗口时长动态铺开（不再挤在开头几秒）：step 至少 2.5s（保证可读），
+ * 尽量撑到 (chatDur-1)/(气泡数-1)，让长视频的聊天场也能持续到接近卖点段，不留大段静止画面。
+ */
 export function buildStorySections(opts: {
   bubbles: Array<{ who: 'them' | 'me'; text: string }>; sellingPoint: string; cta: string; brandName: string
   durationSec: number; beats?: number[]
-}): string {
+}): { html: string; accents: string } {
   const { bubbles, sellingPoint, cta, brandName, durationSec, beats } = opts
-  const clip = (start: number, dur: number, track: number, inner: string) =>
-    `<div class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
-  const bubbleHtml = bubbles.map((b) => `<div class="bubble ${b.who}">${escapeHtml(b.text)}</div>`).join('')
+  const clip = (id: string, start: number, dur: number, track: number, inner: string) =>
+    `<div id="${id}" class="clip" data-start="${start}" data-duration="${dur}" data-track-index="${track}">${inner}</div>`
+  const bubbleIds = bubbles.map((_, i) => `storyBubble${i}`)
+  const bubbleHtml = bubbles.map((b, i) => `<div id="${bubbleIds[i]}" class="bubble ${b.who}">${escapeHtml(b.text)}</div>`).join('')
   const chatDur = Math.max(1, durationSec - 6)
   // 段顺序：chat(0, chatDur)→sell(dur-6,3)→cta(dur-3,3)。有节拍网格时一次性顺序吸附
   const st = snapStarts([
@@ -481,11 +487,21 @@ export function buildStorySections(opts: {
     { start: durationSec - 6, dur: 3 },
     { start: durationSec - 3, dur: 3 },
   ], beats)
-  return [
-    clip(st[0], chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
-    clip(st[1], 3, 1, `<div class="fill pad center sellFill"><div class="sell tw">${escapeHtml(sellingPoint)}</div></div>`),
-    clip(st[2], 3, 1, `<div class="fill pad center sellFill"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+
+  const step = bubbles.length > 1 ? Math.max(2.5, (chatDur - 1) / (bubbles.length - 1)) : 0
+  const accentLines = bubbles.map((_, i) => {
+    const t = st[0] + Math.min(chatDur - 1, i * step)
+    return `tl.from("#${bubbleIds[i]}", { opacity: 0, y: 40, duration: .5 }, ${+t.toFixed(2)});`
+  })
+  accentLines.push(`tl.from("#storySell", { opacity: 0, y: 20, duration: .4 }, ${+st[1].toFixed(2)});`)
+  accentLines.push(`tl.from("#storyCta", { opacity: 0, y: 20, duration: .4 }, ${+st[2].toFixed(2)});`)
+
+  const html = [
+    clip('storyChat', st[0], chatDur, 1, `<div class="chat">${bubbleHtml}</div>`),
+    clip('storySell', st[1], 3, 1, `<div class="fill pad center sellFill"><div class="sell tw">${escapeHtml(sellingPoint)}</div></div>`),
+    clip('storyCta', st[2], 3, 1, `<div class="fill pad center sellFill"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
   ].join('\n')
+  return { html, accents: accentLines.join('\n') }
 }
 
 /**

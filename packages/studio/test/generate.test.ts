@@ -75,6 +75,14 @@ describe('generateVideo (stub)', () => {
     expect(html).toContain('class="sell tw"')
     expect(html).not.toContain('<!--HF_DECODE-->') // 解码运行时已注入
   })
+  it('tpl=story + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const sctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(sctx, { slug: 'demo', tpl: 'story', ratio: 'landscape' })
+    const html = fs.readFileSync(path.join(sctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+  })
   it('无 copy 素材 → 抛错', async () => {
     ctx.db.prepare("INSERT INTO projects (slug) VALUES ('empty')").run()
     await expect(generateVideo(ctx, { slug: 'empty' })).rejects.toThrow(/文案/)

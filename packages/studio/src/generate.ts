@@ -178,6 +178,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   // story：气泡对话（HyperFrames）
   if (tpl === 'story') {
     const s = buildStorySlots(doc, brandName)
+    const ratio = input.ratio ?? 'portrait'
     const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
     onProgress('TTS 配音…')
     const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
@@ -188,12 +189,12 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     // BGM：选曲→分析节拍（fail-soft）；聊天场/卖点/CTA 段切换边界吸附节拍；静态文字场不加脉冲
     const { grid, audioMix } = await selectBgm(ctx, video, duration, onProgress, copy.hook)
     const sections = buildStorySections({ ...s, durationSec: duration, beats: grid ? gridBeats(grid, duration) : undefined })
-    let html = fillTemplate(readTemplate('story'), { duration: String(duration) })
-    html = html.replace('<!--HF_SECTIONS-->', () => sections)
+    let html = fillTemplate(readTemplate(ratio === 'landscape' ? 'story-landscape' : 'story'), { duration: String(duration) })
+    html = html.replace('<!--HF_SECTIONS-->', () => sections.html)
     // story 聊天场保持"真截图"感：不加科技背景（bg 不适用于此模板），只让结尾卖点/CTA 卡逐字解码
     html = injectTechFx(html, { durationSec: duration })
     html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)
-    html = fillAccents(html, '')
+    html = fillAccents(html, sections.accents)
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'story', copy.hook, project.id, onProgress, audioMix)
   }

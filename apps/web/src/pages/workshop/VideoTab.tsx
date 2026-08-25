@@ -72,7 +72,7 @@ export default function VideoTab({
           </select>
           {vp.tpl === 'demo' && <p className="mt-1 text-xs text-faint">需先在项目详情页上传 shots/ 截图</p>}
         </div>
-        {vp.tpl === 'flash' && (
+        {(vp.tpl === 'flash' || vp.tpl === 'story') && (
           <div>
             <label className="text-sm text-sub">画布比例</label>
             <div className="mt-1 flex items-center gap-4 text-sm">

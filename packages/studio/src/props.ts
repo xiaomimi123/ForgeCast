@@ -32,13 +32,25 @@ export interface StoryProps {
   cues?: Cue[]
 }
 
-/** 从文案生成故事模板参数（气泡为模板化对话，卖点/CTA 复用 flash 抽取） */
+/**
+ * 从文案生成故事模板参数（气泡为模板化对话，卖点/CTA 复用 flash 抽取）。
+ * 中段插入评论区运营里预埋的真实问答对（questions[i]/replies[i] 配对，缺回复的问题不插入防孤问），
+ * 让长视频的中段对话不再是空转的三句通用填充——同时也是内容更贴项目实际的一种展现形式。
+ */
 export function buildStoryProps(doc: CopyDoc, brandName = 'forgecast'): StoryProps {
   const flash = buildFlashProps(doc, brandName)
+  // 最多取 1 组问答（2 条气泡）：真渲验证过，横屏画布只有 1080px 高，开头2+问答对+结尾1
+  // 超过 5 条气泡时顶部/底部气泡会被顶出画面裁切（竖屏画布高裕量更大，但统一按横屏这个更紧的上限来）
+  const qaPairs = doc.comments.questions
+    .map((q, i) => ({ q, r: doc.comments.replies[i] }))
+    .filter((p): p is { q: string; r: string } => !!p.r)
+    .slice(0, 1)
+    .flatMap((p) => [{ who: 'them' as const, text: p.q }, { who: 'me' as const, text: p.r }])
   return {
     bubbles: [
       { who: 'them', text: doc.titles[0] || '能做个这个吗？' },
       { who: 'me', text: '可以，等我一天' },
+      ...qaPairs,
       { who: 'them', text: '太好了，等你消息' },
     ],
     sellingPoint: flash.sellingPoint,

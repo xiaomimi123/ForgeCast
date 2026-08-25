@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, planCutTimes, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, buildFlashSections, buildInsightSections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
+import { buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
@@ -473,6 +473,37 @@ describe('buildFlashSections（开场钩子→中段流动字幕→结尾CTA，�
   it('accents 含 hook/cta/highlight 的入场动画', () => {
     const r = buildFlashSections({ cues: [], durationSec: 20, ...base })
     expect(r.accents).toContain('tl.from(')
+  })
+})
+
+describe('buildStorySections（回归：气泡此前全挤在开头2秒内出现，聊天场后段长时间静止不变）', () => {
+  const storyBase = { sellingPoint: '卖点', cta: '扣1', brandName: 'demo' }
+
+  it('返回 {html, accents} 而不是裸字符串', () => {
+    const bubbles = [{ who: 'them' as const, text: 'A' }, { who: 'me' as const, text: 'B' }]
+    const r = buildStorySections({ bubbles, durationSec: 20, ...storyBase })
+    expect(typeof r.html).toBe('string')
+    expect(typeof r.accents).toBe('string')
+  })
+
+  it('6 条气泡、durationSec=61 时，最后一条气泡的入场时间要铺到聊天窗口尾部附近，不再挤在头几秒', () => {
+    const bubbles = Array.from({ length: 6 }, (_, i) => ({ who: (i % 2 === 0 ? 'them' : 'me') as const, text: `msg${i}` }))
+    const r = buildStorySections({ bubbles, durationSec: 61, ...storyBase })
+    // chatDur = 61-6 = 55；step = max(2.5, (55-1)/5) = 10.8；最后一条钳制在 chatDur-1=54
+    expect(r.accents).toContain(', 54);')
+  })
+
+  it('气泡少、时长短时（3条，durationSec=20）不会挤成负数或重叠到卖点/CTA 段', () => {
+    const bubbles = [{ who: 'them' as const, text: 'A' }, { who: 'me' as const, text: 'B' }, { who: 'them' as const, text: 'C' }]
+    const r = buildStorySections({ bubbles, durationSec: 20, ...storyBase })
+    expect(r.accents).not.toMatch(/, -/)
+  })
+
+  it('聊天气泡文本仍会转义（防注入）', () => {
+    const bubbles = [{ who: 'them' as const, text: '<script>' }]
+    const r = buildStorySections({ bubbles, durationSec: 20, ...storyBase })
+    expect(r.html).not.toContain('<script>')
+    expect(r.html).toContain('&lt;script&gt;')
   })
 })
 
