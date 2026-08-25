@@ -3,6 +3,7 @@ import path from 'node:path'
 export type LlmMode = 'mock' | 'live'
 export type GithubMode = 'mock' | 'live'
 export type VideoMode = 'render' | 'stub'
+export type RebrandExecMode = 'mock' | 'live'
 export type TtsMode = 'stub' | 'live' | 'kokoro' | 'melo' | 'cosy'
 
 export interface ForgecastConfig {
@@ -16,6 +17,7 @@ export interface ForgecastConfig {
   github: { mode: GithubMode; token: string }
   scout: { weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number } }
   video: { mode: VideoMode; bgm: string; beatPython: string; captions: boolean; bg: string; mood: string }
+  rebrandExec: { mode: RebrandExecMode }
   tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string; asrPython: string }
   paths: { workspace: string; db: string; templates: string }
 }
@@ -27,6 +29,7 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
   const mode: LlmMode = env.FORGECAST_LLM_MODE === 'live' ? 'live' : 'mock'
   const githubMode: GithubMode = env.FORGECAST_GITHUB_MODE === 'live' ? 'live' : 'mock'
   const videoMode: VideoMode = env.FORGECAST_VIDEO_MODE === 'stub' ? 'stub' : 'render'
+  const rebrandExecMode: RebrandExecMode = env.FORGECAST_REBRAND_EXEC_MODE === 'live' ? 'live' : 'mock'
   return {
     root: resolvedRoot,
     // baseURL/模型名用 || 回落：空串（.env 里留空的变量）也走默认，而非把默认覆盖成空
@@ -53,6 +56,7 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       // 情绪键（tense/upbeat/tech/warm）：空=按 hook 自动映射；显式指定则覆盖
       mood: env.FORGECAST_MOOD || '',
     },
+    rebrandExec: { mode: rebrandExecMode },
     tts: {
       // 默认 kokoro（离线中文配音）；显式指定 live/stub 时按指定走
       mode: env.FORGECAST_TTS_MODE === 'live' ? 'live'

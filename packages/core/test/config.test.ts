@@ -46,6 +46,13 @@ describe('loadConfig', () => {
     expect(loadConfig('/tmp/x', { FORGECAST_BG: 'synth' }).video.bg).toBe('synth')
     expect(loadConfig('/tmp/x', { FORGECAST_MOOD: 'tense' }).video.mood).toBe('tense')
   })
+  it('FORGECAST_REBRAND_EXEC_MODE 未设置或非 live → 默认 mock', () => {
+    expect(loadConfig('/tmp/x', {}).rebrandExec).toEqual({ mode: 'mock' })
+    expect(loadConfig('/tmp/x', { FORGECAST_REBRAND_EXEC_MODE: 'whatever' }).rebrandExec).toEqual({ mode: 'mock' })
+  })
+  it('FORGECAST_REBRAND_EXEC_MODE=live → live', () => {
+    expect(loadConfig('/tmp/x', { FORGECAST_REBRAND_EXEC_MODE: 'live' }).rebrandExec).toEqual({ mode: 'live' })
+  })
   it('tts 可设 stub，可设 live', () => {
     expect(loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'stub' }).tts).toEqual({ mode: 'stub', baseURL: 'https://aitoken.homes/v1', apiKey: '', model: '', voice: '', meloPython: '', cosyHome: '', asrPython: '' })
     const cfg = loadConfig('/tmp/x', { FORGECAST_TTS_MODE: 'live', FORGECAST_TTS_KEY: 'k', FORGECAST_TTS_MODEL: 'm', FORGECAST_TTS_VOICE: 'v' })
