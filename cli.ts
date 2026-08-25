@@ -6,7 +6,7 @@ import { analyzeProject } from '@forgecast/analyst'
 import { createCtx, syncWorkspaceProjects } from '@forgecast/core'
 import { generateCopy, generateShootScript, syncKnowledge } from '@forgecast/copywriter'
 import { addLead, approveAsset, calendarSuggestions, publishAsset, recordPerf, registerClip, weeklyReport } from '@forgecast/ops'
-import { rebrandPlan } from '@forgecast/rebrand'
+import { rebrandExecAuto, rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, pickCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
 import { generateRetro, generateVideo, reviewVideo } from '@forgecast/studio'
 import { addRequest, decomposeRequest, generateProposal, listRequests, searchWheels } from '@forgecast/tailor'
@@ -125,6 +125,15 @@ async function main() {
       if (!slug) { console.error('用法: forgecast rebrand <slug>'); process.exit(1) }
       const { path: rel } = await rebrandPlan(ctxWithNotes(), slug, { onProgress: (m) => console.log(`  ${m}`) })
       console.log(`换皮清单完成: workspace/${rel}`)
+      break
+    }
+    case 'rebrand-exec': {
+      const slug = rest.find((a) => !a.startsWith('--'))
+      if (!slug) { console.error('用法: forgecast rebrand-exec <slug> [--fresh]'); process.exit(1) }
+      const fresh = rest.includes('--fresh')
+      const r = await rebrandExecAuto(ctxWithNotes(), slug, { fresh, onProgress: (m) => console.log(`  ${m}`) })
+      console.log(`执行完成: ${r.status}（${r.rounds} 轮）→ workspace/${r.reportPath}`)
+      if (r.status === 'build-failed') process.exitCode = 1
       break
     }
     case 'video': {
@@ -448,6 +457,7 @@ async function main() {
   pick <owner/repo>                立项：建 workspace + 落源 README/目录树
   analyze <slug>                   生成商业化分析 analysis.md（读 source/README）
   rebrand <slug>                   生成换皮改造清单 rebrand-plan.md（读 analysis）
+  rebrand-exec <slug> [--fresh]    执行换皮改造清单里的品牌层部分（1品牌替换/2删除项/3中文化）：clone 源码→claude 无头模式改代码→build 验证失败自动重试≤3轮→出报告（--fresh 强制重新 clone）
   video <slug> --tpl=flash         生成 flash 视频（渲染 copy 素材为 15s 竖屏）
   broll-import <slug> <mp4路径> [--hook=<hook>]  登记外部产出的成片（如 erduo B-roll 定稿）为 video 素材
   approve <id>                          审核通过素材（draft → approved）

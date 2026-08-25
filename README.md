@@ -26,6 +26,8 @@ pnpm dev                # API :4321 + Web :5173
 | FORGECAST_GITHUB_MODE | `mock`（默认，无 token 用 fixture）/ `live`（走真实 GitHub API） |
 | FORGECAST_GITHUB_TOKEN | live 模式可选，提升 GitHub API 限流额度 |
 | FORGECAST_VIDEO_MODE | `render`（默认，HyperFrames 真渲 mp4）/ `stub`（写占位，测试用） |
+| FORGECAST_REBRAND_EXEC_MODE | `mock`（默认，CI/测试用，不碰真实网络/claude）/ `live`（真实 git clone + 调用本机已登录的 claude CLI 无头模式改代码） |
+| FORGECAST_REBRAND_EXEC_TIMEOUT_MS | live 模式下单轮 claude 无头执行超时（默认 1200000ms=20min） |
 | FORGECAST_TTS_MODE | `kokoro`（默认，本地离线中文配音，免 key）/ `live`（OpenAI 兼容 /audio/speech）/ `stub`（静音占位） |
 | FORGECAST_TTS_KEY / TTS_MODEL / TTS_BASE_URL | TTS live 模式必填（模型名缺失会降级并提示） |
 | FORGECAST_BGM | 背景乐选曲：空=按文案 hook 情绪自动匹配 / `none`=关 / 具体文件名（不含后缀）=指定。素材放 `templates/bgm/`（gitignore），CLI 亦可 `--bgm=<name>` / `--no-bgm` |
@@ -46,6 +48,7 @@ forgecast scout --add=<repo-url>            # 手动投喂一个 repo
 forgecast pick <owner/repo>                 # 立项：建 workspace + 落源 README/目录树到 source/
 forgecast analyze <slug>                    # 生成商业化分析 analysis.md（读 source/README）
 forgecast rebrand <slug>                    # 生成换皮改造清单 rebrand-plan.md（读 analysis.md）
+forgecast rebrand-exec <slug> [--fresh]     执行换皮清单的品牌层（品牌替换/删除项/中文化）：clone→claude 无头模式改代码→build验证失败重试≤3轮→报告（live 模式需本机已装并登录 claude CLI）
 forgecast video <slug> --tpl=flash|story|demo|changelog|insight [--asset=<id>] [--bgm=<name>|--no-bgm] [--mood=<tense|upbeat|tech|warm>] [--captions]  # HyperFrames 渲染竖屏视频（flash 文字快闪/story 微信气泡/demo 产品截图轮播/changelog 代码变更/insight 数据卡片解说）
 #   demo 需 workspace/<slug>/shots/ 放产品截图；insight 适合文案里有具体数字的项目——数据卡片直接从口播稿里挖数字句，按 TTS 逐句节奏累加淡入，没数字则只出开场大字+结尾CTA；配音默认 Kokoro 离线中文；环境依赖见 docs/hyperframes-deploy.md
 #   曲库非空时自动垫 BGM：旁白响时 ducking 闪避，段/截图切换吸附节拍（卡点），强拍加缩放脉冲 + 音效；见 docs/superpowers/specs/2026-07-24-bgm-beat-sync-design.md
