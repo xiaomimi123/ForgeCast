@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodBgm, planCutTimes, readShots, renderHyperframes, scaffoldHfProject, snapStarts, snapToBeat } from '../src/hyperframes'
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
-import { buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
+import { buildChangelogSections, buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
@@ -504,6 +504,46 @@ describe('buildStorySections（回归：气泡此前全挤在开头2秒内出现
     const r = buildStorySections({ bubbles, durationSec: 20, ...storyBase })
     expect(r.html).not.toContain('<script>')
     expect(r.html).toContain('&lt;script&gt;')
+  })
+})
+
+describe('buildChangelogSections（回归：标题screen固定6s后是一整块静止到底的brand+cta，长视频90%以上画面冻结）', () => {
+  const clBase = { label: '本周更新', title: '标题', subtitle: '副标题', cta: '扣1', brandName: 'demo' }
+
+  it('返回 {html, accents}', () => {
+    const r = buildChangelogSections({ cues: [], durationSec: 20, ...clBase })
+    expect(typeof r.html).toBe('string')
+    expect(typeof r.accents).toBe('string')
+  })
+
+  it('回归：长视频（61s）下 CTA 必须贴着 durationSec 收尾，不再是固定 6s 后一路静止到底', () => {
+    const r = buildChangelogSections({ cues: [], durationSec: 61, ...clBase })
+    // titleDur = clamp(61*0.15=9.15, 3, 5) = 5；ctaDur = clamp(61*0.12=7.32, 2.5, 4) = 4；cta 应在 57s 起
+    expect(r.html).toContain('data-start="57"')
+    expect(r.html).not.toMatch(/data-duration="55"/) // 旧版 s2dur=duration-6 的写法不应再出现
+  })
+
+  it('中段 cue 按时间点生成流动内容，data-start 对齐 cue', () => {
+    const cues = [{ start: 10, end: 12, text: '这周修的第一个东西' }, { start: 20, end: 22, text: '第二个改动' }]
+    const r = buildChangelogSections({ cues, durationSec: 61, ...clBase })
+    expect(r.html).toContain('data-start="10"')
+    expect(r.html).toContain('这周修的第一个东西')
+    expect(r.html).toContain('data-start="20"')
+    expect(r.html).toContain('第二个改动')
+  })
+
+  it('标题/label/副标题出现在开头', () => {
+    const r = buildChangelogSections({ cues: [], durationSec: 20, ...clBase })
+    expect(r.html).toContain('data-start="0"')
+    expect(r.html).toContain('标题')
+    expect(r.html).toContain('副标题')
+    expect(r.html).toContain('本周更新')
+  })
+
+  it('极短时长不产生负数/越界', () => {
+    const r = buildChangelogSections({ cues: [], durationSec: 3, ...clBase })
+    expect(r.html).not.toMatch(/data-duration="-/)
+    expect(r.html).not.toMatch(/data-start="-/)
   })
 })
 

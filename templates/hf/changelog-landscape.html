@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "NotoSC"; src: url("assets/fonts/NotoSansSC.otf"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d1117; font-family: "NotoSC", "Noto Sans CJK SC", "PingFang SC", sans-serif; }
+      .fill { position: absolute; inset: 0; } .pad { padding: 60px 220px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+      .label { display: inline-block; font-size: 28px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 8px 22px; border-radius: 10px; }
+      .title { font-size: 64px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 32px; }
+      .sub { font-size: 32px; color: #8b949e; margin-top: 20px; }
+      .brand { font-size: 72px; font-weight: 900; color: #f0f6fc; text-align: center; }
+      .tag { font-size: 36px; color: #ffd54f; margin-top: 24px; font-weight: 700; text-align: center; }
+      .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; }
+      <!--HF_FXCSS-->
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1920" data-height="1080">
+      <!--HF_BG-->
+      <!--HF_SECTIONS-->
+      <!--HF_CAPTIONS-->
+      <!--HF_AUDIO-->
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      // 标题/中段/CTA 入场动画由 buildChangelogSections 按实际时长动态生成
+      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      <!--HF_BGANIM-->
+      <!--HF_ACCENTS-->
+      <!--HF_DECODE-->
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -565,6 +565,55 @@ export function buildFlashSections(opts: {
   return { html: parts.join('\n'), accents: accentLines.join('\n') }
 }
 
+/**
+ * 组装 changelog 模板分镜段（填 <!--HF_SECTIONS-->/<!--HF_ACCENTS-->）。标题screen（label+title+
+ * subtitle）→中段按旁白 cue 逐条铺流动内容→结尾 brand+CTA。
+ *
+ * 此前 bug：标题固定 6s 后是一整块 s2（brand+cta）静止到底（s2dur=duration-6），长视频里
+ * 90% 以上画面完全冻结。现在 CTA 贴着 durationSec 收尾，中段跟着旁白铺满，不留大段静止。
+ */
+export function buildChangelogSections(opts: {
+  cues: Cue[]; durationSec: number; label: string; title: string; subtitle: string; cta: string; brandName: string
+}): { html: string; accents: string } {
+  const { cues, durationSec, label, title, subtitle, cta, brandName } = opts
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+  const clip = (id: string, start: number, dur: number, track: number, innerHtml: string) =>
+    `<div id="${id}" class="clip fill pad" data-start="${+start.toFixed(2)}" data-duration="${+Math.max(0.3, dur).toFixed(2)}" data-track-index="${track}">${innerHtml}</div>`
+
+  let titleDur = clamp(durationSec * 0.15, 3, 5)
+  let ctaDur = clamp(durationSec * 0.12, 2.5, 4)
+  if (titleDur + ctaDur >= durationSec) {
+    const scale = Math.max(0, durationSec * 0.8) / (titleDur + ctaDur)
+    titleDur *= scale
+    ctaDur *= scale
+  }
+  const midStart = titleDur
+  const midEnd = Math.max(midStart, durationSec - ctaDur)
+
+  const parts: string[] = []
+  const accentLines: string[] = []
+
+  parts.push(clip('clTitle', 0, titleDur, 1,
+    `<div style="display:flex;flex-direction:column;justify-content:center;height:100%"><div><span class="label">${escapeHtml(label)}</span></div><div class="title tw">${escapeHtml(title)}</div><div class="sub tw">${escapeHtml(subtitle)}</div></div>`))
+  accentLines.push('tl.from("#clTitle .label", { opacity: 0, y: -30, duration: .5 }, 0.1);')
+
+  const midCues = cues
+    .map((c) => ({ start: Math.max(c.start, midStart), end: Math.min(c.end, midEnd), text: c.text }))
+    .filter((c) => c.end - c.start > 0.1)
+  midCues.forEach((c, i) => {
+    const id = `clCap${i}`
+    parts.push(clip(id, c.start, c.end - c.start, 2,
+      `<div class="center" style="height:100%"><div class="tag tw">${escapeHtml(c.text)}</div></div>`))
+    accentLines.push(`tl.from("#${id}", { opacity: 0, y: 16, duration: .35 }, ${+c.start.toFixed(2)});`)
+  })
+
+  parts.push(clip('clCta', midEnd, ctaDur, 1,
+    `<div class="center" style="height:100%"><div class="brand tw">${escapeHtml(brandName)}</div><div class="tag tw">${escapeHtml(cta)}</div></div>`))
+  accentLines.push(`tl.from("#clCta", { opacity: 0, y: 20, duration: .4 }, ${+midEnd.toFixed(2)});`)
+
+  return { html: parts.join('\n'), accents: accentLines.join('\n') }
+}
+
 // insight 模板卡片配色循环：组内按序号取色，保证每组第一张卡固定暖黄，跟参考视频观感一致
 const INSIGHT_PALETTE = ['#ffd54f', '#2dd4bf', '#34d399', '#60a5fa', '#a78bfa', '#fb7185']
 // 挖数据卡片用的数字正则：百分比/万/亿/倍/折，或"数字(-数字)?+常见量词"（口播稿更常见的写法，

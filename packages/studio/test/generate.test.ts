@@ -160,6 +160,22 @@ describe('generateVideo (stub)', () => {
     expect(html).not.toContain('<!--HF_CAPTIONS-->')
     expect(html).not.toContain('<!--HF_ACCENTS-->')
   })
+  it('tpl=changelog：回归——CTA 必须跟着 duration 走，不再固定 6s 后一路静止到底', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog' })
+    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('id="clCta"')
+    expect(html).not.toMatch(/id="clCta"[^>]*data-start="6"/)
+  })
+  it('tpl=changelog + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog', ratio: 'landscape' })
+    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    expect(html).toContain('data-width="1920"')
+    expect(html).toContain('data-height="1080"')
+  })
   it('tpl=insight 走 HyperFrames stub，文案无数字句时兜底只出开场+结尾（不报错、无空卡片区）', async () => {
     // beforeEach 用的 pain fixture 口播稿逐句里没有「数字+%/万/亿/倍/折」，天然覆盖零命中兜底路径
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })

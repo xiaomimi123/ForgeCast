@@ -9,6 +9,7 @@
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0d1117; font-family: "NotoSC", "Noto Sans CJK SC", "PingFang SC", sans-serif; }
       .fill { position: absolute; inset: 0; } .pad { padding: 90px; }
+      .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
       .label { display: inline-block; font-size: 34px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 10px 26px; border-radius: 10px; }
       .title { font-size: 82px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 44px; }
       .sub { font-size: 40px; color: #8b949e; margin-top: 28px; }
@@ -21,22 +22,14 @@
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
       <!--HF_BG-->
-      <div id="s1" class="clip fill pad" data-start="0" data-duration="6" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center">
-        <div><span class="label">{{label}}</span></div>
-        <div class="title tw">{{title}}</div>
-        <div class="sub tw">{{subtitle}}</div>
-      </div>
-      <div id="s2" class="clip fill pad" data-start="6" data-duration="{{s2dur}}" data-track-index="1" style="display:flex;flex-direction:column;justify-content:center;align-items:center">
-        <div class="brand tw">{{brandName}}</div>
-        <div class="tag tw">{{cta}}</div>
-      </div>
+      <!--HF_SECTIONS-->
       <!--HF_CAPTIONS-->
       <!--HF_AUDIO-->
     </div>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-      tl.from("#s1 .label", { opacity: 0, y: -30, duration: .5 }, 0.1);
+      // 标题/中段/CTA 入场动画由 buildChangelogSections 按实际时长动态生成
       tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
       <!--HF_BGANIM-->
       <!--HF_ACCENTS-->

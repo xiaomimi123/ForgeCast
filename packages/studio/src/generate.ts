@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, buildChangelogSections, buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, chooseBgmPath, gridBeats, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, planCutTimes, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
 import type { BeatGrid } from './hyperframes'
 import { buildChangelogProps, buildDemoSlots, buildFlashSlots, buildInsightSlots, buildStorySlots } from './props'
 import { synthesizeVoice } from './tts'
@@ -87,22 +87,26 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
   // changelog：独立走 HyperFrames 路径，不碰下方 flash/story/demo 的旧 Remotion 逻辑（后续任务再迁移）
   if (tpl === 'changelog') {
     const slots = buildChangelogProps(doc, brandName)
+    const ratio = input.ratio ?? 'portrait'
     const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf')
     // 配音
     onProgress('TTS 配音…')
     const wavAbs = path.join(hfDir, 'assets', 'narration.wav')
     const voice = await synthesizeVoice(ctx, doc.douyinScript, wavAbs)
     if (voice.degraded) onProgress(`⚠ TTS 降级：${voice.degraded}`)
-    // 自适应时长：跟旁白末尾对齐（下限 12s），s2 吸收标题段之后的剩余
+    // 自适应时长：跟旁白末尾对齐（下限 12s）
     const lastEnd = voice.cues.length ? voice.cues[voice.cues.length - 1].end : 0
     const duration = Math.max(12, Math.ceil(lastEnd))
-    // BGM：选曲→分析节拍（fail-soft）。段边界写死在模板、不吸附；静态文字场不加脉冲，只混音
+    // BGM：选曲→分析节拍（fail-soft）。段落时长按 duration 动态算；静态文字场不加脉冲，只混音
     const { audioMix } = await selectBgm(ctx, video, duration, onProgress, copy.hook)
-    // 先 fillTemplate 填转义 slot，再注入音轨/字幕（注释标记，不被 {{}} 正则误吃）
-    const filled = fillTemplate(readTemplate('changelog'), { ...slots, duration: String(duration), s2dur: String(duration - 6) })
-    let html = injectTechFx(filled, { bg: video.bg, durationSec: duration })
+    const sections = buildChangelogSections({
+      cues: voice.cues, durationSec: duration, label: slots.label, title: slots.title, subtitle: slots.subtitle, cta: slots.cta, brandName: slots.brandName,
+    })
+    let html = fillTemplate(readTemplate(ratio === 'landscape' ? 'changelog-landscape' : 'changelog'), { duration: String(duration) })
+    html = html.replace('<!--HF_SECTIONS-->', () => sections.html)
+    html = injectTechFx(html, { bg: video.bg, durationSec: duration })
     html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, video.captions)
-    html = fillAccents(html, '')
+    html = fillAccents(html, sections.accents)
     scaffoldHfProject(hfDir, html)
     return renderAndRegister(ctx, hfDir, slug, 'changelog', copy.hook, project.id, onProgress, audioMix)
   }
