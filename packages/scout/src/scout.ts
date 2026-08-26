@@ -22,9 +22,10 @@ VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, 
 ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=excluded.license_ok,
   stars=excluded.stars, last_commit=excluded.last_commit`
 
-/** 抓 README + 评分（仅协议过关者）后 upsert 入池；rejected 者不评分只登记 */
-async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean): Promise<void> {
-  const ok = isLicenseOk(meta.license)
+/** 抓 README + 评分（仅协议过关者）后 upsert 入池；rejected 者不评分只登记。
+ *  forceLicenseOk：手动投喂（addRepo）用，用户自担来源可用性，无视协议白名单一律放行。 */
+async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean, forceLicenseOk = false): Promise<void> {
+  const ok = forceLicenseOk || isLicenseOk(meta.license)
   let score: number | null = null
   let scoreDetail: string | null = null
   let techStack: string | null = null
@@ -90,7 +91,7 @@ export async function scoutCandidates(
   return { found: found.length, scored, rejected, added }
 }
 
-/** 手动投喂单个 repo（URL 或 owner/name）：抓元数据+评分入池 */
+/** 手动投喂单个 repo（URL 或 owner/name）：抓元数据+评分入池。用户手动指定来源，无视协议白名单强制放行。 */
 export async function addRepo(ctx: CoreCtx, repoUrl: string): Promise<void> {
   const repo = normalizeRepo(repoUrl)
   const gh = createGithubClient(ctx.config.github)
@@ -98,7 +99,7 @@ export async function addRepo(ctx: CoreCtx, repoUrl: string): Promise<void> {
   const all = await gh.searchRepos([], { minStars: 0, pushedAfter: '1970-01-01', perTopic: 1 })
   const meta = all.find((m) => m.repo === repo)
     ?? { repo, url: `https://github.com/${repo}`, description: null, license: null, stars: 0, lastCommit: null, topics: [] }
-  await ingest(ctx, gh, meta, true)
+  await ingest(ctx, gh, meta, true, true)
 }
 
 function normalizeRepo(input: string): string {

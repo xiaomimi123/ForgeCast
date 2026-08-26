@@ -58,6 +58,12 @@ describe('addRepo (mock)', () => {
     expect(row.score).toBeGreaterThan(0)
     expect(JSON.parse(row.tech_stack)).toContain('react')
   })
+  it('手动投喂强制放行协议门槛：GPL fixture 也 license_ok=1 并正常评分', async () => {
+    await addRepo(ctx, 'https://github.com/gpl-example/copyleft-tool')
+    const row: any = ctx.db.prepare("SELECT * FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    expect(row.license_ok).toBe(1)
+    expect(row.score).toBeGreaterThan(0)
+  })
 })
 
 describe('description 采集', () => {
