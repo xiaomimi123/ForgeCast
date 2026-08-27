@@ -64,6 +64,27 @@ describe('addRepo (mock)', () => {
     expect(row.license_ok).toBe(1)
     expect(row.score).toBeGreaterThan(0)
   })
+  it('投喂打 source=manual；自动抓取打 source=scout；投喂后再自动抓取不会把 manual 覆盖回 scout', async () => {
+    await addRepo(ctx, 'https://github.com/chatwoot/chatwoot')
+    let row: any = ctx.db.prepare("SELECT source FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    expect(row.source).toBe('manual')
+
+    await scoutCandidates(ctx)
+    row = ctx.db.prepare("SELECT source FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    expect(row.source).toBe('manual')
+
+    const other: any = ctx.db.prepare("SELECT source FROM candidates WHERE repo = 'invoiceninja/invoiceninja'").get()
+    expect(other.source).toBe('scout')
+  })
+  it('回归：已标 manual 的 GPL repo 被自动抓取重新扫到时，license_ok 不会被真实协议打回 0', async () => {
+    await addRepo(ctx, 'https://github.com/gpl-example/copyleft-tool')
+    let row: any = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    expect(row.license_ok).toBe(1)
+
+    await scoutCandidates(ctx) // gpl-example/copyleft-tool 的 topics 含 'inventory'，在 DEFAULT_TOPICS 内，会被重新扫到
+    row = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    expect(row.license_ok).toBe(1)
+  })
 })
 
 describe('description 采集', () => {

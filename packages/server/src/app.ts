@@ -475,7 +475,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
 
   app.get('/api/candidates', (c) => {
     return c.json(ctx.db.prepare(
-      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, favorite, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
+      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, favorite, source, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
     ).all())
   })
 

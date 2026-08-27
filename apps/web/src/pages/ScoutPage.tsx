@@ -5,9 +5,9 @@ import { api, subscribeTask, type AutoScoutStatus, type Candidate } from '../api
 import CandidateCard from './board/CandidateCard'
 import CandidateDrawer from './board/CandidateDrawer'
 
-type Tab = 'all' | 'fav' | 'daily'
+type Tab = 'all' | 'fav' | 'daily' | 'manual'
 const TABS: Array<{ key: Tab; label: string }> = [
-  { key: 'all', label: '全部' }, { key: 'fav', label: '已收藏' }, { key: 'daily', label: '每日新增' },
+  { key: 'all', label: '全部' }, { key: 'fav', label: '已收藏' }, { key: 'daily', label: '每日新增' }, { key: 'manual', label: '自主投喂' },
 ]
 
 /** SQLite datetime('now') 存的是无时区 UTC 串（YYYY-MM-DD HH:MM:SS）→ 本地日期 YYYY-MM-DD */
@@ -158,6 +158,8 @@ export default function ScoutPage() {
   // 全部：收藏置顶（收藏内部与其余各按分数降序）
   const allShown = byCat(ok).sort((a, b) => (b.favorite - a.favorite) || byScore(a, b))
   const favShown = ok.filter((c) => c.favorite === 1).sort(byScore)
+  // 自主投喂：用户手动「+ 投喂」进来的（source='manual'），不受协议门槛过滤——投喂时已强制放行
+  const manualShown = rows.filter((c) => c.source === 'manual').sort((a, b) => (b.favorite - a.favorite) || byScore(a, b))
   // 每日新增：近 14 天入库的可商用候选，按本地日期倒序分组
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 14)
   const dailyGroups = [...byCat(ok)
@@ -213,7 +215,7 @@ export default function ScoutPage() {
           <button key={t.key}
             className={tab === t.key ? 'on' : ''}
             onClick={() => setTab(t.key)}>
-            {t.label}{t.key === 'fav' ? ` (${favShown.length})` : ''}
+            {t.label}{t.key === 'fav' ? ` (${favShown.length})` : t.key === 'manual' ? ` (${manualShown.length})` : ''}
           </button>
         ))}
       </div>
@@ -269,6 +271,11 @@ export default function ScoutPage() {
         favShown.length
           ? <div className={grid}>{favShown.map(card)}</div>
           : <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">还没有收藏，点卡片上的 ☆ 收藏感兴趣的项目</div>
+      )}
+      {tab === 'manual' && (
+        manualShown.length
+          ? <div className={grid}>{manualShown.map(card)}</div>
+          : <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">还没有手动投喂过项目，点上面「+ 投喂」加一个</div>
       )}
       {tab === 'daily' && (
         dailyGroups.length

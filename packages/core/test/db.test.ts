@@ -56,6 +56,12 @@ describe('openDb', () => {
     const row = db.prepare("SELECT favorite FROM candidates WHERE repo = 'a/b'").get() as any
     expect(row.favorite).toBe(0)
   })
+  it('candidates.source 列存在且默认 scout', () => {
+    const db = openDb(tmpDbPath())
+    db.prepare("INSERT INTO candidates (repo, url) VALUES ('a/b', 'u')").run()
+    const row = db.prepare("SELECT source FROM candidates WHERE repo = 'a/b'").get() as any
+    expect(row.source).toBe('scout')
+  })
   it('custom_templates 表存在且可插入', () => {
     const db = openDb(tmpDbPath())
     const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='custom_templates'").get()

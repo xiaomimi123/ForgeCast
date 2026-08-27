@@ -19,6 +19,13 @@ beforeEach(() => {
 })
 
 describe('favorite + auto-status (mock)', () => {
+  it('列表返回 source 列，供前端"自主投喂" tab 筛选', async () => {
+    ctx.db.prepare("INSERT INTO candidates (repo, url, license_ok, status, source) VALUES ('a/manual', 'u1', 1, 'candidate', 'manual')").run()
+    ctx.db.prepare("INSERT INTO candidates (repo, url, license_ok, status, source) VALUES ('a/scout', 'u2', 1, 'candidate', 'scout')").run()
+    const rows = await (await app.request('/api/candidates')).json() as any[]
+    expect(rows.find((r) => r.repo === 'a/manual')?.source).toBe('manual')
+    expect(rows.find((r) => r.repo === 'a/scout')?.source).toBe('scout')
+  })
   it('favorite 切换与 404；列表返回 favorite 列', async () => {
     ctx.db.prepare("INSERT INTO candidates (repo, url, license_ok, status) VALUES ('a/b', 'u', 1, 'candidate')").run()
     expect((await app.request('/api/candidates/999/favorite', { method: 'POST', body: JSON.stringify({ favorite: true }) })).status).toBe(404)

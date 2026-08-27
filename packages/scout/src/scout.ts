@@ -9,22 +9,30 @@ export const DEFAULT_TOPICS = [
   'dashboard', 'chatbot', 'link-in-bio', 'scheduling', 'pos', 'wiki', 'survey',
 ]
 
-const UPSERT = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status)
-VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'candidate')
-ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=excluded.license_ok,
+// source 只升不降：一旦被标为 manual（手动投喂），之后自动抓取重新 ingest 同一 repo 也不会把它冲回 scout。
+// license_ok 同理跟着 source 一起 sticky：manual 的候选不管后续真实协议怎么重新判定，都不会被自动流程打回不可商用。
+const LICENSE_OK_STICKY = `CASE WHEN candidates.source = 'manual' THEN 1 ELSE excluded.license_ok END`
+const UPSERT = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status, source)
+VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'candidate', @source)
+ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=${LICENSE_OK_STICKY},
   stars=excluded.stars, last_commit=excluded.last_commit, tech_stack=excluded.tech_stack,
-  score=excluded.score, score_detail=excluded.score_detail`
+  score=excluded.score, score_detail=excluded.score_detail,
+  source=CASE WHEN excluded.source = 'manual' THEN 'manual' ELSE candidates.source END`
 
 // onlyNew 模式下已存在候选只刷元数据：score/score_detail/tech_stack/favorite/status 保持旧值
 // （保护 live 真评分不被 mock 启发式洗掉，也不重复烧 LLM 额度）
 const UPSERT_META = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, status)
 VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, 'candidate')
-ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=excluded.license_ok,
+ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=${LICENSE_OK_STICKY},
   stars=excluded.stars, last_commit=excluded.last_commit`
 
 /** 抓 README + 评分（仅协议过关者）后 upsert 入池；rejected 者不评分只登记。
- *  forceLicenseOk：手动投喂（addRepo）用，用户自担来源可用性，无视协议白名单一律放行。 */
-async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean, forceLicenseOk = false): Promise<void> {
+ *  forceLicenseOk：手动投喂（addRepo）用，用户自担来源可用性，无视协议白名单一律放行。
+ *  source：'manual'=用户手动投喂，'scout'=自动抓取/找爆款（默认）。 */
+async function ingest(
+  ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean,
+  forceLicenseOk = false, source: 'manual' | 'scout' = 'scout',
+): Promise<void> {
   const ok = forceLicenseOk || isLicenseOk(meta.license)
   let score: number | null = null
   let scoreDetail: string | null = null
@@ -42,7 +50,7 @@ async function ingest(ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: b
   }
   ctx.db.prepare(UPSERT).run({
     repo: meta.repo, url: meta.url, description: meta.description, license: meta.license, license_ok: ok ? 1 : 0,
-    stars: meta.stars, last_commit: meta.lastCommit, tech_stack: techStack, score, score_detail: scoreDetail,
+    stars: meta.stars, last_commit: meta.lastCommit, tech_stack: techStack, score, score_detail: scoreDetail, source,
   })
 }
 
@@ -99,7 +107,7 @@ export async function addRepo(ctx: CoreCtx, repoUrl: string): Promise<void> {
   const all = await gh.searchRepos([], { minStars: 0, pushedAfter: '1970-01-01', perTopic: 1 })
   const meta = all.find((m) => m.repo === repo)
     ?? { repo, url: `https://github.com/${repo}`, description: null, license: null, stars: 0, lastCommit: null, topics: [] }
-  await ingest(ctx, gh, meta, true, true)
+  await ingest(ctx, gh, meta, true, true, 'manual')
 }
 
 function normalizeRepo(input: string): string {

@@ -81,7 +81,7 @@ export interface Candidate {
   id: number; repo: string; url: string; description: string | null
   license: string | null; license_ok: number
   stars: number; tech_stack: string | null; score: number | null; score_detail: string | null; status: string
-  favorite: number; last_commit: string | null; created_at: string
+  favorite: number; last_commit: string | null; created_at: string; source: string
 }
 export interface AutoScoutStatus {
   enabled: boolean; time: string
