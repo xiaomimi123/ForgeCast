@@ -70,8 +70,15 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold">设置</h2>
+      {/* 保存按钮固定在顶部：改完任意板块都不用滚到底才能保存——之前吃过这个亏（填了 key 只点了旁边的"测试连接"，其实测的是没保存的旧值） */}
+      <div className="sticky top-0 z-10 -mx-6 space-y-1 border-b border-hairline bg-paper px-6 pb-3 pt-1">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">设置</h2>
+          <div className="flex items-center gap-3">
+            <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
+            {saved && <span className="text-sm text-green-600">已保存，立即生效</span>}
+          </div>
+        </div>
         <span className="text-xs text-faint">🔒 key 只存本地 db、随服务器绑 127.0.0.1，不上传、不进代码仓库</span>
       </div>
 
@@ -152,11 +159,6 @@ export default function SettingsPage() {
         </div>
         <p className="text-xs text-faint">改了权重不会自动重新评分老候选，想让老候选按新权重重评，去「找项目」页点「全部重新评分」。</p>
       </section>
-
-      <div className="flex items-center gap-3">
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
-        {saved && <span className="text-sm text-green-600">已保存，立即生效</span>}
-      </div>
 
       <AutoScoutSection />
     </div>
