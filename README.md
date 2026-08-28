@@ -78,8 +78,8 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（HyperFrames + Kokoro TTS）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/topics` 选题库（目标账号+爆款笔记+LLM 提炼的选题模式，生成文案时作为风格参考注入）；`packages/server` 本地 API
-- `apps/web` Web 控制台（按业务流分六板块：找项目 `/scout`（候选卡片点「立项」直达项目详情页）/ 拆解需求 `/projects`（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容 `/workshop`（文案+视频生成；视频可选模板/BGM/情绪/背景/字幕，封面可独立选模板+raw 图重新生成，素材审核/发布数据展示齐全，见 docs/superpowers/specs/2026-08-11-workshop-panel-design.md；含卡点编辑器；项目详情页可一键 AI 生成 demo 模板配图，见 docs/superpowers/specs/2026-08-12-ai-demo-screens-design.md；主线为人机协作五 tab（文案/拍摄脚本/成片上传审片/出视频(辅助)/卡点），见 docs/superpowers/specs/2026-08-14-shoot-review-design.md） / 分发营销 `/market` / 定制项目 `/tailor` / 选题库 `/topics`（目标账号清单 + 同赛道爆款笔记导入 + LLM 提炼标题结构/情绪类型，生成文案时自动引用，见 docs/superpowers/specs/2026-08-13-topic-pool-design.md））；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
-- `designs/` 设计稿与视觉体系参照（当前主题：锻造车间，见 docs/superpowers/specs/2026-08-09-forge-theme-design.md）
+- `apps/web` Web 控制台（单页应用，五个工位/板块通过顶部 tab 切换，不占独立 URL：找项目（候选卡片点「立项」打开右侧详情抽屉）/ 拆解需求（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容（文案+视频生成；视频可选模板/BGM/情绪/背景/字幕，封面可独立选模板+raw 图重新生成，素材审核/发布数据展示齐全，见 docs/superpowers/specs/2026-08-11-workshop-panel-design.md；含卡点编辑器；项目详情页可一键 AI 生成 demo 模板配图，见 docs/superpowers/specs/2026-08-12-ai-demo-screens-design.md；主线为人机协作五 tab（文案/拍摄脚本/成片上传审片/出视频(辅助)/卡点），见 docs/superpowers/specs/2026-08-14-shoot-review-design.md） / 分发营销 / 定制项目 / 选题库（目标账号清单 + 同赛道爆款笔记导入 + LLM 提炼标题结构/情绪类型，生成文案时自动引用，见 docs/superpowers/specs/2026-08-13-topic-pool-design.md）；项目详情、定制项目详情均为点卡片打开的右侧滑入抽屉，非独立页面）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
+- `designs/` 设计稿与视觉体系参照（当前主题：生产控制台，见 docs/superpowers/specs/2026-08-28-production-console-shell-design.md；此前为锻造车间主题，见 docs/superpowers/specs/2026-08-09-forge-theme-design.md）
 
 ## Docker（可选）
 ```bash
@@ -87,7 +87,7 @@ DOCKER_BUILDKIT=0 docker compose build   # 本机路径含中文，必须禁 Bui
 docker compose up -d
 ```
 
-找项目板块（`/scout`）支持收藏候选 / 每日自动抓取（server 内置调度，设置页配置开关与时间）/ 每日新增视图（按入库日期分组，14 天内）/ 点卡片打开右侧抽屉查看评分明细与产品说明书；含 项目池/需求信号 两个 tab。
+找项目板块支持收藏候选 / 每日自动抓取（server 内置调度，设置页配置开关与时间）/ 每日新增视图（按入库日期分组，14 天内）/ 点卡片打开右侧抽屉查看评分明细与产品说明书；含 项目池/需求信号 两个 tab。
 
 ## 路线图
 见 `开源变现内容工厂-开发文档.md` §10。M5 视频引擎已从 Remotion 全面替换为 HyperFrames（四模板 + Kokoro 离线中文配音，见 docs/hyperframes-deploy.md），并支持 BGM 背景乐 + 节拍卡点 + 强拍音效（librosa 节拍网格 + ffmpeg ducking 混音）。
