@@ -71,15 +71,18 @@ export async function rebrandExec(ctx: CoreCtx, slug: string, opts: RebrandExecO
         if (lastAgent.serverStarted && lastAgent.serverPort != null) {
           const port = lastAgent.serverPort
           gates.start = true
-          onProgress('健康检查…')
-          gates.health = await opts.deps.waitForPort(port, { timeoutMs: 15000 })
-          if (gates.health && opts.deps.captureScreenshot) {
-            onProgress('截图…')
-            const shotAbs = path.join(projectDir, 'rebrand-exec-screenshot.png')
-            gates.screenshot = await opts.deps.captureScreenshot(port, shotAbs)
-            if (gates.screenshot) screenshotPath = path.join(slug, 'rebrand-exec-screenshot.png')
+          try {
+            onProgress('健康检查…')
+            gates.health = await opts.deps.waitForPort(port, { timeoutMs: 15000 })
+            if (gates.health && opts.deps.captureScreenshot) {
+              onProgress('截图…')
+              const shotAbs = path.join(projectDir, 'rebrand-exec-screenshot.png')
+              gates.screenshot = await opts.deps.captureScreenshot(port, shotAbs)
+              if (gates.screenshot) screenshotPath = path.join(slug, 'rebrand-exec-screenshot.png')
+            }
+          } finally {
+            if (opts.deps.killByPort) await opts.deps.killByPort(port)
           }
-          if (opts.deps.killByPort) await opts.deps.killByPort(port)
         }
       }
       break

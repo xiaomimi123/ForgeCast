@@ -224,4 +224,37 @@ describe('rebrandExec 四关验收（构建之后的启动/健康检查/截图�
     expect(report).toContain('健康检查：✅')
     expect(report).toContain('截图：✅')
   })
+
+  it('健康检查意外抛错（非返回 false）→ 仍然收尾杀进程，异常继续往外抛', async () => {
+    seedProject('demo')
+    const waitForPort = vi.fn(async () => { throw new Error('waitForPort 炸了') })
+    const captureScreenshot = vi.fn(async () => true)
+    const killByPort = vi.fn(async () => {})
+    await expect(rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: true, serverPort: 5678 })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+        waitForPort, captureScreenshot, killByPort,
+      },
+    })).rejects.toThrow(/waitForPort 炸了/)
+    expect(captureScreenshot).not.toHaveBeenCalled()
+    expect(killByPort).toHaveBeenCalledWith(5678)
+  })
+
+  it('截图意外抛错 → 仍然收尾杀进程，异常继续往外抛', async () => {
+    seedProject('demo')
+    const waitForPort = vi.fn(async () => true)
+    const captureScreenshot = vi.fn(async () => { throw new Error('captureScreenshot 炸了') })
+    const killByPort = vi.fn(async () => {})
+    await expect(rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: true, serverPort: 8765 })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+        waitForPort, captureScreenshot, killByPort,
+      },
+    })).rejects.toThrow(/captureScreenshot 炸了/)
+    expect(killByPort).toHaveBeenCalledWith(8765)
+  })
 })
