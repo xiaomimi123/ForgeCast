@@ -62,6 +62,12 @@ describe('openDb', () => {
     const row = db.prepare("SELECT source FROM candidates WHERE repo = 'a/b'").get() as any
     expect(row.source).toBe('scout')
   })
+  it('projects.rebrand_exec_result 列存在，默认 NULL', () => {
+    const db = openDb(tmpDbPath())
+    db.prepare("INSERT INTO projects (slug) VALUES ('a')").run()
+    const row = db.prepare("SELECT rebrand_exec_result FROM projects WHERE slug = 'a'").get() as any
+    expect(row.rebrand_exec_result).toBeNull()
+  })
   it('custom_templates 表存在且可插入', () => {
     const db = openDb(tmpDbPath())
     const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='custom_templates'").get()
