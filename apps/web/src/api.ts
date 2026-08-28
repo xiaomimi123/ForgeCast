@@ -7,6 +7,7 @@ export interface Project {
   /** 立项时继承自候选（candidate_id 为空或候选未生成过说明书/评分时为 null），JSON 字符串需自行解析 */
   intro_detail: string | null
   score_detail: string | null
+  rebrand_exec_result: string | null
   /** 泳道卡片用的真实产物计数；GET /api/projects/:slug 详情接口不带 */
   counts?: { copies: number; videos: number; published: number; leads: number }
 }

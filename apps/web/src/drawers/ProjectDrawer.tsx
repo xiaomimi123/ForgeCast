@@ -30,6 +30,8 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
   const [copied, setCopied] = useState(false)
   const [screensBusy, setScreensBusy] = useState(false)
   const [screensLog, setScreensLog] = useState<string[]>([])
+  const [execRunning, setExecRunning] = useState(false)
+  const [execLog, setExecLog] = useState<string[]>([])
 
   async function analyze() {
     if (analyzing) return
@@ -66,6 +68,26 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
     } catch (err) {
       setRebrandLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
       setRebranding(false)
+    }
+  }
+
+  async function runExec() {
+    if (execRunning) return
+    setExecRunning(true)
+    setExecLog([])
+    try {
+      const { taskId } = await api<{ taskId: string }>(`/api/projects/${slug}/rebrand-exec`, { method: 'POST' })
+      subscribeTask(taskId, (e) => {
+        setExecLog((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
+        if (e.type === 'done' || e.type === 'error') {
+          setExecRunning(false)
+          qc.invalidateQueries({ queryKey: ['project', slug] })
+          qc.invalidateQueries({ queryKey: ['projects'] })
+        }
+      })
+    } catch (err) {
+      setExecLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
+      setExecRunning(false)
     }
   }
 
@@ -189,6 +211,10 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
                   disabled={rebranding || !p.analysisMd} onClick={rebrand}>
                   {rebranding ? '生成中…' : (p.rebrandMd ? '重新生成换皮清单' : '生成换皮清单')}
                 </button>
+                <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50"
+                  disabled={execRunning || !p.rebrandMd} onClick={runExec}>
+                  {execRunning ? '验收中…' : '跑验收（构建+启动+健康检查+截图）'}
+                </button>
                 <span className="text-xs text-faint">
                   {p.analysisMd ? '读 analysis.md 生成可执行 checklist' : '先在「分析」tab 生成分析报告'}
                 </span>
@@ -220,6 +246,11 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
               {rebrandLog.length > 0 && (
                 <div className="mb-3 rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-32 overflow-y-auto space-y-1">
                   {rebrandLog.map((l, i) => <div key={i}>{l}</div>)}
+                </div>
+              )}
+              {execLog.length > 0 && (
+                <div className="mb-3 rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-32 overflow-y-auto space-y-1">
+                  {execLog.map((l, i) => <div key={i}>{l}</div>)}
                 </div>
               )}
               {p.rebrandMd
