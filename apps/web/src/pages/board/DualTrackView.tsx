@@ -29,7 +29,7 @@ export default function DualTrackView({ candidates, onOpenDetail, onPick, pickin
   const hot = candidates
     .filter((c) => c.source === 'scout' && c.id !== dismissedHotId)
     .map((c) => ({ c, hrs: hoursSince(c.created_at) }))
-    .filter((x): x is { c: Candidate; hrs: number } => x.hrs != null && x.hrs <= 48 && x.c.stars >= 2000)
+    .filter((x): x is { c: Candidate; hrs: number } => x.hrs != null && x.hrs <= 48 && x.c.stars >= 2000 && x.c.license_ok === 1)
     .sort((a, b) => b.c.stars - a.c.stars)[0]?.c
 
   return (
