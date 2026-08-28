@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Candidate, type IntroResponse, type SettingsView } from '../../api'
+import Drawer from '../../components/Drawer'
 import { Bar, buildDims, parseDetail } from './CandidateCard'
 import IntroSections from './IntroSections'
 
@@ -13,7 +14,6 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [res, setRes] = useState<IntroResponse | null>(null)
-  const [entered, setEntered] = useState(false)   // 滑入过渡
   const d = parseDetail(candidate.score_detail)
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<SettingsView>('/api/settings') })
   const dims = buildDims(settings.data?.scout.weights ?? { rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
@@ -29,20 +29,11 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
   }
 
   useEffect(() => { load(false) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [candidate.id])
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-  useEffect(() => { requestAnimationFrame(() => setEntered(true)) }, [])
 
   const live = res && res.mode === 'live' ? res : null
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose}>
-      <div
-        className={`absolute right-0 top-0 h-full w-full max-w-[480px] overflow-y-auto bg-paper border-l-2 border-ink p-5 shadow-xl transition-transform duration-200 ${entered ? 'translate-x-0' : 'translate-x-full'}`}
-        onClick={(e) => e.stopPropagation()}>
+    <Drawer onClose={onClose}>
         <div className="flex items-baseline gap-2 border-b border-hairline pb-2">
           <a className="font-black text-fire" href={candidate.url} target="_blank" rel="noreferrer">{candidate.repo}</a>
           <span className="text-xs text-sub">{candidate.license ?? '—'}</span>
@@ -103,7 +94,6 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Drawer>
   )
 }
