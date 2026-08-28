@@ -132,3 +132,96 @@ describe('rebrandExec 报告', () => {
     expect(report).toContain('TypeError: xxx is not a function')
   })
 })
+
+describe('rebrandExec 四关验收（构建之后的启动/健康检查/截图）', () => {
+  it('四关全绿：build 过 + agent 自报启动成功 + 健康检查通过 + 截图成功', async () => {
+    seedProject('demo')
+    const waitForPort = vi.fn(async () => true)
+    const captureScreenshot = vi.fn(async () => true)
+    const killByPort = vi.fn(async () => {})
+    const r = await rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: true, serverPort: 4567, startCommand: 'npm start' })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+        waitForPort, captureScreenshot, killByPort,
+      },
+    })
+    expect(r.gates).toEqual({ build: true, start: true, health: true, screenshot: true })
+    expect(r.screenshotPath).toBe(path.join('demo', 'rebrand-exec-screenshot.png'))
+    expect(waitForPort).toHaveBeenCalledWith(4567, expect.anything())
+    expect(captureScreenshot).toHaveBeenCalledWith(4567, expect.stringContaining('rebrand-exec-screenshot.png'))
+    expect(killByPort).toHaveBeenCalledWith(4567)
+  })
+
+  it('agent 自报启动失败 → 后三关都不跑，gates 只有 build 为真', async () => {
+    seedProject('demo')
+    const waitForPort = vi.fn(async () => true)
+    const captureScreenshot = vi.fn(async () => true)
+    const killByPort = vi.fn(async () => {})
+    const r = await rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: false })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+        waitForPort, captureScreenshot, killByPort,
+      },
+    })
+    expect(r.gates).toEqual({ build: true, start: false, health: false, screenshot: false })
+    expect(r.screenshotPath).toBeUndefined()
+    expect(waitForPort).not.toHaveBeenCalled()
+    expect(captureScreenshot).not.toHaveBeenCalled()
+    expect(killByPort).not.toHaveBeenCalled()
+  })
+
+  it('健康检查失败 → 截图关不跑，但仍然收尾杀进程', async () => {
+    seedProject('demo')
+    const waitForPort = vi.fn(async () => false)
+    const captureScreenshot = vi.fn(async () => true)
+    const killByPort = vi.fn(async () => {})
+    const r = await rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: true, serverPort: 9000 })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+        waitForPort, captureScreenshot, killByPort,
+      },
+    })
+    expect(r.gates).toEqual({ build: true, start: true, health: false, screenshot: false })
+    expect(captureScreenshot).not.toHaveBeenCalled()
+    expect(killByPort).toHaveBeenCalledWith(9000)
+  })
+
+  it('没有传新 deps（老调用方式）→ agent 自报启动成功也不会报错，gates 未定义', async () => {
+    seedProject('demo')
+    const r = await rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: true, serverPort: 1234 })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+      },
+    })
+    expect(r.status).toBe('done')
+    expect(r.gates).toBeUndefined()
+  })
+
+  it('报告里含四关展示', async () => {
+    seedProject('demo')
+    const r = await rebrandExec(ctx, 'demo', {
+      deps: {
+        clone: vi.fn(async () => {}),
+        runAgent: vi.fn(async () => ({ status: 'done', summary: 'ok', changedFiles: [], serverStarted: true, serverPort: 4567 })),
+        runBuild: vi.fn(async () => ({ ok: true, output: '' })),
+        waitForPort: vi.fn(async () => true),
+        captureScreenshot: vi.fn(async () => true),
+        killByPort: vi.fn(async () => {}),
+      },
+    })
+    const report = fs.readFileSync(path.join(root, 'workspace', r.reportPath), 'utf8')
+    expect(report).toContain('四关验收')
+    expect(report).toContain('构建：✅')
+    expect(report).toContain('启动：✅')
+    expect(report).toContain('健康检查：✅')
+    expect(report).toContain('截图：✅')
+  })
+})

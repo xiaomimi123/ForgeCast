@@ -3,16 +3,29 @@ import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
 import { detectAndRunBuild } from './detect-build'
 import type { AgentResult } from './fixtures/rebrand-exec-fixture'
-import { mockClone, mockRunAgent, mockRunBuild } from './fixtures/rebrand-exec-fixture'
+import { mockCaptureScreenshot, mockClone, mockKillByPort, mockRunAgent, mockRunBuild, mockWaitForPort } from './fixtures/rebrand-exec-fixture'
+import { captureScreenshot } from './screenshot'
+import { killByPort } from './kill-port'
+import { waitForPort } from './healthcheck'
 import { spawnCapture } from './spawn-capture'
 
 export interface RebrandExecDeps {
   clone: (url: string, dir: string) => Promise<void>
   runAgent: (prompt: string, cwd: string) => Promise<AgentResult>
   runBuild: (cwd: string) => Promise<{ ok: boolean; output: string } | null>
+  // 四关的后三关，全部可选——不传时（老调用方式）这三关直接跳过，status/build 关行为不变
+  waitForPort?: (port: number, opts: { timeoutMs: number }) => Promise<boolean>
+  captureScreenshot?: (port: number, outPath: string) => Promise<boolean>
+  killByPort?: (port: number) => Promise<void>
 }
 export interface RebrandExecOptions { onProgress?: (msg: string) => void; fresh?: boolean; deps: RebrandExecDeps }
-export interface RebrandExecResult { status: 'done' | 'build-failed' | 'no-buildscript'; rounds: number; reportPath: string }
+export interface RebrandExecResult {
+  status: 'done' | 'build-failed' | 'no-buildscript'
+  rounds: number
+  reportPath: string
+  gates?: { build: boolean; start: boolean; health: boolean; screenshot: boolean }
+  screenshotPath?: string
+}
 
 const MAX_ROUNDS = 3
 
@@ -41,6 +54,8 @@ export async function rebrandExec(ctx: CoreCtx, slug: string, opts: RebrandExecO
   let status: RebrandExecResult['status'] = 'build-failed'
   let lastAgent: AgentResult = { status: 'blocked', summary: '', changedFiles: [] }
   let lastBuild: { ok: boolean; output: string } | null = null
+  let gates: RebrandExecResult['gates']
+  let screenshotPath: string | undefined
   while (round <= MAX_ROUNDS) {
     onProgress(`第 ${round} 轮改造…`)
     const prompt = round === 1
@@ -49,17 +64,36 @@ export async function rebrandExec(ctx: CoreCtx, slug: string, opts: RebrandExecO
     lastAgent = await opts.deps.runAgent(prompt, sourceDir)
     lastBuild = await opts.deps.runBuild(sourceDir)
     if (lastBuild === null) { status = 'no-buildscript'; break }
-    if (lastBuild.ok) { status = 'done'; break }
+    if (lastBuild.ok) {
+      status = 'done'
+      if (opts.deps.waitForPort) {
+        gates = { build: true, start: false, health: false, screenshot: false }
+        if (lastAgent.serverStarted && lastAgent.serverPort != null) {
+          const port = lastAgent.serverPort
+          gates.start = true
+          onProgress('健康检查…')
+          gates.health = await opts.deps.waitForPort(port, { timeoutMs: 15000 })
+          if (gates.health && opts.deps.captureScreenshot) {
+            onProgress('截图…')
+            const shotAbs = path.join(projectDir, 'rebrand-exec-screenshot.png')
+            gates.screenshot = await opts.deps.captureScreenshot(port, shotAbs)
+            if (gates.screenshot) screenshotPath = path.join(slug, 'rebrand-exec-screenshot.png')
+          }
+          if (opts.deps.killByPort) await opts.deps.killByPort(port)
+        }
+      }
+      break
+    }
     if (round === MAX_ROUNDS) { status = 'build-failed'; break }
     round++
   }
 
   const reportRel = path.join(slug, 'rebrand-exec-report.md')
-  const report = renderReport({ slug, status, rounds: round, elapsedMs: Date.now() - startedAt, agent: lastAgent, build: lastBuild })
+  const report = renderReport({ slug, status, rounds: round, elapsedMs: Date.now() - startedAt, agent: lastAgent, build: lastBuild, gates })
   fs.writeFileSync(path.join(projectDir, 'rebrand-exec-report.md'), report, 'utf8')
   onProgress(`执行完成: ${status}（${round} 轮）`)
 
-  return { status, rounds: round, reportPath: reportRel }
+  return { status, rounds: round, reportPath: reportRel, gates, screenshotPath }
 }
 
 function buildInitialPrompt(slug: string, planPath: string, sourceDir: string): string {
@@ -72,7 +106,10 @@ function buildInitialPrompt(slug: string, planPath: string, sourceDir: string): 
     '',
     '改完后：',
     '1. 找到并运行这个项目自己的 build/lint/typecheck 命令自检，修到能过为止（如果确实没有可运行的验证命令，在 summary 里说明）',
-    '2. 按给定的 JSON schema 输出最终结果',
+    '2. 尝试把这个项目的服务启动起来（如 npm start / pnpm dev 等，后台运行不要阻塞），',
+    '   如果确实启动成功，在结果里报告 serverStarted:true、serverPort、startCommand；',
+    '   如果启动失败或这个项目本来就不是一个可独立运行的服务，报告 serverStarted:false，不用勉强。',
+    '3. 按给定的 JSON schema 输出最终结果',
   ].join('\n')
 }
 
@@ -88,8 +125,9 @@ function buildRetryPrompt(sourceDir: string, buildOutput: string): string {
 function renderReport(input: {
   slug: string; status: RebrandExecResult['status']; rounds: number; elapsedMs: number
   agent: AgentResult; build: { ok: boolean; output: string } | null
+  gates?: RebrandExecResult['gates']
 }): string {
-  const { slug, status, rounds, elapsedMs, agent, build } = input
+  const { slug, status, rounds, elapsedMs, agent, build, gates } = input
   const lines = [
     `# ${slug} 换皮执行报告`,
     '',
@@ -104,6 +142,16 @@ function renderReport(input: {
     '## 改动文件',
     ...(agent.changedFiles.length ? agent.changedFiles.map((f) => `- ${f}`) : ['（无）']),
   ]
+  if (gates) {
+    const mark = (b: boolean) => (b ? '✅' : '❌')
+    lines.push(
+      '', '## 四关验收',
+      `- 构建：${mark(gates.build)}`,
+      `- 启动：${mark(gates.start)}`,
+      `- 健康检查：${mark(gates.health)}`,
+      `- 截图：${mark(gates.screenshot)}`,
+    )
+  }
   if (build && !build.ok) {
     lines.push('', '## 最后一次 build 输出', '```', build.output, '```')
   }
@@ -119,7 +167,14 @@ async function runClaudeHeadless(prompt: string, cwd: string): Promise<AgentResu
   const timeoutMs = Number(process.env.FORGECAST_REBRAND_EXEC_TIMEOUT_MS) || 1_200_000
   const schema = JSON.stringify({
     type: 'object', required: ['status', 'summary', 'changedFiles'],
-    properties: { status: { enum: ['done', 'blocked'] }, summary: { type: 'string' }, changedFiles: { type: 'array', items: { type: 'string' } } },
+    properties: {
+      status: { enum: ['done', 'blocked'] },
+      summary: { type: 'string' },
+      changedFiles: { type: 'array', items: { type: 'string' } },
+      serverStarted: { type: 'boolean' },
+      serverPort: { type: 'number' },
+      startCommand: { type: 'string' },
+    },
   })
   const { code, stdout, stderr } = await spawnCapture('claude', [
     '-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json', '--json-schema', schema,
@@ -132,7 +187,7 @@ async function runClaudeHeadless(prompt: string, cwd: string): Promise<AgentResu
 /** CLI 用的对外入口：按 ctx.config.rebrandExec.mode 自动选 mock/live deps，调用方不需要自己传 deps。 */
 export function rebrandExecAuto(ctx: CoreCtx, slug: string, opts: { onProgress?: (msg: string) => void; fresh?: boolean } = {}): Promise<RebrandExecResult> {
   const deps: RebrandExecDeps = ctx.config.rebrandExec.mode === 'live'
-    ? { clone: gitClone, runAgent: runClaudeHeadless, runBuild: detectAndRunBuild }
-    : { clone: mockClone, runAgent: mockRunAgent, runBuild: mockRunBuild }
+    ? { clone: gitClone, runAgent: runClaudeHeadless, runBuild: detectAndRunBuild, waitForPort, captureScreenshot, killByPort }
+    : { clone: mockClone, runAgent: mockRunAgent, runBuild: mockRunBuild, waitForPort: mockWaitForPort, captureScreenshot: mockCaptureScreenshot, killByPort: mockKillByPort }
   return rebrandExec(ctx, slug, { ...opts, deps })
 }

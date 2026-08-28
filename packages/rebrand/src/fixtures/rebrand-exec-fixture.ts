@@ -2,7 +2,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /** 换皮执行 agent 的最终结构化结果（真实实现来自 claude --json-schema 输出，mock 版本手写固定值）。 */
-export interface AgentResult { status: 'done' | 'blocked'; summary: string; changedFiles: string[] }
+export interface AgentResult {
+  status: 'done' | 'blocked'; summary: string; changedFiles: string[]
+  // 启动关专属，全部可选——agent 没试启动/试了失败都可能缺失
+  serverStarted?: boolean
+  serverPort?: number
+  startCommand?: string
+}
 
 /** mock clone：不发真实网络请求，落一个占位 package.json + README.md 模拟"已 clone"。 */
 export async function mockClone(_url: string, dir: string): Promise<void> {
@@ -21,10 +27,25 @@ export async function mockRunAgent(_prompt: string, cwd: string): Promise<AgentR
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
   pkg.name = 'rebranded'
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), 'utf8')
-  return { status: 'done', summary: '已完成品牌替换/删除项/中文化（mock）', changedFiles: ['package.json'] }
+  return {
+    status: 'done', summary: '已完成品牌替换/删除项/中文化（mock）', changedFiles: ['package.json'],
+    serverStarted: true, serverPort: 0, startCommand: 'echo mock-start',
+  }
 }
 
 /** mock build：固定通过，不真的跑 npm/pnpm。 */
 export async function mockRunBuild(_cwd: string): Promise<{ ok: boolean; output: string }> {
   return { ok: true, output: 'mock build ok' }
 }
+
+/** mock 健康检查：不发真实网络请求，固定通过。 */
+export async function mockWaitForPort(_port: number): Promise<boolean> { return true }
+
+/** mock 截图：不调真实 Playwright，落一个占位文件模拟"已截图"。 */
+export async function mockCaptureScreenshot(_port: number, outPath: string): Promise<boolean> {
+  fs.writeFileSync(outPath, 'MOCK_PNG')
+  return true
+}
+
+/** mock 进程收尾：不真的杀进程，空操作。 */
+export async function mockKillByPort(_port: number): Promise<void> {}
