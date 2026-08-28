@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": { "test": "vitest run --passWithNoTests" },
-  "dependencies": { "@forgecast/core": "workspace:*" },
+  "dependencies": { "@forgecast/core": "workspace:*", "playwright": "^1.49.0" },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.11.0",

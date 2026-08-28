@@ -186,6 +186,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
+      playwright:
+        specifier: ^1.49.0
+        version: 1.61.1
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.11
