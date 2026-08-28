@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api, subscribeTask, type AutoScoutStatus, type Candidate } from '../api'
 import CandidateCard from './board/CandidateCard'
 import CandidateDrawer from './board/CandidateDrawer'
@@ -25,9 +24,8 @@ function dayLabel(day: string, today: string): string {
   return `${Number(m)}月${Number(dd)}日`
 }
 
-export default function ScoutPage() {
+export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const [logs, setLogs] = useState<string[]>([])
   const [scanning, setScanning] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
@@ -44,7 +42,7 @@ export default function ScoutPage() {
     onSuccess: ({ slug }) => {
       qc.invalidateQueries({ queryKey: ['candidates'] })
       qc.invalidateQueries({ queryKey: ['projects'] })
-      navigate(`/projects/${slug}`)
+      onOpenProject(slug)
     },
     onError: (e) => alert(`立项失败: ${e instanceof Error ? e.message : String(e)}`),
     onSettled: (_d, _e, repo) => setPickingRepos((prev) => { const next = new Set(prev); next.delete(repo); return next }),

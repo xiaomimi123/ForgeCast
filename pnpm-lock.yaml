@@ -63,9 +63,6 @@ importers:
       react-markdown:
         specifier: ^9.0.0
         version: 9.1.0(@types/react@18.3.31)(react@18.3.1)
-      react-router-dom:
-        specifier: ^6.28.0
-        version: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.0.0
@@ -725,10 +722,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@remix-run/router@1.23.3':
-    resolution: {integrity: sha512-4An71tdz9X8+3sI4Qqqd2LWd9vS39J7sqd9EU4Scw7TJE/qB10Flv/UuqbPVgfQV9XoK8Np6jNquZitnZq5i+Q==}
-    engines: {node: '>=14.0.0'}
 
   '@rolldown/pluginutils@1.0.0-beta.27':
     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
@@ -1582,19 +1575,6 @@ packages:
     resolution: {integrity: sha512-z6F7K9bV85EfseRCp2bzrpyQ0Gkw1uLoCel9XBVWPg/TjRj94SkJzUTGfOa4bs7iJvBWtQG0Wq7wnI0syw3EBQ==}
     engines: {node: '>=0.10.0'}
 
-  react-router-dom@6.30.4:
-    resolution: {integrity: sha512-q4HvNl+mmDdkS0g+MqiBZNteQJCuimWoOyHMy4T/RQLAn9Z29+E91QXRaxOujeMl2HTzRSS0KFPd7lxX3PjV0Q==}
-    engines: {node: '>=14.0.0'}
-    peerDependencies:
-      react: '>=16.8'
-      react-dom: '>=16.8'
-
-  react-router@6.30.4:
-    resolution: {integrity: sha512-SVUsDe+DybHM/WmYKIVYhZh1o5Dcuf16yM6WjG02Q9XVFMZIJyHYhwrr6bFBXZkVP6z69kNkMyBCujt8FaFLJA==}
-    engines: {node: '>=14.0.0'}
-    peerDependencies:
-      react: '>=16.8'
-
   react@18.3.1:
     resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
     engines: {node: '>=0.10.0'}
@@ -2130,8 +2110,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@remix-run/router@1.23.3': {}
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 
@@ -3054,18 +3032,6 @@ snapshots:
       - supports-color
 
   react-refresh@0.17.0: {}
-
-  react-router-dom@6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
-    dependencies:
-      '@remix-run/router': 1.23.3
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-      react-router: 6.30.4(react@18.3.1)
-
-  react-router@6.30.4(react@18.3.1):
-    dependencies:
-      '@remix-run/router': 1.23.3
-      react: 18.3.1
 
   react@18.3.1:
     dependencies:

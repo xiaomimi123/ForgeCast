@@ -1,11 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { useParams } from 'react-router-dom'
 import { api, subscribeTask, type TailorCapability, type TailorDetail } from '../api'
+import Drawer from '../components/Drawer'
 
-export default function TailorDetailPage() {
-  const { id } = useParams()
+export default function TailorDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const qc = useQueryClient()
   const detail = useQuery({ queryKey: ['tailor', id], queryFn: () => api<TailorDetail>(`/api/tailor/${id}`) })
   const proposal = useQuery({
@@ -62,53 +61,55 @@ export default function TailorDetailPage() {
   }
 
   const d = detail.data
-  if (!d) return <div className="text-faint">{detail.isError ? '需求不存在' : '加载中…'}</div>
+  if (!d) return <Drawer onClose={onClose}><div className="text-faint">{detail.isError ? '需求不存在' : '加载中…'}</div></Drawer>
   const caps = d.capabilities
   const pendingCount = caps.filter((c) => c.decision === 'pending').length
   const btn = 'btn-fire px-4 py-2 text-sm disabled:opacity-50'
   return (
-    <div className="space-y-4">
-      <div className="card-forge p-4">
-        <div className="flex items-center justify-between">
-          <div className="font-semibold">#{d.request.id} {d.request.title}</div>
-          <span className="text-xs text-sub">{d.request.status}</span>
+    <Drawer onClose={onClose} width={900}>
+      <div className="space-y-4">
+        <div className="card-forge p-4">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">#{d.request.id} {d.request.title}</div>
+            <span className="text-xs text-sub">{d.request.status}</span>
+          </div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-sub">{d.request.raw_need}</div>
+          <div className="mt-3 flex gap-2">
+            <button className={btn} disabled={!!running} onClick={() => runAction('decompose')}>
+              {running === 'decompose' ? '拆解中…' : caps.length ? '重新拆解' : '拆解需求'}
+            </button>
+            <button className={btn} disabled={!!running || d.request.status === 'draft'} onClick={() => runAction('search')}>
+              {running === 'search' ? '搜索中…' : '搜轮子'}
+            </button>
+            <button className={btn} disabled={!!running || !caps.length || pendingCount > 0}
+              title={pendingCount ? `还有 ${pendingCount} 项未决策` : ''} onClick={() => runAction('proposal')}>
+              {running === 'proposal' ? '生成中…' : '生成方案书'}
+            </button>
+            {pendingCount > 0 && caps.length > 0 && <span className="self-center text-xs text-faint">每项能力选「轮子/自研/不做」后才能出方案书</span>}
+          </div>
         </div>
-        <div className="mt-2 whitespace-pre-wrap text-sm text-sub">{d.request.raw_need}</div>
-        <div className="mt-3 flex gap-2">
-          <button className={btn} disabled={!!running} onClick={() => runAction('decompose')}>
-            {running === 'decompose' ? '拆解中…' : caps.length ? '重新拆解' : '拆解需求'}
-          </button>
-          <button className={btn} disabled={!!running || d.request.status === 'draft'} onClick={() => runAction('search')}>
-            {running === 'search' ? '搜索中…' : '搜轮子'}
-          </button>
-          <button className={btn} disabled={!!running || !caps.length || pendingCount > 0}
-            title={pendingCount ? `还有 ${pendingCount} 项未决策` : ''} onClick={() => runAction('proposal')}>
-            {running === 'proposal' ? '生成中…' : '生成方案书'}
-          </button>
-          {pendingCount > 0 && caps.length > 0 && <span className="self-center text-xs text-faint">每项能力选「轮子/自研/不做」后才能出方案书</span>}
-        </div>
+        {logs.length > 0 && (
+          <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border bg-neutral-900 p-3 font-mono text-xs text-green-400">
+            {logs.map((l, i) => <div key={i}>{l}</div>)}
+          </div>
+        )}
+        {caps.map((c) => <CapabilityCard key={c.id} cap={c} onPatch={patchCap} onRemove={removeCap} />)}
+        {caps.length > 0 && (
+          <div className="flex gap-2">
+            <input className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="能力名" value={newCap.name}
+              onChange={(e) => setNewCap((s) => ({ ...s, name: e.target.value }))} />
+            <input className="w-64 rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="GitHub 搜索关键词，逗号分隔" value={newCap.keywords}
+              onChange={(e) => setNewCap((s) => ({ ...s, keywords: e.target.value }))} />
+            <button className="btn-ink px-3 py-1 text-sm" onClick={addCap}>+ 加能力项</button>
+          </div>
+        )}
+        {proposal.data?.md && (
+          <div className="card-forge p-6 text-sm leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:font-semibold [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2">
+            <ReactMarkdown>{proposal.data.md}</ReactMarkdown>
+          </div>
+        )}
       </div>
-      {logs.length > 0 && (
-        <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border bg-neutral-900 p-3 font-mono text-xs text-green-400">
-          {logs.map((l, i) => <div key={i}>{l}</div>)}
-        </div>
-      )}
-      {caps.map((c) => <CapabilityCard key={c.id} cap={c} onPatch={patchCap} onRemove={removeCap} />)}
-      {caps.length > 0 && (
-        <div className="flex gap-2">
-          <input className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="能力名" value={newCap.name}
-            onChange={(e) => setNewCap((s) => ({ ...s, name: e.target.value }))} />
-          <input className="w-64 rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="GitHub 搜索关键词，逗号分隔" value={newCap.keywords}
-            onChange={(e) => setNewCap((s) => ({ ...s, keywords: e.target.value }))} />
-          <button className="btn-ink px-3 py-1 text-sm" onClick={addCap}>+ 加能力项</button>
-        </div>
-      )}
-      {proposal.data?.md && (
-        <div className="card-forge p-6 text-sm leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:font-semibold [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2">
-          <ReactMarkdown>{proposal.data.md}</ReactMarkdown>
-        </div>
-      )}
-    </div>
+    </Drawer>
   )
 }
 

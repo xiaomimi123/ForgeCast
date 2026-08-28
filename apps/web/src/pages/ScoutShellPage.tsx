@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
 import DemandPage from './DemandPage'
 import ScoutPage from './ScoutPage'
 
@@ -9,22 +9,17 @@ const TABS = [
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
-function normalizeTab(v: string | null): TabKey {
-  return v === 'demand' ? 'demand' : 'pool'
-}
-
-export default function ScoutShellPage() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = normalizeTab(searchParams.get('tab'))
+export default function ScoutShellPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
+  const [tab, setTab] = useState<TabKey>('pool')
   return (
     <div className="space-y-4">
       <div className="seg-tabs">
         {TABS.map((t) => (
           <button key={t.key} className={tab === t.key ? 'on' : ''}
-            onClick={() => setSearchParams({ tab: t.key }, { replace: true })}>{t.label}</button>
+            onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
-      {tab === 'pool' ? <ScoutPage /> : <DemandPage />}
+      {tab === 'pool' ? <ScoutPage onOpenProject={onOpenProject} /> : <DemandPage />}
     </div>
   )
 }

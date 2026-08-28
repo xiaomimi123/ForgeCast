@@ -1,4 +1,3 @@
-import { useNavigate } from 'react-router-dom'
 import type { IntroDetail, Project } from '../../api'
 import { parseDetail } from './CandidateCard'
 
@@ -32,10 +31,10 @@ function fallbackIntro(p: Project): { targetBuyer: string; painPoint: string } {
 
 const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
 
-export default function ProjectGroups({ projects, onMove, loaded }: {
+export default function ProjectGroups({ projects, onMove, loaded, onOpenProject }: {
   projects: Project[]; onMove: (slug: string, stage: string) => void; loaded?: boolean
+  onOpenProject: (slug: string) => void
 }) {
-  const navigate = useNavigate()
   const inDecompose = projects.filter((p) => GROUPS.some((g) => g.key === p.stage))
 
   return (
@@ -60,7 +59,7 @@ export default function ProjectGroups({ projects, onMove, loaded }: {
                     : []
                   return (
                     <div key={p.id}
-                      onClick={() => navigate(`/projects/${p.slug}`)}
+                      onClick={() => onOpenProject(p.slug)}
                       className="cursor-pointer rounded-lg border-[1.5px] border-ink bg-card p-3 text-sm shadow-[2px_2px_0_rgba(28,23,18,0.85)] hover:shadow-[3px_3px_0_rgba(217,72,28,0.9)]">
                       <div className="font-medium">{p.brand_name || p.slug}</div>
                       <div className="text-xs text-faint">{p.slug}</div>

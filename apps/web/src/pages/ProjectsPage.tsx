@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Project } from '../api'
 import ProjectGroups from './board/ProjectGroups'
 
-export default function ProjectsPage() {
+export default function ProjectsPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
   const moveStage = useMutation({
@@ -20,6 +20,7 @@ export default function ProjectsPage() {
         projects={projects.data ?? []}
         loaded={projects.isSuccess}
         onMove={(slug, stage) => moveStage.mutate({ slug, stage })}
+        onOpenProject={onOpenProject}
       />
     </div>
   )

@@ -1,11 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api, type Lead, type WeeklyReport } from '../api'
 
-export default function ReviewPage() {
+export default function ReviewPage({ onOpenTailor }: { onOpenTailor: (id: number) => void }) {
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const report = useQuery({ queryKey: ['report'], queryFn: () => api<WeeklyReport>('/api/report') })
   const leads = useQuery({ queryKey: ['leads'], queryFn: () => api<Lead[]>('/api/leads') })
 
@@ -29,7 +27,7 @@ export default function ReviewPage() {
   async function toTailor(leadId: number) {
     try {
       const r = await api<{ id: number }>(`/api/leads/${leadId}/to-tailor`, { method: 'POST', body: '{}' })
-      navigate(`/tailor/${r.id}`)
+      onOpenTailor(r.id)
     } catch (e) { alert(`转入失败: ${e instanceof Error ? e.message : String(e)}`) }
   }
 

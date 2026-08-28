@@ -1,20 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api, type TailorRequest } from '../api'
 
 const STATUS_LABEL: Record<TailorRequest['status'], string> = {
   draft: '待拆解', decomposed: '已拆解', searched: '已搜轮子', proposed: '已出方案',
 }
 
-export default function TailorPage() {
+export default function TailorPage({ onOpenTailor }: { onOpenTailor: (id: number) => void }) {
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const list = useQuery({ queryKey: ['tailor'], queryFn: () => api<TailorRequest[]>('/api/tailor') })
   const [form, setForm] = useState({ title: '', rawNeed: '' })
   const create = useMutation({
     mutationFn: () => api<{ id: number }>('/api/tailor', { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['tailor'] }); navigate(`/tailor/${r.id}`) },
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['tailor'] }); onOpenTailor(r.id) },
     onError: (e) => alert(`录入失败: ${e instanceof Error ? e.message : String(e)}`),
   })
   const inp = 'rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm w-full'
@@ -22,7 +20,7 @@ export default function TailorPage() {
     <div className="grid grid-cols-[1fr_360px] gap-6">
       <div className="space-y-3">
         {list.data?.map((r) => (
-          <div key={r.id} onClick={() => navigate(`/tailor/${r.id}`)}
+          <div key={r.id} onClick={() => onOpenTailor(r.id)}
             className="card-forge cursor-pointer p-4 hover:shadow-[3px_3px_0_rgba(217,72,28,0.9)]">
             <div className="flex items-center justify-between">
               <div className="font-medium">#{r.id} {r.title}</div>

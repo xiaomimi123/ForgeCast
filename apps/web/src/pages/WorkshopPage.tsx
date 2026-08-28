@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
 import { api, subscribeTask, type Asset, type BgmList, type Project } from '../api'
 import CopyTab from './workshop/CopyTab'
 import ScriptTab from './workshop/ScriptTab'
@@ -20,14 +19,9 @@ const TABS = [
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
-function normalizeTab(v: string | null): TabKey {
-  return v === 'script' || v === 'upload' || v === 'video' || v === 'cut' || v === 'templates' ? v : 'copy'
-}
-
-export default function WorkshopPage() {
+export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = normalizeTab(searchParams.get('tab'))
+  const [tab, setTab] = useState<TabKey>('copy')
   const [slug, setSlug] = useState('')
   const [hook, setHook] = useState('pain')
   const [n, setN] = useState(1)
@@ -48,10 +42,6 @@ export default function WorkshopPage() {
     enabled: !!selected,
   })
   const bgmList = useQuery({ queryKey: ['bgm'], queryFn: () => api<BgmList>('/api/bgm') })
-
-  function setTab(k: TabKey) {
-    setSearchParams({ tab: k }, { replace: true })
-  }
 
   async function generate(feedback?: string, hookOverride?: string, nOverride?: number) {
     if (!selected || running) return
@@ -118,7 +108,7 @@ export default function WorkshopPage() {
         <select className="w-48 rounded-md border-[1.5px] border-ink bg-card p-1.5 text-sm" value={selected} onChange={(e) => setSlug(e.target.value)}>
           {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
         </select>
-        {selected && <Link to={`/projects/${selected}`} className="text-xs text-fire">查看项目详情 →</Link>}
+        {selected && <button onClick={() => onOpenProject(selected)} className="text-xs text-fire">查看项目详情 →</button>}
         <div className="ml-auto seg-tabs">
           {TABS.map((t) => (
             <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
