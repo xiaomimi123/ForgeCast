@@ -1,5 +1,7 @@
 import type { Candidate } from '../../api'
 
+export type Track = 'profit' | 'traffic'
+
 /** 三个评分维度的展示定义，max 读当前配置的权重（不再硬编码 30/40/30） */
 export function buildDims(weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number }) {
   return [
@@ -14,6 +16,12 @@ export interface Detail {
   rationale: string; targetBuyer: string; painPoint: string
   summaryZh: string
   category: string
+  track?: Track
+  gapScore?: number
+  threshold?: number
+  exitRoutes?: string[]
+  emotionScore?: number
+  wowScore?: number
 }
 /** 数值字段兜底：非 number 或 NaN/Infinity 一律按 0 处理，避免脏数据渲染出 NaN% 的色条 */
 function num(x: unknown): number {
@@ -22,6 +30,18 @@ function num(x: unknown): number {
 /** 字符串字段兜底：非 string 一律按空串处理 */
 function str(x: unknown): string {
   return typeof x === 'string' ? x : ''
+}
+/** 分轨专属数值字段：非 number/NaN/Infinity 或压根没给 → undefined（不像 num() 那样兜底成 0——0 是有效差价分，undefined 才代表"没打过这个分") */
+function optNum(x: unknown): number | undefined {
+  return typeof x === 'number' && Number.isFinite(x) ? x : undefined
+}
+/** exitRoutes 专属：必须是纯字符串数组，否则 undefined */
+function optStrArr(x: unknown): string[] | undefined {
+  return Array.isArray(x) && x.every((v) => typeof v === 'string') ? x : undefined
+}
+/** track 专属：只接受两个合法值，否则 undefined（老候选/坏数据一律按"未分轨"处理） */
+function optTrack(x: unknown): Track | undefined {
+  return x === 'profit' || x === 'traffic' ? x : undefined
 }
 /** 旧行可能没有 targetBuyer/painPoint，一律按空串兜底 */
 export function parseDetail(sd: string | null): Detail | null {
@@ -33,6 +53,12 @@ export function parseDetail(sd: string | null): Detail | null {
       rationale: str(o.rationale), targetBuyer: str(o.targetBuyer), painPoint: str(o.painPoint),
       summaryZh: str(o.summaryZh),
       category: str(o.category),
+      track: optTrack(o.track),
+      gapScore: optNum(o.gapScore),
+      threshold: optNum(o.threshold),
+      exitRoutes: optStrArr(o.exitRoutes),
+      emotionScore: optNum(o.emotionScore),
+      wowScore: optNum(o.wowScore),
     }
   } catch { return null }
 }
