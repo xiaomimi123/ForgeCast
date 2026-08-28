@@ -6,7 +6,7 @@ import { analyzeProject, parseAnalysisSummary } from '@forgecast/analyst'
 import { getAllSettings, HOOKS, isStage, maskKey, refreshCtx, SETTING_KEYS, setSettings, type CoreCtx, type SettingKey } from '@forgecast/core'
 import { generateCopy, generateDemoScreens, generateShootScript, regenerateCover } from '@forgecast/copywriter'
 import { addLead, calendarSuggestions, deleteAsset, listLeads, publishAsset, recordPerf, weeklyReport } from '@forgecast/ops'
-import { rebrandPlan } from '@forgecast/rebrand'
+import { rebrandExecAuto, rebrandPlan } from '@forgecast/rebrand'
 import { addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, deleteProject, generateCandidateIntro, pickCandidate, rescoreCandidate, scoutBreakouts, scoutCandidates } from '@forgecast/scout'
 import { analyzeBeats, autoCutPlan, chooseBgmPath, createCustomTemplate, customTemplateHtmlPath, generateRetro, generateVideo, readShots, reviewVideo, synthesizeVoice } from '@forgecast/studio'
 import {
@@ -732,6 +732,17 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const slug = c.req.param('slug')
     if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
     const taskId = queue.enqueue((log) => rebrandPlan(ctx, slug, { onProgress: log }))
+    return c.json({ taskId })
+  })
+
+  app.post('/api/projects/:slug/rebrand-exec', async (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const taskId = queue.enqueue(async (log) => {
+      const result = await rebrandExecAuto(ctx, slug, { onProgress: log })
+      ctx.db.prepare('UPDATE projects SET rebrand_exec_result = ? WHERE slug = ?').run(JSON.stringify(result), slug)
+      return result
+    })
     return c.json({ taskId })
   })
 
