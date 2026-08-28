@@ -3,10 +3,12 @@ import { useRef, useState } from 'react'
 import { api, subscribeTask, type AutoScoutStatus, type Candidate } from '../api'
 import CandidateCard from './board/CandidateCard'
 import CandidateDrawer from './board/CandidateDrawer'
+import DualTrackView from './board/DualTrackView'
 
-type Tab = 'all' | 'fav' | 'daily' | 'manual'
+type Tab = 'all' | 'fav' | 'daily' | 'manual' | 'dual'
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'all', label: '全部' }, { key: 'fav', label: '已收藏' }, { key: 'daily', label: '每日新增' }, { key: 'manual', label: '自主投喂' },
+  { key: 'dual', label: '双轨评分' },
 ]
 
 /** SQLite datetime('now') 存的是无时区 UTC 串（YYYY-MM-DD HH:MM:SS）→ 本地日期 YYYY-MM-DD */
@@ -274,6 +276,10 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
         manualShown.length
           ? <div className={grid}>{manualShown.map(card)}</div>
           : <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">还没有手动投喂过项目，点上面「+ 投喂」加一个</div>
+      )}
+      {tab === 'dual' && (
+        <DualTrackView candidates={rows} onOpenDetail={(c) => setDetailId(c.id)}
+          onPick={(repo) => pick.mutate(repo)} picking={pickingRepos} />
       )}
       {tab === 'daily' && (
         dailyGroups.length
