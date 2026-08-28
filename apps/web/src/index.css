@@ -1,47 +1,60 @@
 @import "tailwindcss";
 
-/* 「锻造车间」主题 token（spec 2026-08-09-forge-theme-design.md §1）
-   @theme 注册后自动生成 bg-paper / text-ink / border-hairline 等工具类 */
+/* 「生产控制台」主题 token（spec 2026-08-28-production-console-shell-design.md §1）
+   沿用旧变量名（--color-fire 等），只换取值——全仓已在用的 text-fire/bg-fire-soft/border-danger
+   等 Tailwind 工具类自动跟着换色，不用逐处改类名。 */
 @theme {
-  --color-paper: #f7f2ea;
-  --color-card: #fffdf8;
-  --color-ink: #1c1712;
-  --color-sub: #5f574c;
-  --color-faint: #989083;
-  --color-hairline: #cfc6b8;
-  --color-fire: #d9481c;
-  --color-fire-soft: #fbe9e2;
-  --color-danger: #b91c1c;
+  --color-paper: #F1F2EE;
+  --color-card: #FAFAF8;
+  --color-ink: #181A16;
+  --color-sub: #6E7368;
+  --color-faint: #9AA093;
+  --color-hairline: #D9DBD2;
+  --color-hairline-strong: #B9BCB0;
+  --color-fire: #C13A1B;
+  --color-fire-soft: #F5E4DE;
+  --color-danger: #C13A1B;
+  --color-blue: #2C4A6E;
+  --color-blue-soft: #E3E9F0;
+  --color-green: #3E6B4F;
+  --color-green-soft: #E4EDE6;
+  --color-amber: #9A6B14;
+  --color-amber-soft: #F4EBD8;
 }
 
-/* 组件类：只此四个（卡片/主按钮/次按钮/分段 tab），其余一律工具类拼 */
-.card-forge {
-  background: var(--color-card);
-  border: 2px solid var(--color-ink);
-  border-radius: 10px;
-  box-shadow: 4px 4px 0 rgba(28, 23, 18, 0.85);
+* { box-sizing: border-box; }
+body {
+  background-image: repeating-linear-gradient(0deg, transparent 0 31px, rgba(24, 26, 22, .028) 31px 32px);
 }
-.btn-fire {
-  background: var(--color-fire);
-  color: #fff;
-  border: 2px solid var(--color-fire);
-  border-radius: 6px;
-  font-weight: 700;
-  box-shadow: 3px 3px 0 rgba(28, 23, 18, 0.9);
-}
-.btn-fire:disabled { opacity: 0.5; box-shadow: none; }
-.btn-ink {
+
+/* 组件类：只此几个（卡片/主按钮/次按钮/分段 tab/胶囊/图章/眼眉小标签/工位导航），其余一律工具类拼 */
+.card-forge, .card {
   background: var(--color-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: 4px;
+}
+.btn-fire, .btn {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border: 1px solid var(--color-ink);
+  border-radius: 3px;
+  font-weight: 500;
+}
+.btn-fire:hover, .btn:hover { background: var(--color-fire); border-color: var(--color-fire); }
+.btn-fire:disabled, .btn:disabled { opacity: 0.5; }
+.btn-ink, .btn.ghost {
+  background: transparent;
   color: var(--color-ink);
-  border: 2px solid var(--color-ink);
-  border-radius: 6px;
-  font-weight: 600;
+  border: 1px solid var(--color-ink);
+  border-radius: 3px;
+  font-weight: 500;
 }
+.btn-ink:hover, .btn.ghost:hover { background: var(--color-ink); color: var(--color-paper); }
 .btn-ink:disabled { opacity: 0.5; }
 .seg-tabs {
   display: inline-flex;
-  border: 2px solid var(--color-ink);
-  border-radius: 8px;
+  border: 1px solid var(--color-ink);
+  border-radius: 4px;
   overflow: hidden;
   background: var(--color-card);
 }
@@ -52,7 +65,87 @@
   font-size: 13.5px;
   font-weight: 600;
   color: var(--color-sub);
-  border-right: 2px solid var(--color-ink);
+  border-right: 1px solid var(--color-hairline);
 }
 .seg-tabs > button:last-child { border-right: none; }
 .seg-tabs > button.on { background: var(--color-ink); color: var(--color-paper); }
+
+.chip {
+  display: inline-block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.64rem;
+  padding: 2px 7px;
+  border-radius: 2px;
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-sub);
+}
+.chip.veto { background: var(--color-ink); color: var(--color-paper); border-color: var(--color-ink); }
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Noto Serif SC", serif;
+  font-weight: 900;
+  border: 2px solid var(--color-fire);
+  color: var(--color-fire);
+  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  font-size: 0.8rem;
+  transform: rotate(-8deg);
+  opacity: 0.9;
+}
+.stamp.pending { border-style: dashed; color: var(--color-sub); border-color: var(--color-hairline-strong); transform: rotate(-4deg); }
+
+.eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  color: var(--color-faint);
+}
+
+/* 顶部工位流水线导航 */
+.rail {
+  border: 1px solid var(--color-hairline-strong);
+  background: var(--color-card);
+  border-radius: 4px;
+  display: flex;
+  overflow: hidden;
+}
+.station {
+  position: relative;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--color-hairline);
+  padding: 13px 16px 11px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.station:last-child { border-right: 0; }
+.station .no {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.62rem;
+  color: var(--color-faint);
+  letter-spacing: 0.12em;
+}
+.station .nm {
+  font-family: "Noto Serif SC", serif;
+  font-weight: 700;
+  font-size: 1.02rem;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.station .ct {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  color: var(--color-sub);
+}
+.station[aria-selected="true"] { background: var(--color-ink); color: var(--color-paper); }
+.station[aria-selected="true"] .no, .station[aria-selected="true"] .ct { color: var(--color-hairline-strong); }
+.station.spur { border-left: 1px dashed var(--color-hairline-strong); flex: 0 0 auto; min-width: 140px; }
+.station:hover:not([aria-selected="true"]) { background: var(--color-hairline); }
