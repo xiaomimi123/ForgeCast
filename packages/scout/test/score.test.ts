@@ -44,6 +44,73 @@ describe('scoreCandidate mock', () => {
   })
 })
 
+describe('scoreCandidate mock 分轨', () => {
+  it('有明确垂直场景关键词（crm等）→ track=profit，带 gapScore/threshold/exitRoutes，不带 traffic 字段', async () => {
+    const ctx = ctxWith({})
+    const d = await scoreCandidate(ctx, meta, 'React Node Docker CRM dashboard screenshot demo'.repeat(3))
+    expect(d.track).toBe('profit')
+    expect(d.gapScore).toBeGreaterThan(0)
+    expect(d.gapScore).toBeLessThanOrEqual(100)
+    expect(d.threshold).toBeGreaterThan(0)
+    expect(d.threshold).toBeLessThanOrEqual(100)
+    expect(d.exitRoutes).toEqual(['托管'])
+    expect(d.emotionScore).toBeUndefined()
+    expect(d.wowScore).toBeUndefined()
+  })
+  it('无垂直场景关键词 → track=traffic，带 emotionScore/wowScore，不带 profit 字段', async () => {
+    const ctx = ctxWith({})
+    const d = await scoreCandidate(ctx, meta, 'a cli tool for terminal theming with cool demo screenshot')
+    expect(d.track).toBe('traffic')
+    expect(d.emotionScore).toBeGreaterThanOrEqual(0)
+    expect(d.emotionScore).toBeLessThanOrEqual(100)
+    expect(d.wowScore).toBeGreaterThanOrEqual(0)
+    expect(d.gapScore).toBeUndefined()
+    expect(d.exitRoutes).toBeUndefined()
+  })
+})
+
+describe('scoreCandidate live 分轨', () => {
+  it('LLM 返回 track=profit + gapScore/threshold/exitRoutes → 解析并夹取上限，exitRoutes 过滤非法值', async () => {
+    const config = loadConfig('/tmp/fc-score-dual1', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const llm = { complete: vi.fn(async () => JSON.stringify({
+      rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, techStack: [], rationale: 'ok',
+      track: 'profit', gapScore: 150, threshold: 80, exitRoutes: ['托管', '定制', '瞎编'],
+    })) }
+    const ctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
+    const d = await scoreCandidate(ctx, meta, 'readme')
+    expect(d.track).toBe('profit')
+    expect(d.gapScore).toBe(100)
+    expect(d.threshold).toBe(80)
+    expect(d.exitRoutes).toEqual(['托管', '定制'])
+    expect(d.emotionScore).toBeUndefined()
+  })
+  it('LLM 返回 track=traffic + emotionScore/wowScore → 解析', async () => {
+    const config = loadConfig('/tmp/fc-score-dual2', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const llm = { complete: vi.fn(async () => JSON.stringify({
+      rebrandCost: 10, buyerClarity: 10, visualAppeal: 25, techStack: [], rationale: 'ok',
+      track: 'traffic', emotionScore: 90, wowScore: 95,
+    })) }
+    const ctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
+    const d = await scoreCandidate(ctx, meta, 'readme')
+    expect(d.track).toBe('traffic')
+    expect(d.emotionScore).toBe(90)
+    expect(d.wowScore).toBe(95)
+    expect(d.gapScore).toBeUndefined()
+  })
+  it('LLM 返回非法 track 值 → 分轨相关字段全部 undefined', async () => {
+    const config = loadConfig('/tmp/fc-score-dual3', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
+    const llm = { complete: vi.fn(async () => JSON.stringify({
+      rebrandCost: 10, buyerClarity: 10, visualAppeal: 10, techStack: [], rationale: 'ok',
+      track: 'nonsense',
+    })) }
+    const ctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
+    const d = await scoreCandidate(ctx, meta, 'readme')
+    expect(d.track).toBeUndefined()
+    expect(d.gapScore).toBeUndefined()
+    expect(d.emotionScore).toBeUndefined()
+  })
+})
+
 describe('scoreCandidate live', () => {
   it('调 LLM 并解析 JSON 评分', async () => {
     const config = loadConfig('/tmp/fc-score2', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })

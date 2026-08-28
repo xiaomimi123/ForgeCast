@@ -1,7 +1,8 @@
 import type { CoreCtx } from '@forgecast/core'
-import type { RepoMeta, ScoreDetail } from './types'
+import type { RepoMeta, ScoreDetail, Track } from './types'
 
 const TECHS = ['react', 'next', 'vue', 'node', 'python', 'go', 'docker']
+const EXIT_ROUTES = ['托管', '定制', '一键包']
 
 /** 领域类别闭集（顺序=启发式匹配优先级：先具体领域，AI 靠后，最后其它）。 */
 export const CATEGORIES = ['客服/IM', 'CRM/销售', '电商/商城', '仪表盘/BI', '表单/问卷', '文档/知识库', '建站/CMS', '项目/协作', '财务/发票', '预约/排期', 'AI助手/Agent', '其它'] as const
@@ -38,7 +39,17 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
     `- rebrandCost 换皮成本(0-${weights.rebrandCost})：技术栈(React/Node/Next 高)、有无 Docker、i18n、UI 可主题化`,
     `- buyerClarity 买家清晰度(0-${weights.buyerClarity})：能否一句话说清"什么老板会掏钱"，越垂直越高`,
     `- visualAppeal 内容可视性(0-${weights.visualAppeal})：有无好看可演示的 UI（纯 CLI/后端低分）`,
-    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本","summaryZh":"这个项目是做什么的，一句话，中文","category":"从下列类别选一个最贴切的"}`,
+    `再判断这个项目更适合两条路线中的哪一条，输出 track 字段：`,
+    `- "profit"（利润款/交付线）：能改造成商业产品直接卖给中小老板，走"立项→换皮→交付"流程`,
+    `- "traffic"（引流款/仅内容线）：技术含量普通老板看不懂用不上，但演示效果强，适合拍视频引流吸粉，不适合真的卖给客户`,
+    `如果 track 是 "profit"，额外输出：`,
+    `- gapScore 差价分(0-100)：普通人搞不定、但换皮后低成本能搞定的差价空间有多大`,
+    `- threshold 门槛(0-100)：这东西对非技术人员的安装/使用门槛`,
+    `- exitRoutes：从 ["托管","定制","一键包"] 里选出适合的交付方式，可多选，输出数组`,
+    `如果 track 是 "traffic"，额外输出：`,
+    `- emotionScore 情绪值(0-100)：内容传播情绪强度（惊讶/爽感/焦虑等能带来转发的情绪）`,
+    `- wowScore 爽感(0-100)：3秒内能不能看懂效果、够不够炫`,
+    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本","summaryZh":"这个项目是做什么的，一句话，中文","category":"从下列类别选一个最贴切的","track":"profit 或 traffic","gapScore":n,"threshold":n,"exitRoutes":["..."],"emotionScore":n,"wowScore":n}`,
     `类别（选一个）：${CATEGORIES.join(' / ')}`,
     `项目：${meta.repo}（topics: ${meta.topics.join(',')}, stars: ${meta.stars}）`,
     `README:\n${readme.slice(0, 6000)}`,
@@ -73,16 +84,32 @@ export async function generateSummaryZh(ctx: CoreCtx, repo: string, stars: numbe
 function heuristicScore(meta: RepoMeta, readme: string, weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number }): ScoreDetail {
   const r = readme.toLowerCase()
   const has = (re: RegExp) => re.test(r)
+  const hasVertical = has(/crm|invoice|chat|booking|shop|commerce|pos|survey|form/)
   const rebrandCost = Math.min(weights.rebrandCost, 12 + (has(/docker/) ? 9 : 0) + (has(/react|next|vue|node/) ? 9 : 0))
-  const buyerClarity = Math.min(weights.buyerClarity, 18 + (readme.length > 200 ? 10 : 0) + (has(/crm|invoice|chat|booking|shop|commerce|pos|survey|form/) ? 12 : 0))
+  const buyerClarity = Math.min(weights.buyerClarity, 18 + (readme.length > 200 ? 10 : 0) + (hasVertical ? 12 : 0))
   const visualAppeal = Math.min(weights.visualAppeal, 8 + (has(/screenshot|demo|preview/) ? 12 : 0) + (has(/dashboard|ui|interface/) ? 10 : 0))
   const techStack = TECHS.filter((t) => r.includes(t)).concat(meta.topics)
-  return {
+  const base = {
     rebrandCost, buyerClarity, visualAppeal, techStack: [...new Set(techStack)],
     rationale: `离线启发式评分：${meta.repo}`,
     // mock 不编造买家与痛点——关键词拼出来的假数据比空着更坏
     targetBuyer: '', painPoint: '', summaryZh: '',
     category: categorizeHeuristic(meta.repo, readme, techStack),
+  }
+  // 分轨：复用 buyerClarity 已经算过的垂直场景关键词命中——有明确垂直场景关键词 → profit，否则 → traffic
+  const track: Track = hasVertical ? 'profit' : 'traffic'
+  if (track === 'profit') {
+    return {
+      ...base, track,
+      gapScore: Math.round((buyerClarity / (weights.buyerClarity || 1)) * 100),
+      threshold: Math.round((rebrandCost / (weights.rebrandCost || 1)) * 100),
+      exitRoutes: ['托管'], // mock 不编造多选组合，固定给一个保守值
+    }
+  }
+  return {
+    ...base, track,
+    emotionScore: Math.round((visualAppeal / (weights.visualAppeal || 1)) * 100),
+    wowScore: Math.round((visualAppeal / (weights.visualAppeal || 1)) * 100),
   }
 }
 
@@ -92,6 +119,11 @@ function parseScoreJson(text: string, weights: { rebrandCost: number; buyerClari
   if (!m) throw new Error('评分 LLM 未返回 JSON')
   const o = JSON.parse(m[0])
   const clamp = (v: any, max: number) => Math.max(0, Math.min(max, Number(v) || 0))
+  const clamp100 = (v: any) => clamp(v, 100)
+  const track: Track | undefined = o.track === 'profit' || o.track === 'traffic' ? o.track : undefined
+  const exitRoutes = track === 'profit' && Array.isArray(o.exitRoutes)
+    ? o.exitRoutes.filter((x: unknown) => EXIT_ROUTES.includes(x as string))
+    : undefined
   return {
     rebrandCost: clamp(o.rebrandCost, weights.rebrandCost),
     buyerClarity: clamp(o.buyerClarity, weights.buyerClarity),
@@ -102,5 +134,11 @@ function parseScoreJson(text: string, weights: { rebrandCost: number; buyerClari
     painPoint: typeof o.painPoint === 'string' ? o.painPoint : '',
     summaryZh: typeof o.summaryZh === 'string' ? o.summaryZh : '',
     category: typeof o.category === 'string' ? o.category : '',
+    track,
+    gapScore: track === 'profit' ? clamp100(o.gapScore) : undefined,
+    threshold: track === 'profit' ? clamp100(o.threshold) : undefined,
+    exitRoutes,
+    emotionScore: track === 'traffic' ? clamp100(o.emotionScore) : undefined,
+    wowScore: track === 'traffic' ? clamp100(o.wowScore) : undefined,
   }
 }
