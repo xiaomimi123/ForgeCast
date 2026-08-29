@@ -25,7 +25,7 @@ function ScriptCard({ asset }: { asset: Asset }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
   })
   return (
-    <div className="card-forge space-y-3 p-4">
+    <div className="card space-y-3 p-4">
       <div className="flex items-center justify-between">
         <div className="text-sm text-sub">
           拍摄脚本 #{asset.id} · {asset.hook ?? '—'} ·
@@ -33,23 +33,23 @@ function ScriptCard({ asset }: { asset: Asset }) {
         </div>
         <div className="flex gap-2">
           {!editing && (
-            <button className="btn-ink px-3 py-1 text-sm"
+            <button className="btn ghost px-3 py-1 text-sm"
               onClick={() => { setDraft(content.data?.content ?? ''); setEditing(true) }}>编辑</button>
           )}
           {asset.status === 'draft' && (
-            <button className="btn-fire px-2 py-0.5 text-xs" onClick={() => approve.mutate()}>审核通过</button>
+            <button className="btn px-2 py-0.5 text-xs" onClick={() => approve.mutate()}>审核通过</button>
           )}
-          <button className="rounded-md border-[1.5px] border-danger px-2 py-0.5 text-xs text-danger"
+          <button className="rounded-md border border-danger px-2 py-0.5 text-xs text-danger"
             onClick={() => { if (window.confirm('删除这份拍摄脚本？不可恢复')) del.mutate() }}>删除</button>
         </div>
       </div>
       {editing ? (
         <div className="space-y-2">
-          <textarea className="h-80 w-full rounded-md border-[1.5px] border-ink bg-card p-2 font-mono text-sm"
+          <textarea className="h-80 w-full rounded-md border border-hairline-strong bg-card p-2 font-mono text-sm"
             value={draft} onChange={(e) => setDraft(e.target.value)} />
           <div className="flex gap-2">
-            <button className="btn-fire px-3 py-1 text-sm" onClick={() => save.mutate(draft)}>保存</button>
-            <button className="btn-ink px-3 py-1 text-sm" onClick={() => setEditing(false)}>取消</button>
+            <button className="btn px-3 py-1 text-sm" onClick={() => save.mutate(draft)}>保存</button>
+            <button className="btn ghost px-3 py-1 text-sm" onClick={() => setEditing(false)}>取消</button>
           </div>
         </div>
       ) : (
@@ -94,11 +94,11 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
   }
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
-      <div className="card-forge h-fit space-y-3 p-4">
+      <div className="card h-fit space-y-3 p-4">
         <h3 className="text-sm font-semibold">生成拍摄脚本</h3>
         <div>
           <label className="text-sm text-sub">文案来源</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={chosen ?? ''} onChange={(e) => setFromCopy(Number(e.target.value))}>
             {copyAssets.length === 0 && <option value="">暂无文案，先去「文案」tab 生成</option>}
             {copyAssets.map((a) => <option key={a.id} value={a.id}>#{a.id} · {a.hook}</option>)}
@@ -106,7 +106,7 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
         </div>
         <div>
           <label className="text-sm text-sub">拍摄条件</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="screen">仅录屏 + 口播（默认）</option>
             <option value="live">可真人出镜实拍</option>
@@ -115,7 +115,7 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
           <p className="mt-1 text-xs text-faint">分镜只会安排你选的条件内做得到的拍法</p>
         </div>
         <p className="text-xs text-faint">从口播稿扩展成逐镜分镜表（画面/台词/拍摄要点）+ 开拍准备清单，生成后可编辑。</p>
-        <button className="btn-fire w-full py-2 disabled:opacity-50"
+        <button className="btn w-full py-2 disabled:opacity-50"
           disabled={!selected || running || chosen == null} onClick={generate}>
           {running ? '生成中…' : '生成拍摄脚本'}
         </button>

@@ -64,11 +64,11 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
   if (!d) return <Drawer onClose={onClose}><div className="text-faint">{detail.isError ? '需求不存在' : '加载中…'}</div></Drawer>
   const caps = d.capabilities
   const pendingCount = caps.filter((c) => c.decision === 'pending').length
-  const btn = 'btn-fire px-4 py-2 text-sm disabled:opacity-50'
+  const btn = 'btn px-4 py-2 text-sm disabled:opacity-50'
   return (
     <Drawer onClose={onClose} width={900}>
       <div className="space-y-4">
-        <div className="card-forge p-4">
+        <div className="card p-4">
           <div className="flex items-center justify-between">
             <div className="font-semibold">#{d.request.id} {d.request.title}</div>
             <span className="text-xs text-sub">{d.request.status}</span>
@@ -96,15 +96,15 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
         {caps.map((c) => <CapabilityCard key={c.id} cap={c} onPatch={patchCap} onRemove={removeCap} />)}
         {caps.length > 0 && (
           <div className="flex gap-2">
-            <input className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="能力名" value={newCap.name}
+            <input className="rounded-md border border-hairline-strong bg-card px-2 py-1 text-sm" placeholder="能力名" value={newCap.name}
               onChange={(e) => setNewCap((s) => ({ ...s, name: e.target.value }))} />
-            <input className="w-64 rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" placeholder="GitHub 搜索关键词，逗号分隔" value={newCap.keywords}
+            <input className="w-64 rounded-md border border-hairline-strong bg-card px-2 py-1 text-sm" placeholder="GitHub 搜索关键词，逗号分隔" value={newCap.keywords}
               onChange={(e) => setNewCap((s) => ({ ...s, keywords: e.target.value }))} />
-            <button className="btn-ink px-3 py-1 text-sm" onClick={addCap}>+ 加能力项</button>
+            <button className="btn ghost px-3 py-1 text-sm" onClick={addCap}>+ 加能力项</button>
           </div>
         )}
         {proposal.data?.md && (
-          <div className="card-forge p-6 text-sm leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:font-semibold [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2">
+          <div className="card p-6 text-sm leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h2]:mt-4 [&_h2]:font-semibold [&_table]:my-2 [&_td]:border [&_td]:px-2 [&_th]:border [&_th]:px-2">
             <ReactMarkdown>{proposal.data.md}</ReactMarkdown>
           </div>
         )}
@@ -123,16 +123,16 @@ function CapabilityCard({ cap, onPatch, onRemove }: {
   const badge = cap.decision === 'wheel' ? `✔ ${cap.chosen_repo}`
     : cap.decision === 'self_build' ? '自研' : cap.decision === 'dropped' ? '不做' : '待决策'
   return (
-    <div className={`rounded-lg border-[1.5px] border-ink bg-card p-4 shadow-[2px_2px_0_rgba(28,23,18,0.85)] ${cap.decision === 'dropped' ? 'opacity-50' : ''}`}>
+    <div className={`card p-4 ${cap.decision === 'dropped' ? 'opacity-50' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="font-medium">
           {cap.name}
-          <span className="ml-2 rounded border-[1.5px] border-ink px-2 py-0.5 text-[10px] font-extrabold tracking-widest">{badge}</span>
+          <span className="chip ml-2">{badge}</span>
         </div>
         <div className="flex gap-2 text-xs">
-          <button className="rounded-md border-[1.5px] border-ink px-2 py-1 text-xs" onClick={() => onPatch(cap.id, { decision: 'self_build' })}>标自研</button>
-          <button className="rounded-md border-[1.5px] border-ink px-2 py-1 text-xs" onClick={() => onPatch(cap.id, { decision: 'dropped' })}>不做</button>
-          <button className="rounded-md border-[1.5px] border-danger px-2 py-1 text-xs text-danger" onClick={() => onRemove(cap.id)}>删除</button>
+          <button className="rounded-md border border-hairline-strong px-2 py-1 text-xs" onClick={() => onPatch(cap.id, { decision: 'self_build' })}>标自研</button>
+          <button className="rounded-md border border-hairline-strong px-2 py-1 text-xs" onClick={() => onPatch(cap.id, { decision: 'dropped' })}>不做</button>
+          <button className="rounded-md border border-danger px-2 py-1 text-xs text-danger" onClick={() => onRemove(cap.id)}>删除</button>
         </div>
       </div>
       {cap.detail && <div className="mt-1 text-sm text-sub">{cap.detail}</div>}
@@ -140,7 +140,7 @@ function CapabilityCard({ cap, onPatch, onRemove }: {
       {okWheels.length > 0 && (
         <div className="mt-2 grid gap-2 md:grid-cols-2">
           {okWheels.map((w) => (
-            <label key={w.id} className={`flex cursor-pointer items-start gap-2 rounded-md border-[1.5px] p-2 text-sm ${cap.decision === 'wheel' && cap.chosen_repo === w.repo ? 'border-fire bg-fire-soft' : 'border-ink bg-card'}`}>
+            <label key={w.id} className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm ${cap.decision === 'wheel' && cap.chosen_repo === w.repo ? 'border-fire bg-fire-soft' : 'border-hairline-strong bg-card'}`}>
               <input type="radio" className="mt-1" checked={cap.decision === 'wheel' && cap.chosen_repo === w.repo}
                 onChange={() => onPatch(cap.id, { decision: 'wheel', chosenRepo: w.repo })} />
               <span>

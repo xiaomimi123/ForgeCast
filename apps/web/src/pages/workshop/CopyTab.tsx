@@ -27,23 +27,23 @@ export default function CopyTab({
   const list = assets.filter((a) => a.type === 'copy' || a.type === 'cover')
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
-      <div className="card-forge h-fit space-y-3 p-4">
+      <div className="card h-fit space-y-3 p-4">
         <div>
           <label className="text-sm text-sub">钩子类型</label>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {HOOKS.map((h) => (
               <button key={h.value}
-                className={`rounded-md border-[1.5px] px-2 py-1.5 text-sm ${hook === h.value ? 'border-fire bg-fire-soft text-fire font-bold' : 'border-hairline bg-transparent text-sub'}`}
+                className={`rounded-md border px-2 py-1.5 text-sm ${hook === h.value ? 'border-fire bg-fire-soft text-fire font-bold' : 'border-hairline-strong bg-transparent text-sub'}`}
                 onClick={() => setHook(h.value)}>{h.label}</button>
             ))}
           </div>
         </div>
         <div>
           <label className="text-sm text-sub">篇数</label>
-          <input type="number" min={1} max={5} className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2"
+          <input type="number" min={1} max={5} className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2"
             value={n} onChange={(e) => setN(Number(e.target.value))} />
         </div>
-        <button className="btn-fire w-full py-2 disabled:opacity-50"
+        <button className="btn w-full py-2 disabled:opacity-50"
           disabled={!selected || running} onClick={onGenerate}>
           {running ? '生成中…' : '生成'}
         </button>

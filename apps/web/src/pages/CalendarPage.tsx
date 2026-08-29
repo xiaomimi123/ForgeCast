@@ -18,7 +18,7 @@ export default function CalendarPage() {
   if (!v) return <div className="text-faint">加载中…</div>
   return (
     <div className="space-y-4 max-w-3xl">
-      <div className="card-forge p-4">
+      <div className="card p-4">
         <div className="text-lg font-semibold">{v.date}</div>
         <div className="mt-1 text-sm text-sub">今日已发 {v.publishedToday}，还可发 <span className="font-medium text-fire">{v.remainingToday}</span></div>
         <div className="mt-2 text-xs text-sub">库存: {Object.entries(v.inventory).map(([h, n]) => `${h}:${n}`).join('  ') || '（空）'}</div>
@@ -30,19 +30,19 @@ export default function CalendarPage() {
           </ul>
         )}
       </div>
-      <div className="card-forge p-4">
+      <div className="card p-4">
         <div className="mb-2 font-semibold">今日建议发布</div>
         {v.suggestions.length === 0 && <div className="text-sm text-faint">今日额度用尽或无可发库存</div>}
         <ul className="space-y-2">
           {v.suggestions.map((s) => (
-            <li key={s.assetId} className="flex items-center gap-3 rounded-lg border-[1.5px] border-ink bg-card p-2 text-sm shadow-[2px_2px_0_rgba(28,23,18,0.85)]">
-              <span className="rounded bg-fire-soft px-2 py-0.5 text-fire">{s.hook}</span>
+            <li key={s.assetId} className="flex items-center gap-3 rounded-lg border border-hairline-strong bg-card p-2 text-sm">
+              <span className="chip">{s.hook}</span>
               <span className="flex-1 text-sub">素材 {s.assetId} — {s.reason}</span>
-              <select className="rounded-md border-[1.5px] border-ink bg-card px-1 py-0.5 text-xs" value={platform[s.assetId] ?? 'xhs'} onChange={(e) => setPlatform((p) => ({ ...p, [s.assetId]: e.target.value }))}>
+              <select className="rounded-md border border-hairline-strong bg-card px-1 py-0.5 text-xs" value={platform[s.assetId] ?? 'xhs'} onChange={(e) => setPlatform((p) => ({ ...p, [s.assetId]: e.target.value }))}>
                 <option value="xhs">小红书</option>
                 <option value="douyin">抖音</option>
               </select>
-              <button className="btn-fire px-2 py-1 text-xs" onClick={() => publish(s.assetId)}>标记已发布</button>
+              <button className="btn px-2 py-1 text-xs" onClick={() => publish(s.assetId)}>标记已发布</button>
             </li>
           ))}
         </ul>

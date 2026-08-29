@@ -54,11 +54,11 @@ export default function VideoTab({
   const chosenId = videoFromAsset ?? copyAssets[0]?.id ?? null
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
-      <div className="card-forge h-fit space-y-3 p-4">
+      <div className="card h-fit space-y-3 p-4">
         <h3 className="text-sm font-semibold">视频参数</h3>
         <div>
           <label className="text-sm text-sub">文案来源</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={chosenId ?? ''} onChange={(e) => setVideoFromAsset(Number(e.target.value))}>
             {copyAssets.length === 0 && <option value="">暂无文案，先去「文案」tab 生成</option>}
             {copyAssets.map((a) => <option key={a.id} value={a.id}>#{a.id} · {a.hook}</option>)}
@@ -66,7 +66,7 @@ export default function VideoTab({
         </div>
         <div>
           <label className="text-sm text-sub">模板</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={vp.tpl} onChange={(e) => setVp({ ...vp, tpl: e.target.value })}>
             {tplOptions.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
@@ -87,7 +87,7 @@ export default function VideoTab({
         )}
         <div>
           <label className="text-sm text-sub">BGM</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={vp.bgm} onChange={(e) => setVp({ ...vp, bgm: e.target.value })}>
             <option value="">自动（按钩子情绪）</option>
             <option value="none">不加背景乐</option>
@@ -101,14 +101,14 @@ export default function VideoTab({
         </div>
         <div>
           <label className="text-sm text-sub">情绪</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={vp.mood} onChange={(e) => setVp({ ...vp, mood: e.target.value })}>
             {MOODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </div>
         <div>
           <label className="text-sm text-sub">背景{vp.tpl === 'story' && <span className="text-faint">（story 不显示背景层）</span>}</label>
-          <select className="mt-1 w-full rounded-md border-[1.5px] border-ink bg-card p-2 text-sm disabled:opacity-50"
+          <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm disabled:opacity-50"
             disabled={vp.tpl === 'story'} value={vp.bg} onChange={(e) => setVp({ ...vp, bg: e.target.value })}>
             {BGS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
           </select>
@@ -117,7 +117,7 @@ export default function VideoTab({
           <input type="checkbox" checked={vp.captions} onChange={(e) => setVp({ ...vp, captions: e.target.checked })} />
           烧旁白字幕进视频（默认关，模板大字标题不受影响）
         </label>
-        <button className="btn-fire w-full py-2 disabled:opacity-50"
+        <button className="btn w-full py-2 disabled:opacity-50"
           disabled={!selected || running || chosenId == null}
           onClick={() => chosenId != null && onMakeVideo(chosenId)}>
           {running ? '生成中…' : '生成视频'}

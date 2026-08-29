@@ -85,27 +85,27 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
   }
 
   return (
-    <div className="card-forge space-y-2 p-2">
+    <div className="card space-y-2 p-2">
       <video src={`/files/${asset.file_path}`} controls preload="metadata"
-        className="aspect-[9/16] w-full rounded-lg border-[1.5px] border-ink bg-black object-contain" />
+        className="aspect-[9/16] w-full rounded-lg border border-hairline-strong bg-black object-contain" />
       <div className="space-y-2 px-1">
         <div className="flex items-center justify-between gap-2">
           <div className="truncate text-xs text-sub">实拍 · {asset.status}{report ? ` · 总分 ${report.scores.overall}` : ''}</div>
           <div className="flex shrink-0 items-center gap-1.5">
             {asset.status === 'draft' && (
-              <button className="btn-fire px-2 py-0.5 text-xs" onClick={() => onStatus(asset.id)}>审核通过</button>
+              <button className="btn px-2 py-0.5 text-xs" onClick={() => onStatus(asset.id)}>审核通过</button>
             )}
-            <button className="rounded-md border-[1.5px] border-danger px-2 py-0.5 text-xs text-danger"
+            <button className="rounded-md border border-danger px-2 py-0.5 text-xs text-danger"
               onClick={() => { if (window.confirm('删除这条成片？文件和记录都会删掉')) onDelete(asset.id) }}>删除</button>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <select className="min-w-0 flex-1 rounded-md border-[1.5px] border-ink bg-card px-1.5 py-1 text-xs"
+          <select className="min-w-0 flex-1 rounded-md border border-hairline-strong bg-card px-1.5 py-1 text-xs"
             value={scriptId} onChange={(e) => setScriptId(e.target.value === '' ? '' : Number(e.target.value))}>
             <option value="">最新脚本基准（自动）</option>
             {scriptAssets.map((s) => <option key={s.id} value={s.id}>脚本 #{s.id} · {s.hook ?? '—'}</option>)}
           </select>
-          <button className="btn-ink shrink-0 px-2 py-1 text-xs disabled:opacity-50" disabled={reviewing} onClick={runReview}>
+          <button className="btn ghost shrink-0 px-2 py-1 text-xs disabled:opacity-50" disabled={reviewing} onClick={runReview}>
             {reviewing ? '审片中…' : report ? '重新审片' : '审片'}
           </button>
         </div>
@@ -113,7 +113,7 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
           <div className="space-y-1.5 border-t border-hairline pt-2">
             {DIM_LABELS.map(([k, label]) => <ScoreBar key={k} label={label} value={report!.scores[k]} />)}
             {report.degraded && (
-              <div className="rounded border-[1.5px] border-amber-600 bg-amber-50 px-2 py-1 text-xs text-amber-800">{report.degraded}</div>
+              <div className="rounded border border-amber-600 bg-amber-50 px-2 py-1 text-xs text-amber-800">{report.degraded}</div>
             )}
             <ul className="space-y-0.5 text-xs">
               {report.suggestions.map((s, i) => <li key={i}>· {s}</li>)}
@@ -121,7 +121,7 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
             {report.transcript && (
               <div className="truncate text-xs text-faint" title={report.transcript}>转写：{report.transcript.slice(0, 60)}…</div>
             )}
-            <button className="btn-ink px-2 py-0.5 text-xs disabled:opacity-50" disabled={retroing} onClick={runRetro}>
+            <button className="btn ghost px-2 py-0.5 text-xs disabled:opacity-50" disabled={retroing} onClick={runRetro}>
               {retroing ? '复盘中…' : retro ? '重新复盘' : '生成复盘（结合发布数据）'}
             </button>
             {retro && (
@@ -165,10 +165,10 @@ export default function UploadTab({ selected, uploadAssets, scriptAssets, onStat
   }
   return (
     <div className="space-y-4">
-      <div className="card-forge flex items-center gap-3 p-4">
+      <div className="card flex items-center gap-3 p-4">
         <input ref={fileRef} type="file" accept=".mp4,.mov,.m4v" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f) }} />
-        <button className="btn-fire px-4 py-2 disabled:opacity-50" disabled={!selected || uploading}
+        <button className="btn px-4 py-2 disabled:opacity-50" disabled={!selected || uploading}
           onClick={() => fileRef.current?.click()}>
           {uploading ? '上传中…' : '上传成片（mp4/mov）'}
         </button>
