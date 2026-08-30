@@ -682,19 +682,36 @@ export function buildInsightSections(opts: {
   const introEnd = cards[0]?.start ?? Math.max(3, Math.min(4, durationSec - 3))
   const outroStart = Math.max(introEnd, durationSec - 3)
 
+  // 单卡驻留上限（秒）：超过则必须有新卡进场或旧卡自己先退场，不允许一张卡钉住整个分组窗口
+  const CARD_DWELL_CAP = 8
+  const CARD_MIN_DUR = 0.5
+
   const cardClips: string[] = []
   const accentLines: string[] = []
   groups.forEach((group, gi) => {
     const sceneEnd = Math.min(outroStart, groups[gi + 1]?.[0]?.start ?? outroStart)
+    // 组内每张卡都独立按「min(驻留上限, 到本组窗口结束)」收尾——而不是统一拉到 sceneEnd，
+    // 这样后一张卡进场时前一张往往还没到点，两三张卡在屏幕上真实叠出现，又都不超过 8 秒。
+    const primaryColor = INSIGHT_PALETTE[gi % INSIGHT_PALETTE.length]
     group.forEach((card, idx) => {
       const id = `insCard${gi}_${idx}`
-      const color = INSIGHT_PALETTE[idx % INSIGHT_PALETTE.length]
-      const inner = `<div class="card" style="--card-color:${color};top:${260 + idx * 220}px">`
+      const dur = Math.max(CARD_MIN_DUR, Math.min(CARD_DWELL_CAP, sceneEnd - card.start))
+      // 同屏多卡时只有 idx=0（组内最早/主卡）享受高亮色 + 大字号，其余降级为次级样式，
+      // 版式细节（尺寸/位置）交给模板 CSS 按 data-idx 区分，这里只负责主卡的强调色。
+      const style = idx === 0 ? ` style="--card-color:${primaryColor}"` : ''
+      const inner = `<div class="card" data-idx="${idx}"${style}>`
         + `<div class="stat">${escapeHtml(card.stat)}</div><div class="label">${escapeHtml(card.label)}</div></div>`
       // 同组卡片是「累加共存」语义，必须各占一条轨道——同轨重叠会被 HyperFrames 判为渲染冲突。
       // 组内最多 3 张（见上方分组逻辑），故占用 track 2/3/4，不与音轨(0)和开场结尾(1)冲突。
-      cardClips.push(clip(card.start, Math.max(0.5, sceneEnd - card.start), 2 + idx, inner, id))
+      cardClips.push(clip(card.start, dur, 2 + idx, inner, id))
       accentLines.push(`tl.from("#${id}", { opacity: 0, y: 24, duration: .45 }, ${card.start});`)
+      // 退场用缩小+降透明度移出，而不是到点硬切——最后 .4s 淡出+缩小，呼应「真退场不是消失术」。
+      // clip 边界（card.start+dur）必须配一条 tl.set 硬收尾——StaticGuard 的强制契约：
+      // 否则非线性 seek 落在渐隐尾巴之后可能读到 stale 的可见状态。
+      const clipEnd = +(card.start + dur).toFixed(2)
+      const exitAt = +(clipEnd - Math.min(0.4, dur)).toFixed(2)
+      accentLines.push(`tl.to("#${id}", { opacity: 0, scale: .85, duration: ${Math.min(0.4, dur)} }, ${exitAt});`)
+      accentLines.push(`tl.set("#${id}", { opacity: 0 }, ${clipEnd});`)
     })
   })
 

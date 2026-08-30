@@ -429,6 +429,27 @@ describe('buildInsightSections 轨道分配', () => {
   })
 })
 
+describe('insight 构图约束', () => {
+  const cues = Array.from({ length: 8 }, (_, i) => ({
+    start: 5 + i * 6, end: 9 + i * 6, text: `第${i}项返工率 ${10 + i}%`,
+  }))
+  it('单张卡片驻留不超过 8 秒', () => {
+    const { html } = buildInsightSections({ cues, durationSec: 60, painTitle: 'T', cta: 'C', brandName: 'B' })
+    const durs = [...html.matchAll(/id="insCard\d+_\d+"[^>]*data-duration="([\d.]+)"/g)].map((m) => +m[1])
+    expect(durs.length).toBeGreaterThan(0)
+    for (const d of durs) expect(d).toBeLessThanOrEqual(8)
+  })
+  it('任意时刻同屏卡片不超过 3 张', () => {
+    const { html } = buildInsightSections({ cues, durationSec: 60, painTitle: 'T', cta: 'C', brandName: 'B' })
+    const clips = [...html.matchAll(/id="insCard\d+_\d+"[^>]*data-start="([\d.]+)" data-duration="([\d.]+)"/g)]
+      .map((m) => ({ s: +m[1], e: +m[1] + +m[2] }))
+    for (let t = 0; t <= 60; t += 0.5) {
+      const live = clips.filter((c) => t >= c.s && t < c.e).length
+      expect(live).toBeLessThanOrEqual(3)
+    }
+  })
+})
+
 describe('buildFlashSections（开场钩子→中段流动字幕→结尾CTA，按真实时长动态铺满）', () => {
   const base = { painTitle: '大标题', sellingPoint: '卖点一句话', cta: '扣1', brandName: 'demo' }
 
