@@ -425,10 +425,17 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json({ taskId })
   })
 
-  // —— workspace 静态文件（封面/视频预览）——
+  // —— workspace 静态文件（封面/视频预览 + hf 合成产物页内预览）——
+  // 注：合成产物 hf/ 需要以 text/html 提供才能在 iframe 里渲染。本服务绑 127.0.0.1、
+  // 单人本机使用、该目录内容全部由本工具自己生成（文案经 escapeHtml），风险可接受；
+  // 切勿把本路由暴露到 loopback 之外。
   const MIME: Record<string, string> = {
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
+    '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+    '.otf': 'font/otf', '.ttf': 'font/ttf', '.woff2': 'font/woff2',
+    '.wav': 'audio/wav', '.mp3': 'audio/mpeg',
   }
   app.get('/files/*', (c) => {
     const rel = decodeURIComponent(c.req.path.replace(/^\/files\//, ''))
