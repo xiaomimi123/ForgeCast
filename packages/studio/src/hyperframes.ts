@@ -183,8 +183,27 @@ export function buildTechBg(variant: string, durationSec: number): { cls: string
   }
 }
 
+/** 全程相机曲线关键帧。末键刻意落在片长之外（×1.15）——曲线若在片尾收住，
+ *  最后约 0.9 秒会慢到停死，仍会被判静止（HyperFrames 逐帧渲染下实测可见）。 */
+export function buildCameraKeyframes(durationSec: number): {
+  durationSec: number; from: { scale: number; x: number; y: number }; to: { scale: number; x: number; y: number }
+} {
+  return {
+    durationSec: durationSec * 1.15,
+    from: { scale: 1, x: 0, y: 0 },
+    to: { scale: 1.06, x: -14, y: -8 },
+  }
+}
+
+/** idle 微动相位：按元素稳定序号错开，避免同屏元素同步呼吸。确定性，无随机。 */
+export function idlePhase(index: number): number {
+  return ((index * 0.6180339887) % 1) * Math.PI * 2
+}
+
 /** 科技背景（5 变体）+ 逐字解码 的共享 CSS。四模板经 <!--HF_FXCSS--> 注入，避免复制多份。 */
 export const FX_CSS = `
+      /* 全程相机层：包裹 #root 全部子元素，做全片缓慢推移，避免整段静止帧 */
+      #cam { position: absolute; inset: 0; transform-origin: 50% 50%; }
       /* 科技感背景变体（--bg=grid|aurora|matrix|synth|mesh 切换） */
       #techbg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
       #techbg .vig { position: absolute; inset: 0; box-shadow: inset 0 0 420px rgba(0,0,0,.72); }
@@ -240,14 +259,19 @@ export const DECODE_RUNTIME = `(function () {
       })();`
 
 /**
- * 注入科技背景 + 解码运行时到模板。填 <!--HF_FXCSS-->（CSS）、<!--HF_DECODE-->（解码脚本），
+ * 注入科技背景 + 解码运行时 + 相机层到模板。<!--HF_FXCSS-->（CSS）、<!--HF_DECODE-->（解码脚本）、
+ * <!--HF_CAM-->（全程相机 GSAP 曲线）三个标记无条件填充——相机层所有模板都要有，不按 bg 是否存在区分
+ * （story 不传 bg，若共用 HF_BGANIM 标记会拿不到相机曲线，故相机用独立标记）。
  * bg 提供时再填 <!--HF_BG-->（背景 DOM）与 <!--HF_BGANIM-->（GSAP 微动）；bg 省略/none 则背景标记清空
  * （story 聊天场不加科技背景但仍要解码卖点/CTA）。全用函数 replacer 避免 $& 被当替换模式。
  */
 export function injectTechFx(html: string, opts: { bg?: string; durationSec: number }): string {
+  const cam = buildCameraKeyframes(opts.durationSec)
+  const camLine = `tl.fromTo('#cam', { scale: ${cam.from.scale}, x: ${cam.from.x}, y: ${cam.from.y} }, { scale: ${cam.to.scale}, x: ${cam.to.x}, y: ${cam.to.y}, duration: ${cam.durationSec}, ease: 'sine.inOut' }, 0);`
   let out = html
     .replace('<!--HF_FXCSS-->', () => FX_CSS)
     .replace('<!--HF_DECODE-->', () => DECODE_RUNTIME)
+    .replace('<!--HF_CAM-->', () => camLine)
   if (opts.bg && opts.bg !== 'none') {
     const bg = buildTechBg(resolveTechBg(opts.bg), opts.durationSec)
     out = out.replace('<!--HF_BG-->', () => `<div id="techbg" class="${bg.cls}">${bg.inner}</div>`).replace('<!--HF_BGANIM-->', () => bg.anim)

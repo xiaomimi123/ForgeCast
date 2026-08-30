@@ -33,16 +33,18 @@
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1920" data-height="1080">
+      <div id="cam">
       <!--HF_BG-->
       <!--HF_SECTIONS-->
       <!--HF_CAPTIONS-->
       <!--HF_AUDIO-->
+      </div>
     </div>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
+      <!--HF_CAM-->
       // 轻微运镜（整体缓慢放大），具体分镜显隐交给 HyperFrames clip 时间轴
-      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
       // 科技背景微动（按所选变体注入，GSAP 线性可 seek）
       <!--HF_BGANIM-->
       <!--HF_ACCENTS-->

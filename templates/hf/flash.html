@@ -25,15 +25,17 @@
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="{{duration}}" data-width="1080" data-height="1920">
+      <div id="cam">
       <!--HF_BG-->
       <!--HF_SECTIONS-->
       <!--HF_CAPTIONS-->
       <!--HF_AUDIO-->
+      </div>
     </div>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-      tl.fromTo("#root", { scale: 1 }, { scale: 1.03, duration: {{duration}}, ease: "none" }, 0);
+      <!--HF_CAM-->
       <!--HF_BGANIM-->
       <!--HF_ACCENTS-->
       <!--HF_DECODE-->

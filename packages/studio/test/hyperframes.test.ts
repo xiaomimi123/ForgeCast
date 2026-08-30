@@ -7,6 +7,7 @@ import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildChangelogSections, buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
 import { DECODE_RUNTIME } from '../src/hyperframes'
+import { buildCameraKeyframes, idlePhase, injectTechFx } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -723,4 +724,64 @@ describe('时间轴元素稳定 id', () => {
     expect(html).toContain('id="demo-price"')
     expect(html).toContain('id="demo-cta"')
   })
+})
+
+describe('相机曲线', () => {
+  it('末键落在片长之外，避免片尾收住导致静止', () => {
+    const k = buildCameraKeyframes(60)
+    expect(k.durationSec).toBeGreaterThan(60)
+  })
+  it('缩放幅度温和（1 → 1.02~1.10 之间），不至于把画面推爆', () => {
+    const k = buildCameraKeyframes(60)
+    expect(k.to.scale).toBeGreaterThan(1.01)
+    expect(k.to.scale).toBeLessThanOrEqual(1.10)
+  })
+})
+
+describe('idle 相位错开', () => {
+  it('相邻序号的相位不同，避免同屏元素同步呼吸', () => {
+    expect(idlePhase(0)).not.toBeCloseTo(idlePhase(1), 5)
+  })
+  it('同序号恒定（确定性）', () => {
+    expect(idlePhase(7)).toBe(idlePhase(7))
+  })
+})
+
+describe('injectTechFx 相机层注入', () => {
+  it('无条件填充 <!--HF_CAM-->，即使不传 bg（story 场景不传 bg）', () => {
+    const html = '<!--HF_FXCSS--><!--HF_DECODE--><!--HF_CAM-->'
+    const out = injectTechFx(html, { durationSec: 30 })
+    expect(out).not.toContain('<!--HF_CAM-->')
+    expect(out).toContain('#cam')
+  })
+  it('相机 GSAP 行按 buildCameraKeyframes 生成', () => {
+    const html = '<!--HF_CAM-->'
+    const out = injectTechFx(html, { durationSec: 30 })
+    const k = buildCameraKeyframes(30)
+    expect(out).toContain(`scale: ${k.to.scale}`)
+    expect(out).toContain(`duration: ${k.durationSec}`)
+  })
+})
+
+describe('10 个模板都注入相机层且不残留旧的 #root 缩放', () => {
+  const templatesDir = path.resolve(__dirname, '../../../templates/hf')
+  const files = fs.readdirSync(templatesDir).filter((f) => f.endsWith('.html'))
+
+  it('templates/hf 下确实有 10 个模板', () => {
+    expect(files.length).toBe(10)
+  })
+
+  for (const file of fs.readdirSync(templatesDir).filter((f) => f.endsWith('.html'))) {
+    it(`${file}: 含 <!--HF_CAM--> 标记与 #cam 包裹层，不含旧的 #root 缩放`, () => {
+      const raw = fs.readFileSync(path.join(templatesDir, file), 'utf8')
+      expect(raw).toContain('<!--HF_CAM-->')
+      expect(raw).toContain('id="cam"')
+      expect(raw).not.toMatch(/tl\.fromTo\("#root"/)
+
+      const filled = raw.replace(/\{\{duration\}\}/g, '30')
+      const out = injectTechFx(filled, { durationSec: 30 })
+      expect(out).toContain('#cam')
+      expect(out).not.toContain('<!--HF_CAM-->')
+    })
+  }
 })
