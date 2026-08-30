@@ -1,0 +1,144 @@
+{
+  "flash": [
+    {
+      "id": "flashHook",
+      "start": 0,
+      "dur": 4,
+      "track": 1
+    },
+    {
+      "id": "flashCap0",
+      "start": 4,
+      "dur": 2,
+      "track": 2
+    },
+    {
+      "id": "flashCap1",
+      "start": 8,
+      "dur": 4,
+      "track": 2
+    },
+    {
+      "id": "flashHighlight",
+      "start": 12.96,
+      "dur": 2.5,
+      "track": 3
+    },
+    {
+      "id": "flashCta",
+      "start": 26.4,
+      "dur": 3.6,
+      "track": 1
+    }
+  ],
+  "story": [
+    {
+      "id": "storyChat",
+      "start": 0,
+      "dur": 24,
+      "track": 1
+    },
+    {
+      "id": "storySell",
+      "start": 24,
+      "dur": 3,
+      "track": 1
+    },
+    {
+      "id": "storyCta",
+      "start": 27,
+      "dur": 3,
+      "track": 1
+    }
+  ],
+  "changelog": [
+    {
+      "id": "clTitle",
+      "start": 0,
+      "dur": 4.5,
+      "track": 1
+    },
+    {
+      "id": "clCap0",
+      "start": 4.5,
+      "dur": 1.5,
+      "track": 2
+    },
+    {
+      "id": "clCap1",
+      "start": 8,
+      "dur": 4,
+      "track": 2
+    },
+    {
+      "id": "clCap2",
+      "start": 15,
+      "dur": 4,
+      "track": 2
+    },
+    {
+      "id": "clCta",
+      "start": 26.4,
+      "dur": 3.6,
+      "track": 1
+    }
+  ],
+  "demo": [
+    {
+      "id": "demo-hook",
+      "start": 0,
+      "dur": 3,
+      "track": 1
+    },
+    {
+      "id": "demo-pain",
+      "start": 3,
+      "dur": 3,
+      "track": 1
+    },
+    {
+      "id": "demo-price",
+      "start": 24,
+      "dur": 3,
+      "track": 1
+    },
+    {
+      "id": "demo-cta",
+      "start": 27,
+      "dur": 3,
+      "track": 1
+    }
+  ],
+  "insight": [
+    {
+      "id": "insight-intro",
+      "start": 0,
+      "dur": 2,
+      "track": 1
+    },
+    {
+      "id": "insCard0_0",
+      "start": 2,
+      "dur": 8,
+      "track": 2
+    },
+    {
+      "id": "insCard0_1",
+      "start": 8,
+      "dur": 8,
+      "track": 3
+    },
+    {
+      "id": "insCard0_2",
+      "start": 15,
+      "dur": 12,
+      "track": 4
+    },
+    {
+      "id": "insight-outro",
+      "start": 27,
+      "dur": 3,
+      "track": 1
+    }
+  ]
+}
