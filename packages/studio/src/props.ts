@@ -39,9 +39,8 @@ export interface StoryProps {
 export function buildStoryProps(doc: CopyDoc, brandName = 'forgecast'): StoryProps {
   const flash = buildFlashProps(doc, brandName)
   // 对话轮次（最多 1 组问答/2 条气泡，见 buildSemantic 里的同段注释）由 buildSemantic
-  // 以 JSON 编码字符串存进 body-1 section 的 items，这里原样解码回来。
-  const dialog = buildSemantic(doc, 'story').sections.find((x) => x.id === 'body-1')?.items ?? []
-  const bubbles = dialog.map((x) => JSON.parse(x) as { who: 'them' | 'me'; text: string })
+  // 直接放进 body-1 section 的 dialogue 字段，这里原样取出。
+  const bubbles = buildSemantic(doc, 'story').sections.find((x) => x.id === 'body-1')?.dialogue ?? []
   return {
     bubbles,
     sellingPoint: flash.sellingPoint,

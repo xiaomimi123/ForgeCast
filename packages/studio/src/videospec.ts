@@ -29,7 +29,8 @@ export interface Section {
   id: string                      // 'sec-hook' / 'sec-pain' / 'sec-card-2' …稳定可读
   role: 'hook' | 'pain' | 'body' | 'demo' | 'stat' | 'cta' | 'brand'
   text?: string
-  items?: string[]                // 痛点列表、气泡对话等
+  items?: string[]                // 纯字符串列表（痛点列表等）；对话轮次见 dialogue，不要塞进这里
+  dialogue?: Array<{ who: 'them' | 'me'; text: string }>   // story 的气泡对话轮次
   shots?: string[]                // demo 截图相对路径
   stat?: { value: string; label: string }   // insight 数据卡
 }

@@ -100,9 +100,7 @@ export function buildSemantic(doc: CopyDoc, template: string, opts: BuildSemanti
       ...qaPairs,
       { who: 'them' as const, text: '太好了，等你消息' },
     ]
-    // Section.items 是 string[]，对话轮次（who+text）用 JSON 编码存进去，
-    // props.ts 里 JSON.parse 还原——比拿冒号切分安全（文案本身可能含冒号）。
-    push({ role: 'body', items: bubbles.map((b) => JSON.stringify(b)) })
+    push({ role: 'body', dialogue: bubbles })
   }
 
   if (template === 'insight') {
