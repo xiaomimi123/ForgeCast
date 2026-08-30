@@ -682,7 +682,10 @@ export function buildInsightSections(opts: {
   const introEnd = cards[0]?.start ?? Math.max(3, Math.min(4, durationSec - 3))
   const outroStart = Math.max(introEnd, durationSec - 3)
 
-  // 单卡驻留上限（秒）：超过则必须有新卡进场或旧卡自己先退场，不允许一张卡钉住整个分组窗口
+  // 单卡驻留上限（秒）：只在「还有后继卡」时封顶——封顶的目的是逼内容推进，不是逼空画面。
+  // 组内最后一张卡没有后继，若也被封顶，稀疏 cue（每条独占一组）下会在两张卡之间抠出大段空白，
+  // 比重做前"一张卡撑 25 秒"更糟（fix round 1 复盘：14s+12s 空窗）。所以最后一张卡不封顶，
+  // 直接撑到 sceneEnd——Task 7 加的全程相机层已经让长驻留不再是纯静止画面。
   const CARD_DWELL_CAP = 8
   const CARD_MIN_DUR = 0.5
 
@@ -690,28 +693,54 @@ export function buildInsightSections(opts: {
   const accentLines: string[] = []
   groups.forEach((group, gi) => {
     const sceneEnd = Math.min(outroStart, groups[gi + 1]?.[0]?.start ?? outroStart)
-    // 组内每张卡都独立按「min(驻留上限, 到本组窗口结束)」收尾——而不是统一拉到 sceneEnd，
-    // 这样后一张卡进场时前一张往往还没到点，两三张卡在屏幕上真实叠出现，又都不超过 8 秒。
     const primaryColor = INSIGHT_PALETTE[gi % INSIGHT_PALETTE.length]
-    group.forEach((card, idx) => {
-      const id = `insCard${gi}_${idx}`
-      const dur = Math.max(CARD_MIN_DUR, Math.min(CARD_DWELL_CAP, sceneEnd - card.start))
-      // 同屏多卡时只有 idx=0（组内最早/主卡）享受高亮色 + 大字号，其余降级为次级样式，
-      // 版式细节（尺寸/位置）交给模板 CSS 按 data-idx 区分，这里只负责主卡的强调色。
-      const style = idx === 0 ? ` style="--card-color:${primaryColor}"` : ''
-      const inner = `<div class="card" data-idx="${idx}"${style}>`
+    const spans = group.map((card, idx) => {
+      const isLast = idx === group.length - 1
+      const dur = isLast
+        ? Math.max(CARD_MIN_DUR, sceneEnd - card.start)
+        : Math.max(CARD_MIN_DUR, Math.min(CARD_DWELL_CAP, sceneEnd - card.start))
+      return { ...card, idx, dur, end: card.start + dur }
+    })
+
+    // 主视觉归属看"此刻谁最新"，不看 idx：新卡进场时若上一位主视觉此刻仍活着（重叠），把它
+    // 降级、新卡接棒主视觉；若上一位早播完了（接力式独播），新卡直接就是主视觉——因为它就是
+    // 此刻唯一在屏的卡。这样稀疏 cue 下常年独播的 idx=1/2 卡不会被钉死成灰底次级样式（fix round 1）。
+    let heroIdx = 0
+    let heroEnd = spans[0].end
+    const demotions: { idx: number; at: number }[] = []
+    for (let idx = 1; idx < spans.length; idx++) {
+      if (spans[idx].start < heroEnd) demotions.push({ idx: heroIdx, at: spans[idx].start })
+      heroIdx = idx
+      heroEnd = spans[idx].end
+    }
+
+    spans.forEach((card) => {
+      const id = `insCard${gi}_${card.idx}`
+      // 默认都是主视觉尺寸/透明度——是否降级交给下面按 demotions 追加的 tl.to 在精确时刻切换。
+      // 配色固定用本组的 primaryColor（生成时写死一次，之后不再改）：实测 GSAP 一旦接管某元素的
+      // transform/opacity，会连带重写整个内联 style 属性、连带丢掉后加的自定义 CSS 变量——
+      // 所以「谁是主视觉」只能靠 GSAP 原生管的 scale/opacity 表达（见下方 demotions），
+      // 不能靠 CSS 属性选择器 + 内联变量切换（那条路在实测截图里根本不生效）。
+      const inner = `<div class="card" data-idx="${card.idx}" style="--card-color:${primaryColor}">`
         + `<div class="stat">${escapeHtml(card.stat)}</div><div class="label">${escapeHtml(card.label)}</div></div>`
       // 同组卡片是「累加共存」语义，必须各占一条轨道——同轨重叠会被 HyperFrames 判为渲染冲突。
       // 组内最多 3 张（见上方分组逻辑），故占用 track 2/3/4，不与音轨(0)和开场结尾(1)冲突。
-      cardClips.push(clip(card.start, dur, 2 + idx, inner, id))
+      cardClips.push(clip(card.start, card.dur, 2 + card.idx, inner, id))
       accentLines.push(`tl.from("#${id}", { opacity: 0, y: 24, duration: .45 }, ${card.start});`)
       // 退场用缩小+降透明度移出，而不是到点硬切——最后 .4s 淡出+缩小，呼应「真退场不是消失术」。
-      // clip 边界（card.start+dur）必须配一条 tl.set 硬收尾——StaticGuard 的强制契约：
+      // clip 边界（card.end）必须配一条 tl.set 硬收尾——StaticGuard 的强制契约：
       // 否则非线性 seek 落在渐隐尾巴之后可能读到 stale 的可见状态。
-      const clipEnd = +(card.start + dur).toFixed(2)
-      const exitAt = +(clipEnd - Math.min(0.4, dur)).toFixed(2)
-      accentLines.push(`tl.to("#${id}", { opacity: 0, scale: .85, duration: ${Math.min(0.4, dur)} }, ${exitAt});`)
+      const clipEnd = +card.end.toFixed(2)
+      const exitDur = Math.min(0.4, card.dur)
+      const exitAt = +(clipEnd - exitDur).toFixed(2)
+      accentLines.push(`tl.to("#${id}", { opacity: 0, scale: .85, duration: ${exitDur} }, ${exitAt});`)
       accentLines.push(`tl.set("#${id}", { opacity: 0 }, ${clipEnd});`)
+    })
+    // 降级只用 GSAP 原生的 scale/opacity（不碰颜色/属性）：缩小到 .78、压暗到 .55，
+    // 在新卡进场的同一时刻完成，把主视觉观感让给刚接棒的新卡。
+    demotions.forEach(({ idx, at }) => {
+      const id = `insCard${gi}_${idx}`
+      accentLines.push(`tl.to("#${id}", { opacity: .55, scale: .78, duration: .3 }, ${+at.toFixed(2)});`)
     })
   })
 

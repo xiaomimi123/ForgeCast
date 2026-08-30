@@ -433,11 +433,23 @@ describe('insight 构图约束', () => {
   const cues = Array.from({ length: 8 }, (_, i) => ({
     start: 5 + i * 6, end: 9 + i * 6, text: `第${i}项返工率 ${10 + i}%`,
   }))
-  it('单张卡片驻留不超过 8 秒', () => {
+  // fix round 1：驻留上限只在"还有后继卡"时生效——组内最后一张卡没有后继，不封顶，
+  // 直接撑到本组窗口结束（sceneEnd），否则稀疏 cue 下会在卡与卡之间抠出空白（见下面单独 describe）。
+  it('组内有后继的卡（非组内最后一张）驻留不超过 8 秒', () => {
     const { html } = buildInsightSections({ cues, durationSec: 60, painTitle: 'T', cta: 'C', brandName: 'B' })
-    const durs = [...html.matchAll(/id="insCard\d+_\d+"[^>]*data-duration="([\d.]+)"/g)].map((m) => +m[1])
-    expect(durs.length).toBeGreaterThan(0)
-    for (const d of durs) expect(d).toBeLessThanOrEqual(8)
+    // 按本 fixture 的分组结果（[0,1,2] [3,4,5] [6,7]），非组内最后一张的 id 如下
+    const nonLastIds = ['insCard0_0', 'insCard0_1', 'insCard1_0', 'insCard1_1', 'insCard2_0']
+    for (const id of nonLastIds) {
+      const m = html.match(new RegExp(`id="${id}"[^>]*data-duration="([\\d.]+)"`))
+      expect(+m![1]).toBeLessThanOrEqual(8)
+    }
+  })
+  it('组内最后一张卡不封顶，撑到本组窗口结束，不因 8 秒硬顶抠出空白', () => {
+    const { html } = buildInsightSections({ cues, durationSec: 60, painTitle: 'T', cta: 'C', brandName: 'B' })
+    // insCard0_2：组0 最后一张，撑到组1 第一张卡进场（23s），时长 23-17=6，超过看似的“上限”也不封顶
+    expect(html).toMatch(/id="insCard0_2"[^>]*data-start="17" data-duration="6"/)
+    // insCard2_1：组2（只剩2张）最后一张，撑到 outroStart（57s），时长 10 秒，明确 >8 秒
+    expect(html).toMatch(/id="insCard2_1"[^>]*data-start="47" data-duration="10"/)
   })
   it('任意时刻同屏卡片不超过 3 张', () => {
     const { html } = buildInsightSections({ cues, durationSec: 60, painTitle: 'T', cta: 'C', brandName: 'B' })
@@ -447,6 +459,22 @@ describe('insight 构图约束', () => {
       const live = clips.filter((c) => t >= c.s && t < c.e).length
       expect(live).toBeLessThanOrEqual(3)
     }
+  })
+})
+
+describe('insight 稀疏 cue 不留空白帧（fix round 1 回归：8s 硬顶曾经在卡之间抠出十几秒空白）', () => {
+  it('cue 间隔 >12s（每条独立成组，组内只有 1 张卡）时，前一张卡精确撑到下一张卡进场', () => {
+    const cues = [
+      { start: 8, end: 9, text: '返工率10%' },
+      { start: 30, end: 31, text: '返工率12%' },
+      { start: 50, end: 51, text: '返工率15%' },
+    ]
+    const { html } = buildInsightSections({ cues, durationSec: 60, painTitle: 'T', cta: 'C', brandName: 'B' })
+    const clips = [...html.matchAll(/id="(insCard\d+_\d+)"[^>]*data-start="([\d.]+)" data-duration="([\d.]+)"/g)]
+      .map((m) => ({ id: m[1], s: +m[2], e: +m[2] + +m[3] }))
+    expect(clips.map((c) => c.id)).toEqual(['insCard0_0', 'insCard1_0', 'insCard2_0'])
+    expect(clips[0].e).toBeCloseTo(clips[1].s, 5) // 第一张卡撑到第二张进场，中间无空白
+    expect(clips[1].e).toBeCloseTo(clips[2].s, 5) // 第二张卡撑到第三张进场，中间无空白
   })
 })
 

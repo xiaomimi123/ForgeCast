@@ -15,21 +15,21 @@
       .cta { font-size: 56px; font-weight: 800; color: #fff; margin-bottom: 28px; }
       .brand { font-size: 32px; color: #8888aa; }
       /* 数据卡片：横屏画布 1920x1080，垂直中线 540。卡片全部居中、宽度都 ≥55%
-         （1400/1200/1080 / 1920 = 73%/62.5%/56.25%），只堆在下半区（top ≥ 560）——
+         （1400/1200/1080 / 1920 = 73%/62.5%/56.25%），只堆在下半区（top ≥ 540）——
          上半区（TL/TR）完全留白，构成"至少一个空象限"且左右不空（宽度撑满）。
-         --card-color 只由 buildInsightSections 给 idx=0 内联覆盖，其余用灰调默认值。
+         fix round 1：默认就是主视觉尺寸/透明度，谁是主视觉由 buildInsightSections 按
+         "此刻谁最新/唯一"算，不再固定 idx=0；data-idx 只决定三个物理槽位（避免同屏互相压住）。
+         降级（曾经是主视觉、被新卡接棒）靠 GSAP 原生 scale/opacity 在精确时刻 tl.to 切换——
+         不能靠 CSS 属性选择器/内联自定义变量：实测 GSAP 接管该元素 transform/opacity 后会
+         连带重写整个内联 style，CSS 属性选择器规则和自定义变量都不生效。
          用固定 left（而非 transform 居中）：GSAP 动 scale/y 会接管并冲掉居中 transform。 */
-      .card { position: absolute; border: 1.5px solid var(--card-color, #6b6b7d); border-radius: 16px; background: rgba(15,15,15,.78); padding: 16px 24px; }
-      .card .stat { font-size: 30px; font-weight: 800; color: var(--card-color, #cfcfe0); }
-      .card .label { font-size: 18px; color: #c9c9d6; margin-top: 4px; }
-      /* idx=0：组内主卡，全宽最大、字号最大、边框加粗——同屏其余卡片必须比它弱 */
-      .card[data-idx="0"] { top: 550px; left: 260px; width: 1400px; border-width: 3px; background: rgba(15,15,15,.92); }
-      .card[data-idx="0"] .stat { font-size: 52px; font-weight: 900; }
-      .card[data-idx="0"] .label { font-size: 24px; color: #f4f4f7; }
-      .card[data-idx="1"] { top: 700px; left: 360px; width: 1200px; }
-      .card[data-idx="1"] .stat { font-size: 32px; }
-      .card[data-idx="2"] { top: 820px; left: 420px; width: 1080px; }
-      .card[data-idx="2"] .stat { font-size: 30px; }
+      .card { position: absolute; border: 2px solid var(--card-color, #ffd54f); border-radius: 16px; background: rgba(15,15,15,.9); padding: 12px 20px; transform-origin: top center; }
+      .card .stat { font-size: 32px; font-weight: 900; color: var(--card-color, #ffd54f); }
+      .card .label { font-size: 18px; color: #f0f0f4; margin-top: 4px; }
+      /* data-idx 只管三个槽位互不重叠的物理位置，字号/配色不再按 idx 分档 */
+      .card[data-idx="0"] { top: 540px; left: 260px; width: 1400px; }
+      .card[data-idx="1"] { top: 660px; left: 360px; width: 1200px; }
+      .card[data-idx="2"] { top: 780px; left: 420px; width: 1080px; }
       .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
       <!--HF_FXCSS-->
     </style>

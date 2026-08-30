@@ -17,23 +17,23 @@
       /* 数据卡片：全部居中、宽度都 ≥55% 画布宽（900/820/760 / 1080 = 83%/76%/70%），
          只堆在画布下半区（top ≥ 1000，画布高 1920，垂直中线 960 以下）——上半区完全留白，
          构成"至少一个空象限"且不是缩在一角（左右都占满，只是上边空）。
-         三张卡的堆叠区在 1000~1454px 结束，给 .cap 字幕条（贴 bottom:150px，最多两行时
-         顶部约在 1615px）留出 ≥160px 净空——实测两行字幕会和卡片撞在一起，故预留够余量。
-         --card-color 只由 buildInsightSections 给 idx=0（组内主卡）内联覆盖，
-         其余卡片吃下面 var 的灰调默认值，实现"只有一张享受主视觉造型" */
+         三张卡的堆叠区在 1000~1513px 结束，给 .cap 字幕条（贴 bottom:150px，最多两行时
+         顶部约在 1615px）留出 ≥100px 净空——实测两行字幕会和卡片撞在一起，故预留够余量。
+         fix round 1：默认就是主视觉尺寸/透明度——谁是主视觉由 buildInsightSections 按
+         "此刻谁最新/唯一"算，不再是固定 idx=0；data-idx 只决定三个物理堆叠槽位（避免同屏时
+         互相压住），不再决定字号大小。降级（曾经是主视觉、被新卡接棒）靠 GSAP 原生 scale/opacity
+         在精确时刻 tl.to 切换（见 hyperframes.ts 里的 demotions）——不能靠 CSS 属性选择器/
+         内联自定义变量做：实测 GSAP 一旦接管该元素的 transform/opacity，会连带重写整个内联
+         style、CSS 属性选择器规则和后加的自定义变量都不生效。 */
       /* 注：不用 left:50%+transform:translateX 居中——GSAP 动 scale/y 会接管并冲掉这个
          居中 transform，改用固定 left（画布 1080px 减卡宽再除二），每个 idx 各自居中 */
-      .card { position: absolute; border: 1.5px solid var(--card-color, #6b6b7d); border-radius: 18px; background: rgba(15,15,15,.78); padding: 16px 24px; }
-      .card .stat { font-size: 36px; font-weight: 800; color: var(--card-color, #cfcfe0); }
-      .card .label { font-size: 20px; color: #c9c9d6; margin-top: 6px; }
-      /* idx=0：组内主卡，全宽最大、字号最大、边框加粗——同屏其余卡片必须比它弱 */
-      .card[data-idx="0"] { top: 1000px; left: 90px; width: 900px; border-width: 3px; padding: 18px 26px; background: rgba(15,15,15,.92); }
-      .card[data-idx="0"] .stat { font-size: 70px; font-weight: 900; }
-      .card[data-idx="0"] .label { font-size: 28px; color: #f4f4f7; }
-      .card[data-idx="1"] { top: 1195px; left: 130px; width: 820px; }
-      .card[data-idx="1"] .stat { font-size: 44px; }
-      .card[data-idx="2"] { top: 1350px; left: 160px; width: 760px; }
-      .card[data-idx="2"] .stat { font-size: 40px; }
+      .card { position: absolute; border: 2px solid var(--card-color, #ffd54f); border-radius: 18px; background: rgba(15,15,15,.9); padding: 18px 26px; transform-origin: top center; }
+      .card .stat { font-size: 52px; font-weight: 900; color: var(--card-color, #ffd54f); }
+      .card .label { font-size: 24px; color: #f0f0f4; margin-top: 6px; }
+      /* data-idx 只管三个槽位互不重叠的物理位置，字号/配色不再按 idx 分档 */
+      .card[data-idx="0"] { top: 1000px; left: 90px; width: 900px; }
+      .card[data-idx="1"] { top: 1190px; left: 130px; width: 820px; }
+      .card[data-idx="2"] { top: 1380px; left: 160px; width: 760px; }
       .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
       <!--HF_FXCSS-->
     </style>
