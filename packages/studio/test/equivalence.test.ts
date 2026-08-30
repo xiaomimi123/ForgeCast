@@ -1,3 +1,4 @@
+import type { CopyDoc } from '@forgecast/copywriter'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +7,9 @@ import {
   buildChangelogSections, buildDemoSections, buildFlashSections,
   buildInsightSections, buildStorySections,
 } from '../src/hyperframes'
+import { lower, type LowerOpts } from '../src/lower'
+import { renderSpecToHtml } from '../src/render-html'
+import { buildSemantic } from '../src/semantic'
 
 /**
  * 这份基线是整个 VideoSpec 重构（copy → semantic → layers → HTML）的**唯一验收门禁**：
@@ -115,5 +119,92 @@ describe('改造前后视觉等价（clip 时间轴指纹）', () => {
       return
     }
     expect(current).toEqual(JSON.parse(fs.readFileSync(BASELINE, 'utf8')))
+  })
+})
+
+/**
+ * DOC_FIXTURE：能推导出与 buildSemantic 真实取值路径一致文案的 CopyDoc。内容本身对下面这条断言
+ * 无关紧要——七个 fixture 的 clip 时间轴全部只依赖 durationSec/cues/beatGrid/shots/plan，不依赖
+ * 文案字面值（各 lowerXxx 函数逐行核对过：durations/starts/tracks 无一处读 section.text 的长度或
+ * 内容）。之所以仍要给出一份看起来合理的 CopyDoc，只是让 buildSemantic 能顺利跑完不必要地触发
+ * 提取失败的兜底分支——douyinScript 按 buildSemantic 里 extractCta/extractPriceAnchor 的正则
+ * 取值路径写了 【报价】/【CTA】 两个分段。
+ */
+export const DOC_FIXTURE: CopyDoc = {
+  titles: ['标题1', '标题2'],
+  xhsBody: '痛点一。痛点二。痛点三。',
+  douyinScript: '【报价】\n台词：报价锚点\n【CTA】\n台词：行动号召',
+  cover: { main: '标题', sub: '卖点' },
+  comments: { questions: ['能做吗'], replies: ['可以，等我一天'] },
+}
+
+const AUDIO_OFF = { narration: null, bgm: null, beatGrid: null, captionsEnabled: false }
+const CANVAS = { width: 1080, height: 1920 }
+
+/** story / demoCarousel 复用同一套 t0=0,T=2 的线性拍点网格——gridBeats(grid, durationSec) 展开出的
+ *  0,2,4,...,durationSec 序列，分别与本文件 BEATS（30s 场景）、demoCarousel fixture 用的
+ *  Array.from({length:21},(_,i)=>i*2)（40s 场景）逐项相等（已核对：两者都是 t0=0/T=2 的等差数列，
+ *  仅上界随 durationSec 变化）。用同一个 grid 构造函数复用，不必为两个场景分别手写数组。 */
+function grid2(duration: number) {
+  return { t0: 0, T: 2, bpm: 30, beats: [] as number[], strongBeats: [] as number[], duration }
+}
+
+const DEMO_SHOTS: Array<{ rel: string; orientation: 'portrait' | 'landscape' }> = [
+  { rel: 's1.jpg', orientation: 'portrait' },
+  { rel: 's2.jpg', orientation: 'landscape' },
+  { rel: 's3.jpg', orientation: 'portrait' },
+]
+
+/**
+ * 新管线（buildSemantic → lower → renderSpecToHtml）每个 fixture 对应的 LowerOpts——必须与
+ * equivalence-baseline.json 对应模板的固定输入（本文件顶部 FIXTURES）逐项对齐：
+ * - flash/changelog/insight：只吃 cues + durationSec，直接照抄 CUES/30。
+ * - story：老函数直接传 beats 数组（BEATS），新管线改吃 beatGrid，用 grid2(30) 展开出同一份数组。
+ * - demo：无节拍/无图（老 FIXTURES.demo 用 shots:[]，未传 beats）。
+ * - demoCarousel：3 图 + durationSec 40 + grid2(40)（展开为老 fixture 手写的 0..40 步长 2 网格）。
+ * - demoPlan：3 图 + 显式 plan——老 plan.cuts 直接给 {start,shot}，新 LowerPlan 用 {grid,offsetSec,cuts:{beat,shot}}
+ *   表达同一组绝对时间；这里取 grid={t0:0,T:1}、offsetSec:0，让 beat 数值本身就等于秒数（8/14/20）。
+ */
+const NEW_PIPELINE_OPTS: Record<keyof typeof FIXTURES, () => LowerOpts> = {
+  flash: () => ({
+    videoId: 'v1', slug: 's', template: 'flash', canvas: CANVAS, durationSec: 30, cues: CUES, audio: AUDIO_OFF,
+  }),
+  story: () => ({
+    videoId: 'v1', slug: 's', template: 'story', canvas: CANVAS, durationSec: 30, cues: CUES,
+    beatGrid: grid2(30), audio: AUDIO_OFF,
+  }),
+  changelog: () => ({
+    videoId: 'v1', slug: 's', template: 'changelog', canvas: CANVAS, durationSec: 30, cues: CUES, audio: AUDIO_OFF,
+  }),
+  demo: () => ({
+    videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 30, cues: CUES, shots: [], audio: AUDIO_OFF,
+  }),
+  demoCarousel: () => ({
+    videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 40, cues: CUES,
+    shots: DEMO_SHOTS, beatGrid: grid2(40), audio: AUDIO_OFF,
+  }),
+  demoPlan: () => ({
+    videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 30, cues: CUES,
+    shots: DEMO_SHOTS,
+    plan: { grid: { t0: 0, T: 1 }, offsetSec: 0, cuts: [{ beat: 8, shot: 0 }, { beat: 14, shot: 1 }, { beat: 20, shot: 2 }] },
+    audio: AUDIO_OFF,
+  }),
+  insight: () => ({
+    videoId: 'v1', slug: 's', template: 'insight', canvas: CANVAS, durationSec: 30, cues: CUES, audio: AUDIO_OFF,
+  }),
+}
+
+describe('新管线与基线等价', () => {
+  it('七个 fixture 经 buildSemantic→lower→renderSpecToHtml 后，clip 时间轴指纹与基线一致', () => {
+    const baseline = JSON.parse(fs.readFileSync(BASELINE, 'utf8'))
+    for (const key of Object.keys(FIXTURES) as Array<keyof typeof FIXTURES>) {
+      // 新管线：用与基线完全相同的时间轴输入（durationSec/cues/beatGrid/shots/plan），
+      // 只是走 semantic→lower→render 三层，而不是直接调旧 build*Sections。
+      const opts = NEW_PIPELINE_OPTS[key]()
+      const sem = buildSemantic(DOC_FIXTURE, opts.template, { cues: CUES })
+      const spec = lower(sem, opts)
+      const got = clipFingerprint(renderSpecToHtml(spec).html)
+      expect(got, `模板 ${key} 的时间轴指纹与改造前不一致`).toEqual(baseline[key])
+    }
   })
 })

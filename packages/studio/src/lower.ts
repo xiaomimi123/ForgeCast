@@ -230,7 +230,9 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
       .filter((c) => c.start >= carStart && c.start < carEnd)
       .sort((a, b) => a.start - b.start)
     carItems = cutTimes.map((c, k) => ({
-      id: `demoCar${k}`, start: c.start, dur: (cutTimes[k + 1]?.start ?? carEnd) - c.start, shot: shots[c.shot],
+      // id 沿用原 buildDemoSections 的 `car${k}`（不加 demo 前缀）——equivalence 基线按这个字面量记录，
+      // Task 4 接线时发现这里曾错写成 `demoCar${k}`，会让 demoCarousel/demoPlan 两条基线在 id 上失配。
+      id: `car${k}`, start: c.start, dur: (cutTimes[k + 1]?.start ?? carEnd) - c.start, shot: shots[c.shot],
     }))
   } else {
     // 密度启发式（原样迁自 buildDemoSections 的 hasBeats 分支）
@@ -249,7 +251,7 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
     }
     // 每刀循环取一张图；时长 = 到下一刀（末刀到 carEnd）
     carItems = cutStarts.map((start, k) => ({
-      id: `demoCar${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
+      id: `car${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
     }))
   }
 
