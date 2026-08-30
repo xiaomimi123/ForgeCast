@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { api, subscribeTask, type Asset } from '../../api'
+import { api, type Asset } from '../../api'
+import TaskProgress from '../../components/TaskProgress'
+import { useTaskRun } from '../../useTaskRun'
 
 interface ReviewReport {
   scores: { hook: number; pacing: number; fidelity: number; cta: number; overall: number }
@@ -39,49 +41,33 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
   onDelete: (id: number) => void
 }) {
   const qc = useQueryClient()
-  const [reviewing, setReviewing] = useState(false)
+  const reviewRun = useTaskRun()
   const [scriptId, setScriptId] = useState<number | ''>('')
   let report: ReviewReport | null = null
   if (asset.review) { try { report = JSON.parse(asset.review) } catch { report = null } }
-  const [retroing, setRetroing] = useState(false)
+  const retroRun = useTaskRun()
   let retro: RetroReport | null = null
   if (asset.retro) { try { retro = JSON.parse(asset.retro) } catch { retro = null } }
-  async function runRetro() {
-    if (retroing) return
-    setRetroing(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/assets/${asset.id}/retro`, { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          setRetroing(false)
-          qc.invalidateQueries({ queryKey: ['assets'] })
-          if (e.type === 'error') alert('复盘失败：' + e.message)
-        }
-      })
-    } catch (err) {
-      setRetroing(false)
-      alert('复盘失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+  function runRetro() {
+    retroRun.run(
+      async () => (await api<{ taskId: string }>(`/api/assets/${asset.id}/retro`, { method: 'POST' })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['assets'] })
+        if (!ok) alert('复盘失败：' + (e?.message ?? '未知错误'))
+      },
+    )
   }
 
-  async function runReview() {
-    if (reviewing) return
-    setReviewing(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/assets/${asset.id}/review`, {
+  function runReview() {
+    reviewRun.run(
+      async () => (await api<{ taskId: string }>(`/api/assets/${asset.id}/review`, {
         method: 'POST', body: JSON.stringify(scriptId === '' ? {} : { scriptAssetId: scriptId }),
-      })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          setReviewing(false)
-          qc.invalidateQueries({ queryKey: ['assets'] })
-          if (e.type === 'error') alert('审片失败：' + e.message)
-        }
-      })
-    } catch (err) {
-      setReviewing(false)
-      alert('审片失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+      })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['assets'] })
+        if (!ok) alert('审片失败：' + (e?.message ?? '未知错误'))
+      },
+    )
   }
 
   return (
@@ -105,9 +91,10 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
             <option value="">最新脚本基准（自动）</option>
             {scriptAssets.map((s) => <option key={s.id} value={s.id}>脚本 #{s.id} · {s.hook ?? '—'}</option>)}
           </select>
-          <button className="btn ghost shrink-0 px-2 py-1 text-xs disabled:opacity-50" disabled={reviewing} onClick={runReview}>
-            {reviewing ? '审片中…' : report ? '重新审片' : '审片'}
+          <button className="btn ghost shrink-0 px-2 py-1 text-xs disabled:opacity-50" disabled={reviewRun.running} onClick={runReview}>
+            {reviewRun.running ? '审片中…' : report ? '重新审片' : '审片'}
           </button>
+          <TaskProgress run={reviewRun} />
         </div>
         {report && (
           <div className="space-y-1.5 border-t border-hairline pt-2">
@@ -121,9 +108,10 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
             {report.transcript && (
               <div className="truncate text-xs text-faint" title={report.transcript}>转写：{report.transcript.slice(0, 60)}…</div>
             )}
-            <button className="btn ghost px-2 py-0.5 text-xs disabled:opacity-50" disabled={retroing} onClick={runRetro}>
-              {retroing ? '复盘中…' : retro ? '重新复盘' : '生成复盘（结合发布数据）'}
+            <button className="btn ghost px-2 py-0.5 text-xs disabled:opacity-50" disabled={retroRun.running} onClick={runRetro}>
+              {retroRun.running ? '复盘中…' : retro ? '重新复盘' : '生成复盘（结合发布数据）'}
             </button>
+            <TaskProgress run={retroRun} />
             {retro && (
               <div className="space-y-1 border-t border-hairline pt-2 text-xs">
                 <div className="font-bold">复盘：{retro.verdict}{retro.hadPerf ? '' : '（暂无发布数据）'}</div>
