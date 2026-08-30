@@ -35,8 +35,11 @@ export function useTaskRun(): TaskRun {
   const runningRef = useRef(false)
   // 卸载时关掉 EventSource——原先各处手写的 subscribeTask 没做，抽屉一关连接还挂着
   const closeRef = useRef<(() => void) | null>(null)
+  // start() 的 promise 还没 resolve 时组件就卸载：closeRef 此刻还是 null，卸载 effect 关不到东西；
+  // 等 subscribeTask 真的建好连接，得知自己已卸载就立刻关掉，不能存进 closeRef（没人会再来关它）
+  const unmountedRef = useRef(false)
 
-  useEffect(() => () => { closeRef.current?.() }, [])
+  useEffect(() => () => { unmountedRef.current = true; closeRef.current?.() }, [])
 
   useEffect(() => {
     if (!running) return
@@ -64,11 +67,12 @@ export function useTaskRun(): TaskRun {
 
     try {
       const taskId = await start()
-      closeRef.current = subscribeTask(taskId, (e) => {
+      const close = subscribeTask(taskId, (e) => {
         setLogs((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
         setLastMessage(e.message)
         if (e.type === 'done' || e.type === 'error') settle(e.type === 'done', e)
       })
+      if (unmountedRef.current) close(); else closeRef.current = close
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setLogs((l) => [...l, `❌ ${msg}`])
