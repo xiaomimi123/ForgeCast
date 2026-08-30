@@ -60,18 +60,34 @@ function renderTextContent(layer: Layer, text: string): string {
   }).join('')
 }
 
-/** demo 轮播图承袭原 buildDemoSections 的两种取景框（phoneWrap 竖图套手机外框 / wideWrap 横图
- *  居中+同图虚化背景）——cssClass 由 lower() 按 shot.orientation 写好，这里只按名字分流结构，
- *  不重新判断朝向（朝向判断是 lower() 的活）。未知/缺省 cssClass 时退化成裸 <img>。 */
+/**
+ * demo 轮播图承袭原 buildDemoSections 的两种取景框（phoneWrap 竖图套手机外框 / wideWrap 横图
+ * 居中+同图虚化背景）——cssClass 由 lower() 按 shot.orientation 写好，这里只按名字分流结构，
+ * 不重新判断朝向（朝向判断是 lower() 的活）。未知/缺省 cssClass 时退化成裸 <img>。
+ *
+ * URL 编码故意放在这里、不放在 lower()（Fix round 3）：`layer.content.src` 是"这张图逻辑上在哪"
+ * 的一条路径，`encodeURI` 是"往 HTML/CSS 里写一条 URL 时才需要做"的转换——这是两件事，混在一起会
+ * 出问题。spec 是要按视频存盘、被剪辑台加载**手工编辑**的：如果在 lower() 里就编码，存盘的 spec
+ * 里 `content.src` 会变成形如 `my%20shot.png` 这种给机器看的字符串，用户在剪辑台里看到的就是
+ * 这个乱码，而不是真实文件名 `my shot.png`；更糟的是，如果用户再手改一次并存盘，下一次渲染会对
+ * 一个已经编码过的字符串再编码一遍（双重编码，`%2520` 这类）。所以 `lower()` 只存"逻辑路径"这个
+ * 原始真相，`encodeURI` 放在真正"发射一条 URL"的这一刻——不管 spec 是刚生成的、手改过的、还是
+ * 从存盘 JSON 读回来重渲的，这里都会对它当前的路径值正确编码一次，不会算重也不会漏算。
+ * 两处发射点（`<img src>` 和 `background-image:url(...)`）都要编码；`encodeURI` 处理 URL 安全性
+ * （空格/`#`/`?`/`%` 等），`escapeHtml` 处理 HTML 属性安全性，两者管不同的问题、缺一不可，且顺序
+ * 固定是先 `encodeURI` 再 `escapeHtml`（迁自 buildDemoSections 的 `escapeHtml(\`assets/${encodeURI(s.rel)}\`)`，
+ * hyperframes.ts:467）——颠倒顺序会把 `encodeURI` 产出的 `%` 又喂给 `escapeHtml`（那不转义
+ * `%`，无害，但顺序仍以原版为准，不做无谓的偏离）。
+ */
 function renderImageContent(src: string, cssClass: string | undefined): string {
-  const escapedSrc = escapeHtml(src)
+  const safeSrc = escapeHtml(encodeURI(src))
   if (cssClass === 'phoneWrap') {
-    return `<div class="phoneWrap"><div class="phone"><img src="${escapedSrc}"/></div></div>`
+    return `<div class="phoneWrap"><div class="phone"><img src="${safeSrc}"/></div></div>`
   }
   if (cssClass === 'wideWrap') {
-    return `<div class="wideWrap"><div class="wideBg" style="background-image:url('${escapedSrc}')"></div><div class="wideFg"><img src="${escapedSrc}"/></div></div>`
+    return `<div class="wideWrap"><div class="wideBg" style="background-image:url('${safeSrc}')"></div><div class="wideFg"><img src="${safeSrc}"/></div></div>`
   }
-  return `<img src="${escapedSrc}"/>`
+  return `<img src="${safeSrc}"/>`
 }
 
 function renderContent(layer: Layer): string {
