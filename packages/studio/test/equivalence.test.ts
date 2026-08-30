@@ -56,6 +56,30 @@ export const FIXTURES = {
     hookTitle: '钩子', painPoints: ['痛点一', '痛点二'], priceAnchor: '报价', cta: '行动', brandName: '品牌',
     shots: [], durationSec: 30,
   }),
+  // 自动切点分支：有节拍网格、无 plan。carStart=6/carEnd=durationSec-6，durationSec 拉到 40
+  // 保证窗口够宽（28s），配合较密的 beats 网格，产出多张 car* 轮播 clip，覆盖 hasBeats 自动分支。
+  demoCarousel: () => buildDemoSections({
+    hookTitle: '钩子', painPoints: ['痛点一', '痛点二'], priceAnchor: '报价', cta: '行动', brandName: '品牌',
+    shots: [
+      { rel: 's1.jpg', orientation: 'portrait' },
+      { rel: 's2.jpg', orientation: 'landscape' },
+      { rel: 's3.jpg', orientation: 'portrait' },
+    ],
+    durationSec: 40,
+    beats: Array.from({ length: 21 }, (_, i) => i * 2), // 0..40 步长 2
+  }),
+  // cutplan 分支：显式传 plan.cuts，cuts 必须落在 [carStart, carEnd) 内才不会被过滤掉。
+  // durationSec=30 时 carStart=6/carEnd=24，这里的三个 cut 都落在窗口内。
+  demoPlan: () => buildDemoSections({
+    hookTitle: '钩子', painPoints: ['痛点一', '痛点二'], priceAnchor: '报价', cta: '行动', brandName: '品牌',
+    shots: [
+      { rel: 's1.jpg', orientation: 'portrait' },
+      { rel: 's2.jpg', orientation: 'landscape' },
+      { rel: 's3.jpg', orientation: 'portrait' },
+    ],
+    durationSec: 30,
+    plan: { cuts: [{ start: 8, shot: 0 }, { start: 14, shot: 1 }, { start: 20, shot: 2 }] },
+  }),
   insight: () => buildInsightSections({
     cues: CUES, durationSec: 30, painTitle: '标题', cta: '行动', brandName: '品牌',
   }),
