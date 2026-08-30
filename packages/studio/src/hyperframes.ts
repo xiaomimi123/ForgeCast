@@ -679,8 +679,12 @@ export function buildInsightSections(opts: {
     else groups.push([card])
   }
 
-  const introEnd = cards[0]?.start ?? Math.max(3, Math.min(4, durationSec - 3))
-  const outroStart = Math.max(introEnd, durationSec - 3)
+  // 0 张卡（Chinese-numeral 叙述常见：正则只认阿拉伯数字，中文数字全部落空）时不能沿用
+  // "开场固定 3~4s 收" 的算法——那样会在开场结束到结尾开始之间抠出一段纯背景的静默 gap。
+  // floor：0 张卡时开场直接撑满到 outroStart，不留空档。
+  const fallbackIntroEnd = Math.max(3, Math.min(4, durationSec - 3))
+  const outroStart = Math.max(cards[0]?.start ?? fallbackIntroEnd, durationSec - 3)
+  const introEnd = cards.length === 0 ? outroStart : (cards[0]?.start ?? fallbackIntroEnd)
 
   // 单卡驻留上限（秒）：只在「还有后继卡」时封顶——封顶的目的是逼内容推进，不是逼空画面。
   // 组内最后一张卡没有后继，若也被封顶，稀疏 cue（每条独占一组）下会在两张卡之间抠出大段空白，

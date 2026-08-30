@@ -8,6 +8,10 @@ export default function PreviewTab({ slug }: { slug: string }) {
   const [t, setT] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [err, setErr] = useState('')
+  // 合成产物的宽高比：iframe 的视口由外层 CSS 盒子决定，不会跟着内部文档的声明尺寸自适应缩放——
+  // 固定 aspect-video(16:9) 会把竖版(9:16，产品默认比例)合成产物按 16:9 视口裁成左上角一小块。
+  // 从 #root 的 data-width/data-height 读真实比例；读不到时默认竖版 9:16（不是 16:9）。
+  const [ratio, setRatio] = useState(9 / 16)
   const rafRef = useRef<number | null>(null)
 
   /** 取 iframe 内那条暂停的 GSAP 主时间线；拿不到返回 null（合成产物还没生成/结构不符） */
@@ -22,6 +26,14 @@ export default function PreviewTab({ slug }: { slug: string }) {
   }
 
   function onLoad() {
+    try {
+      const doc = frameRef.current?.contentWindow?.document
+      const root = doc?.getElementById('root')
+      const w = Number(root?.getAttribute('data-width'))
+      const h = Number(root?.getAttribute('data-height'))
+      if (w > 0 && h > 0) setRatio(w / h)
+      else setRatio(9 / 16)
+    } catch { setRatio(9 / 16) }
     const tl = timeline()
     if (!tl) { setErr('没读到合成时间线——该项目可能还没生成过视频'); return }
     setErr(''); tl.pause(); setDur(tl.duration()); setT(0); tl.seek(0)
@@ -50,12 +62,13 @@ export default function PreviewTab({ slug }: { slug: string }) {
     <div className="space-y-3">
       <div className="card p-3">
         <div className="mb-2 text-xs text-faint">
-          预览的是该项目**最近一次生成**的合成产物（每个项目一份、每次生成覆盖），不是选中的某条历史视频。
+          预览的是该项目最近一次生成的合成产物（每个项目一份、每次生成覆盖），不是选中的某条历史视频。
         </div>
         <iframe
           ref={frameRef} onLoad={onLoad} title="composition preview"
           src={`/files/${slug}/hf/index.html`}
-          className="aspect-video w-full rounded border border-hairline bg-black"
+          style={{ aspectRatio: ratio }}
+          className="w-full rounded border border-hairline bg-black"
         />
         {err && <div className="mt-2 text-sm text-danger">{err}</div>}
         <div className="mt-3 flex items-center gap-3">

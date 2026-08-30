@@ -478,6 +478,24 @@ describe('insight 稀疏 cue 不留空白帧（fix round 1 回归：8s 硬顶曾
   })
 })
 
+describe('insight 0 张卡片 floor（真实口播用中文数字"三个""几万"，INSIGHT_STAT_RE 只认阿拉伯数字，全部落空）', () => {
+  it('cues 全无阿拉伯数字命中时，开场标题撑满到结尾 CTA 进场，intro/outro 之间不留时间缺口', () => {
+    const cues = [
+      { start: 2, end: 4, text: '我们服务了三个客户' },
+      { start: 10, end: 12, text: '一年帮大家省了几万块钱' },
+    ]
+    const { html } = buildInsightSections({ cues, durationSec: 20, painTitle: 'T', cta: 'C', brandName: 'B' })
+    expect(html).not.toContain('class="card"')
+    const introMatch = html.match(/id="insight-intro"[^>]*data-start="([\d.]+)" data-duration="([\d.]+)"/)
+    const outroMatch = html.match(/id="insight-outro"[^>]*data-start="([\d.]+)" data-duration="([\d.]+)"/)
+    expect(introMatch).not.toBeNull()
+    expect(outroMatch).not.toBeNull()
+    const introEnd = +introMatch![1] + +introMatch![2]
+    const outroStart = +outroMatch![1]
+    expect(introEnd).toBeCloseTo(outroStart, 5) // 无覆盖缺口
+  })
+})
+
 describe('buildFlashSections（开场钩子→中段流动字幕→结尾CTA，按真实时长动态铺满）', () => {
   const base = { painTitle: '大标题', sellingPoint: '卖点一句话', cta: '扣1', brandName: 'demo' }
 
