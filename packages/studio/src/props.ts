@@ -1,4 +1,5 @@
 import type { CopyDoc } from '@forgecast/copywriter'
+import { buildSemantic } from './semantic'
 import type { Cue } from './tts'
 
 export interface FlashProps {
@@ -8,19 +9,17 @@ export interface FlashProps {
   brandName: string
 }
 
-/** 从解析后的文案取 flash 三段文字（均有兜底，不抛错） */
+/**
+ * 从解析后的文案取 flash 三段文字（均有兜底，不抛错）。
+ * 内部委托 buildSemantic 再映射回原返回结构——语义抽取逻辑（含 CTA 清洗）统一在 semantic.ts，
+ * 这里只做 Section[] → FlashProps 的映射，保持既有导出签名不变以免打断既有测试。
+ */
 export function buildFlashProps(doc: CopyDoc, brandName = 'forgecast'): FlashProps {
-  // CTA 段落内常见"画面：.../台词：..."分行写法（画面是拍摄指示不是口播文案），
-  // 优先取"台词："那句；没有台词行则退回段落第一行（兼容 CTA 就一行文字的旧写法）
-  const ctaSection = doc.douyinScript.match(/【[^】]*CTA[^】]*】([\s\S]*?)(?=【|$)/)?.[1] ?? ''
-  const ctaLine = ctaSection.match(/台词[：:]\s*(.+)/)?.[1] ?? ctaSection.trim().split('\n')[0]
-  const cta = (ctaLine || doc.comments.replies[0] || '想要同款？评论区扣1').trim()
-  return {
-    painTitle: doc.cover.main || doc.titles[0] || '',
-    sellingPoint: doc.cover.sub || doc.titles[1] || '',
-    cta,
-    brandName,
-  }
+  const s = buildSemantic(doc, 'flash')
+  const painTitle = s.sections.find((x) => x.id === 'pain')?.text ?? ''
+  const sellingPoint = s.sections.find((x) => x.id === 'body')?.text ?? ''
+  const cta = s.sections.find((x) => x.id === 'cta')?.text ?? ''
+  return { painTitle, sellingPoint, cta, brandName }
 }
 
 export interface StoryProps {
@@ -39,20 +38,12 @@ export interface StoryProps {
  */
 export function buildStoryProps(doc: CopyDoc, brandName = 'forgecast'): StoryProps {
   const flash = buildFlashProps(doc, brandName)
-  // 最多取 1 组问答（2 条气泡）：真渲验证过，横屏画布只有 1080px 高，开头2+问答对+结尾1
-  // 超过 5 条气泡时顶部/底部气泡会被顶出画面裁切（竖屏画布高裕量更大，但统一按横屏这个更紧的上限来）
-  const qaPairs = doc.comments.questions
-    .map((q, i) => ({ q, r: doc.comments.replies[i] }))
-    .filter((p): p is { q: string; r: string } => !!p.r)
-    .slice(0, 1)
-    .flatMap((p) => [{ who: 'them' as const, text: p.q }, { who: 'me' as const, text: p.r }])
+  // 对话轮次（最多 1 组问答/2 条气泡，见 buildSemantic 里的同段注释）由 buildSemantic
+  // 以 JSON 编码字符串存进 body-1 section 的 items，这里原样解码回来。
+  const dialog = buildSemantic(doc, 'story').sections.find((x) => x.id === 'body-1')?.items ?? []
+  const bubbles = dialog.map((x) => JSON.parse(x) as { who: 'them' | 'me'; text: string })
   return {
-    bubbles: [
-      { who: 'them', text: doc.titles[0] || '能做个这个吗？' },
-      { who: 'me', text: '可以，等我一天' },
-      ...qaPairs,
-      { who: 'them', text: '太好了，等你消息' },
-    ],
+    bubbles,
     sellingPoint: flash.sellingPoint,
     cta: flash.cta,
     brandName,
@@ -73,14 +64,14 @@ export interface DemoProps {
 /** 从文案生成演示模板参数（痛点从正文切句，报价从口播锚点段抽取，均兜底） */
 export function buildDemoProps(doc: CopyDoc, brandName = 'forgecast'): DemoProps {
   const flash = buildFlashProps(doc, brandName)
-  const painPoints = doc.xhsBody.split(/[。！？\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 3)
-  // 同 CTA 段一样，报价锚点段常见"画面：xxx / 台词：xxx"分行写法，取台词那句（见 buildFlashProps 同类修复）
-  const anchorSection = doc.douyinScript.match(/【[^】]*报价[^】]*】([\s\S]*?)(?=【|$)/)?.[1] ?? ''
-  const anchorLine = anchorSection.match(/台词[：:]\s*(.+)/)?.[1] ?? anchorSection.trim().split('\n')[0]
-  const priceAnchor = (anchorLine || '外面做要几万，我这套成本一顿火锅钱').trim()
+  const s = buildSemantic(doc, 'demo')
+  // 同 CTA 段一样，报价锚点段常见"画面：xxx / 台词：xxx"分行写法，取台词那句并清洗掉画面指示
+  // （见 semantic.ts 的 extractPriceAnchor——回归：曾把括号里的拍摄指示当报价文案上屏）
+  const painPoints = s.sections.find((x) => x.id === 'pain-1')?.items ?? [flash.painTitle]
+  const priceAnchor = s.sections.find((x) => x.id === 'body-1')?.text ?? ''
   return {
     painTitle: flash.painTitle,
-    painPoints: painPoints.length ? painPoints : [flash.painTitle],
+    painPoints,
     priceAnchor,
     cta: flash.cta,
     brandName,
