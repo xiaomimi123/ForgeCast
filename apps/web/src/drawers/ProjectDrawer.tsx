@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, subscribeTask, type IntroDetail, type Project } from '../api'
+import { api, type IntroDetail, type Project } from '../api'
 import Drawer from '../components/Drawer'
+import TaskProgress from '../components/TaskProgress'
 import IntroSections from '../pages/board/IntroSections'
+import { useTaskRun } from '../useTaskRun'
 
 const FIELDS = [
   { key: 'brand_name', label: '品牌名' },
@@ -23,91 +25,41 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
   const qc = useQueryClient()
   const [form, setForm] = useState<Record<string, string>>({})
   const [docTab, setDocTab] = useState<DocTab>('analysis')
-  const [analyzing, setAnalyzing] = useState(false)
-  const [analyzeLog, setAnalyzeLog] = useState<string[]>([])
-  const [rebranding, setRebranding] = useState(false)
-  const [rebrandLog, setRebrandLog] = useState<string[]>([])
   const [copied, setCopied] = useState(false)
-  const [screensBusy, setScreensBusy] = useState(false)
-  const [screensLog, setScreensLog] = useState<string[]>([])
-  const [execRunning, setExecRunning] = useState(false)
-  const [execLog, setExecLog] = useState<string[]>([])
+  const analyzeRun = useTaskRun()
+  const rebrandRun = useTaskRun()
+  const execRun = useTaskRun()
+  const screensRun = useTaskRun()
 
-  async function analyze() {
-    if (analyzing) return
-    setAnalyzing(true)
-    setAnalyzeLog([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${slug}/analyze`, { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        setAnalyzeLog((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
-        if (e.type === 'done' || e.type === 'error') {
-          setAnalyzing(false)
-          qc.invalidateQueries({ queryKey: ['project', slug] })
-        }
-      })
-    } catch (err) {
-      setAnalyzeLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
-      setAnalyzing(false)
-    }
+  function analyze() {
+    analyzeRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${slug}/analyze`, { method: 'POST' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['project', slug] }),
+    )
   }
 
-  async function rebrand() {
-    if (rebranding) return
-    setRebranding(true)
-    setRebrandLog([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${slug}/rebrand`, { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        setRebrandLog((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
-        if (e.type === 'done' || e.type === 'error') {
-          setRebranding(false)
-          qc.invalidateQueries({ queryKey: ['project', slug] })
-        }
-      })
-    } catch (err) {
-      setRebrandLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
-      setRebranding(false)
-    }
+  function rebrand() {
+    rebrandRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${slug}/rebrand`, { method: 'POST' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['project', slug] }),
+    )
   }
 
-  async function runExec() {
-    if (execRunning) return
-    setExecRunning(true)
-    setExecLog([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${slug}/rebrand-exec`, { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        setExecLog((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
-        if (e.type === 'done' || e.type === 'error') {
-          setExecRunning(false)
-          qc.invalidateQueries({ queryKey: ['project', slug] })
-          qc.invalidateQueries({ queryKey: ['projects'] })
-        }
-      })
-    } catch (err) {
-      setExecLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
-      setExecRunning(false)
-    }
+  function runExec() {
+    execRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${slug}/rebrand-exec`, { method: 'POST' })).taskId,
+      () => {
+        qc.invalidateQueries({ queryKey: ['project', slug] })
+        qc.invalidateQueries({ queryKey: ['projects'] })
+      },
+    )
   }
 
-  async function generateScreens() {
-    if (screensBusy) return
-    setScreensBusy(true)
-    setScreensLog([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${slug}/screens`, { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        setScreensLog((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
-        if (e.type === 'done' || e.type === 'error') {
-          setScreensBusy(false)
-          qc.invalidateQueries({ queryKey: ['shots', slug] })
-        }
-      })
-    } catch (err) {
-      setScreensLog((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
-      setScreensBusy(false)
-    }
+  function generateScreens() {
+    screensRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${slug}/screens`, { method: 'POST' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['shots', slug] }),
+    )
   }
 
   function copyRebrandMd(md: string) {
@@ -200,21 +152,24 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
             {docTab === 'analysis' ? (
               <>
                 <button className="btn-fire px-3 py-1 text-sm disabled:opacity-50"
-                  disabled={analyzing} onClick={analyze}>
-                  {analyzing ? '分析中…' : (p.analysisMd ? '重新生成分析' : '生成分析')}
+                  disabled={analyzeRun.running} onClick={analyze}>
+                  {analyzeRun.running ? '分析中…' : (p.analysisMd ? '重新生成分析' : '生成分析')}
                 </button>
+                <TaskProgress run={analyzeRun} />
                 <span className="text-xs text-faint">读 source/README 生成 analysis.md</span>
               </>
             ) : (
               <>
                 <button className="btn-fire px-3 py-1 text-sm disabled:opacity-50"
-                  disabled={rebranding || !p.analysisMd} onClick={rebrand}>
-                  {rebranding ? '生成中…' : (p.rebrandMd ? '重新生成换皮清单' : '生成换皮清单')}
+                  disabled={rebrandRun.running || !p.analysisMd} onClick={rebrand}>
+                  {rebrandRun.running ? '生成中…' : (p.rebrandMd ? '重新生成换皮清单' : '生成换皮清单')}
                 </button>
+                <TaskProgress run={rebrandRun} />
                 <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50"
-                  disabled={execRunning || !p.rebrandMd} onClick={runExec}>
-                  {execRunning ? '验收中…' : '跑验收（构建+启动+健康检查+截图）'}
+                  disabled={execRun.running || !p.rebrandMd} onClick={runExec}>
+                  {execRun.running ? '验收中…' : '跑验收（构建+启动+健康检查+截图）'}
                 </button>
+                <TaskProgress run={execRun} />
                 <span className="text-xs text-faint">
                   {p.analysisMd ? '读 analysis.md 生成可执行 checklist' : '先在「分析」tab 生成分析报告'}
                 </span>
@@ -223,9 +178,9 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
           </div>
           {docTab === 'analysis' ? (
             <>
-              {analyzeLog.length > 0 && (
+              {analyzeRun.logs.length > 0 && (
                 <div className="mb-3 rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-32 overflow-y-auto space-y-1">
-                  {analyzeLog.map((l, i) => <div key={i}>{l}</div>)}
+                  {analyzeRun.logs.map((l, i) => <div key={i}>{l}</div>)}
                 </div>
               )}
               {p.analysisMd
@@ -243,14 +198,14 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
             </>
           ) : (
             <>
-              {rebrandLog.length > 0 && (
+              {rebrandRun.logs.length > 0 && (
                 <div className="mb-3 rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-32 overflow-y-auto space-y-1">
-                  {rebrandLog.map((l, i) => <div key={i}>{l}</div>)}
+                  {rebrandRun.logs.map((l, i) => <div key={i}>{l}</div>)}
                 </div>
               )}
-              {execLog.length > 0 && (
+              {execRun.logs.length > 0 && (
                 <div className="mb-3 rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-32 overflow-y-auto space-y-1">
-                  {execLog.map((l, i) => <div key={i}>{l}</div>)}
+                  {execRun.logs.map((l, i) => <div key={i}>{l}</div>)}
                 </div>
               )}
               {p.rebrandMd
@@ -302,13 +257,14 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
             <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm"
               onChange={(e) => e.target.files?.[0] && uploadShot(e.target.files[0])} />
             <button className="btn-ink w-full py-1.5 text-sm disabled:opacity-50"
-              disabled={screensBusy} onClick={generateScreens}>
-              {screensBusy ? '生成中…' : 'AI 生成演示图'}
+              disabled={screensRun.running} onClick={generateScreens}>
+              {screensRun.running ? '生成中…' : 'AI 生成演示图'}
             </button>
+            <TaskProgress run={screensRun} />
             <p className="text-xs text-faint">会调用 3 次大模型 + 渲染，约十几秒到 1 分钟；生成 3 张固定文件名的图，重新点会覆盖</p>
-            {screensLog.length > 0 && (
+            {screensRun.logs.length > 0 && (
               <div className="rounded bg-neutral-900 p-2 text-xs text-green-400 font-mono max-h-24 overflow-y-auto space-y-1">
-                {screensLog.map((l, i) => <div key={i}>{l}</div>)}
+                {screensRun.logs.map((l, i) => <div key={i}>{l}</div>)}
               </div>
             )}
             <ul className="text-sm text-sub space-y-1">
