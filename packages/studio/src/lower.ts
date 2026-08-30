@@ -206,12 +206,17 @@ function lowerChangelog(sections: Section[], opts: LowerOpts): Layer[] {
       [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.35, params: { y: 16 } }]))
   })
 
-  // clCta 原版同时渲 brand 与 cta 两行、都 `.tw`（hyperframes.ts:638）；VideoSpec 没有 brandName
-  // 字段（Task 3 起 brandName 就没进 Semantic/VideoSpec，见 task-4-report.md「未做/发现但不修」），
-  // 这里只剩 cta 一行可解码——twCount 会比基线少 1，是 schema 缺字段的已知遗留，不是本任务引入的
-  // 回归，已在等价性基线里对应这一条加注释说明（不编造一行空 brand 文本去凑数）。
-  layers.push(textLayer('clCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'brand',
-    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]))
+  // clCta 原版同时渲 brand 与 cta 两行、都 `.tw`（hyperframes.ts:638）。Fix round 1 误判成
+  // "VideoSpec 没有 brandName 字段、物理上凑不出第二行"——协调者指出诊断错了：`LowerOpts.brandName`
+  // 早就声明了（lower.ts:38），只是这个文件从没读过它。品牌名不能靠渲染层读 opts 去补——spec 要能
+  // 脱离原始 opts 单独存盘、重渲（剪辑台子项目会加载存盘的 spec 独立重渲），所以品牌名必须在这里
+  // 就烧进 layer 的文本里，跟其余所有文案一样。brandName 缺失/空则退化成只有 cta 一行（不editorial
+  // 出一行空 brand 文本去凑数）。
+  const clCtaText = opts.brandName ? `${opts.brandName}\n${cta}` : cta
+  const clCtaEffects: Effect[] = opts.brandName
+    ? [DECODE_LINE(0), DECODE_LINE(1), { type: 'fadeIn', at: 0, duration: 0.4 }]
+    : [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]
+  layers.push(textLayer('clCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, clCtaText, 'brand', clCtaEffects))
   return layers
 }
 

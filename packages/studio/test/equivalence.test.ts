@@ -21,11 +21,14 @@ import { buildSemantic } from '../src/semantic'
  * 变红说明你的改动改变了 clip 时间轴，先去核实这是不是预期内的语义变更；只有在人工确认「基线本身
  * 需要更新」之后，才用下面的 FORGECAST_REGEN_BASELINE=1 显式重建，并在提交里说明原因。
  *
- * 本文件完全是从「改造前」的 build*Sections 原样重建出来的，不含任何手工改动——包括
- * `changelog.clCta.twCount=2`：那是原版 clCta 同时渲 `brand`（品牌名）与 `tag`（CTA 文案）两个
- * `.tw` 元素的真实值。新管线这一条会以 1 收场（VideoSpec 没有 brandName 字段，凑不出第二个可
- * 解码的元素），这是「新管线与基线等价」describe 里显式记录、跳过比较的**唯一例外**，不改这份
- * 基线本身去迁就它——理由见下面那条 describe 里的注释。
+ * 本文件完全是从「改造前」的 build*Sections 原样重建出来的，不含任何手工改动。
+ *
+ * `changelog.clCta.twCount=2`（原版同时渲 `brand`品牌名与 `tag`CTA 文案两个 `.tw` 元素，
+ * hyperframes.ts:638）曾在 Fix round 1 被误判成"VideoSpec 没有 brandName 字段、凑不出第二行"、
+ * 靠一条显式豁免放过去——协调者指出诊断错了：`LowerOpts.brandName` 早就声明了，只是 lower.ts
+ * 从没读过它。Fix round 2 把 brandName 烧进 clCta 的 layer 文本（不是在渲染层读 opts 补——spec
+ * 要能脱离原始 opts 单独存盘、被剪辑台子项目独立重渲，品牌名必须跟其余文案一样材料化进 layer），
+ * 现在 22/22 个 `.tw` 元素全部对上，**没有任何豁免**。
  */
 const REGEN = process.env.FORGECAST_REGEN_BASELINE === '1'
 
@@ -43,9 +46,8 @@ const BASELINE = path.join(fileURLToPath(new URL('.', import.meta.url)), 'equiva
  * 「这个 clip 有没有强调动画」。这是一个真实的验收漏洞：VideoSpec 重构可以在这条指纹全绿的情况下
  * 把全部 16 处 `.tw` 逐字解码和几乎全部强调动画悄悄丢光——因为指纹从没检查过它们。补两个字段：
  * - `twCount`：该 clip 渲染出的 HTML 块内，有多少个元素的 class 含独立单词 `tw`
- *   （不比较具体类名组合——`brand`/`tag` 这类语义类名在 Task 3 里已经因为 brandName 整体从
- *   VideoSpec 里消失而对不上了，那是已知且被允许的文案损失，见 task-4-report.md；这里只关心
- *   "有没有解码"这个真正影响观感的信号，用计数足够、且对类名漂移免疫）。
+ *   （不比较具体类名组合——只关心"有没有解码"这个真正影响观感的信号，用计数足够、
+ *   且对类名漂移免疫）。
  * - `accentCount`：`accents` 里有多少行强调动画的目标选择器落在这个 clip 自己的 id 或它内部嵌套
  *   的某个 id 上（扫 `id="..."` 找嵌套 id，不预设任何命名约定——旧版 story 气泡用完全独立的
  *   `storyBubble0` 这类 id、新版用 `storyChat-l0` 这类前缀 id，两种命名都能被"块内有哪些 id"
@@ -228,8 +230,11 @@ const NEW_PIPELINE_OPTS: Record<keyof typeof FIXTURES, () => LowerOpts> = {
     videoId: 'v1', slug: 's', template: 'story', canvas: CANVAS, durationSec: 30, cues: CUES,
     beatGrid: grid2(30), audio: AUDIO_OFF,
   }),
+  // brandName: '品牌' 对齐 FIXTURES.changelog 同一个字段——Fix round 2 起 clCta 把 brandName 烧进
+  // layer 文本，缺了这个字段 clCta 就会退化成只有 cta 一行，twCount 对不上基线的 2。
   changelog: () => ({
-    videoId: 'v1', slug: 's', template: 'changelog', canvas: CANVAS, durationSec: 30, cues: CUES, audio: AUDIO_OFF,
+    videoId: 'v1', slug: 's', template: 'changelog', canvas: CANVAS, durationSec: 30, cues: CUES,
+    brandName: '品牌', audio: AUDIO_OFF,
   }),
   demo: () => ({
     videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 30, cues: CUES, shots: [], audio: AUDIO_OFF,
@@ -260,15 +265,8 @@ describe('新管线与基线等价', () => {
       const spec = lower(sem, opts)
       const rendered = renderSpecToHtml(spec)
       const got = clipFingerprint(rendered.html, rendered.accents)
-      // 唯一显式豁免：changelog 的 clCta，原版渲 brand+tag 两个 `.tw` 元素，新管线的 VideoSpec
-      // 没有 brandName 字段、物理上只剩 1 个可解码元素（见本文件头部注释）。只把这一个 id 的
-      // twCount 期望值从基线的 2 改写成写死的 1——不是抄 got 自己的值（那样以后就算它退化成 0
-      // 也会静默通过），其余全部字段（含同一个 clip 的 accentCount/start/dur/track）照常严格
-      // 对基线比较，不是整条跳过。
-      const expected = baseline[key].map((c: { id: string; twCount: number }) =>
-        (key === 'changelog' && c.id === 'clCta') ? { ...c, twCount: 1 } : c,
-      )
-      expect(got, `模板 ${key} 的时间轴指纹与改造前不一致`).toEqual(expected)
+      // Fix round 2 起不再有豁免：clCta 的 brandName 已经烧进 layer 文本，直接对基线严格比较。
+      expect(got, `模板 ${key} 的时间轴指纹与改造前不一致`).toEqual(baseline[key])
     }
   })
 })
