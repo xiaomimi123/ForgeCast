@@ -736,13 +736,19 @@ npx pnpm --filter @forgecast/studio test 2>&1 | tail -20
 ```bash
 cd workspace/<slug>/hf
 npx --yes hyperframes@0.7.68 check 2>&1 | tail -30
-npx --yes hyperframes@0.7.68 snapshot --at 5 --at 14 --at 22 --at 30 --at 40 --at 50
+npx --yes hyperframes@0.7.68 snapshot --at 5,14,22,30,40,50 --no-end
 ```
+
+**注意 `--at` 是逗号分隔的单参数**，重复传 `--at 5 --at 14` 只有最后一个生效（Task 1 实测）。
 
 验收：
 1. `check` 的 lint **0 error**（Task 2/3/4 已清掉三条，本任务不得引入新的）；
-2. 抽的 6 帧里**任意相邻两帧不得逐像素相同**——可用 `cmp -s a.png b.png` 快速判等，
-   相同则失败（当前 14s 与 30s 正是完全相同）。
+2. **单测断言**：10 个模板（含 story 两个）产出的合成 HTML 里都含相机曲线注入结果，
+   且不再残留旧的 `tl.fromTo("#root"` 那条；
+3. **人工看图**：打开抽出的 6 帧，判断画面是否在可感知地推进。
+   **不要用逐像素比对或 SSIM 当门禁**——实测当前这个有问题的产物四帧两两 `cmp` 全「不同」、
+   SSIM(14s,20s)=0.885，任何整帧阈值都会误判通过：科技背景的 `.mv`/`.sweep` 一直在流动，
+   而真正静止的是内容层。整帧指标与本任务要解决的问题不相关。
 
 - [ ] **Step 5: 提交**
 
@@ -869,9 +875,11 @@ cd apps/web && npx tsc --noEmit && npx vite build
 ```bash
 cd workspace/<slug>/hf
 npx --yes hyperframes@0.7.68 check 2>&1 | tail -30
+npx --yes hyperframes@0.7.68 snapshot --at 5,14,22,30,40,50 --no-end
 ```
 
 预期：**lint 0 error**（三条已知 error 全清）。warning 允许保留但须在报告里列出。
+抽出的 6 帧人工过目，确认内容在推进、构图不再大面积空白（`--at` 是逗号分隔单参数，勿用重复 flag）。
 
 - [ ] **Step 4: 真渲染一条**
 
