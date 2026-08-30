@@ -10,8 +10,10 @@ describe('buildDemoProps', () => {
   it('生成钩子/痛点/报价/CTA/品牌', () => {
     const p = buildDemoProps(doc as any, '快客通')
     expect(p.painTitle).toBe('网店客服还在手动回？')
-    expect(Array.isArray(p.painPoints)).toBe(true)
-    expect(p.painPoints.length).toBeGreaterThanOrEqual(1)
+    // 断言实际内容而非仅数量：buildDemoProps 靠固定 section id（pain-1）从 buildSemantic
+    // 的输出里取痛点，push 顺序一旦变了、pain-1 指向别的非空字符串数组会静默通过——
+    // 具体内容才是这个断言真正要守住的东西（doc.xhsBody 按 。！？\n 切句，取前 3 句）
+    expect(p.painPoints).toEqual(['白天上班晚上回消息', '微信旺旺来回切', '漏一条就差评'])
     expect(p.priceAnchor.length).toBeGreaterThan(0)
     expect(p.cta).toBe('评论区扣1')
     expect(p.brandName).toBe('快客通')

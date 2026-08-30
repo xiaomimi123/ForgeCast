@@ -39,8 +39,8 @@ describe('buildSemantic 上屏文案清洗', () => {
   })
 })
 
-describe('中文数字识别（回归：中文口播曾渲出空片）', () => {
-  it('「三到五天」「几万块」能被识别成数据卡', () => {
+describe('中文数字识别（回归：中文口播曾渲出空片，以及卡片印错数字比没有卡片更误导人）', () => {
+  it('「三到五天」「几万块」能被识别成数据卡，且匹配的是完整数值+单位而非截断值', () => {
     const cues = [
       { start: 2, end: 6, text: '工期要三到五天，一单多烧人力' },
       { start: 8, end: 12, text: '外面报价几万块起' },
@@ -48,10 +48,30 @@ describe('中文数字识别（回归：中文口播曾渲出空片）', () => {
     const s = buildSemantic({ ...doc }, 'insight', { cues: cues as any })
     const stats = s.sections.filter((x) => x.role === 'stat')
     expect(stats.length).toBeGreaterThanOrEqual(2)
+    // 断言匹配内容本身：「三到五天」不能被裁成「五天」（3-5天被误报成5天，比没有卡片更误导）
+    expect(stats[0]!.stat!.value).toBe('三到五天')
+    // 「几万块」不能丢掉「块」单位变成没有单位的裸数字「几万」
+    expect(stats[1]!.stat!.value).toBe('几万块')
   })
-  it('阿拉伯数字仍然识别（不得回归）', () => {
+  it('「两三个月」不得被「个」提前截断成「两三个」（丢单位=意思变了）', () => {
+    const cues = [{ start: 2, end: 6, text: '外包沟通成本高，要两三个月才磨合好' }]
+    const s = buildSemantic({ ...doc }, 'insight', { cues: cues as any })
+    const stats = s.sections.filter((x) => x.role === 'stat')
+    expect(stats.length).toBe(1)
+    expect(stats[0]!.stat!.value).toBe('两三个月')
+  })
+  it('阿拉伯数字仍然识别（不得回归）：「30%」精确匹配，不多不少', () => {
     const cues = [{ start: 2, end: 6, text: '返工率高达 30%' }]
     const s = buildSemantic({ ...doc }, 'insight', { cues: cues as any })
-    expect(s.sections.filter((x) => x.role === 'stat').length).toBe(1)
+    const stats = s.sections.filter((x) => x.role === 'stat')
+    expect(stats.length).toBe(1)
+    expect(stats[0]!.stat!.value).toBe('30%')
+  })
+  it('阿拉伯数字范围仍然识别（不得回归）：「2-4周」', () => {
+    const cues = [{ start: 2, end: 6, text: '工期要 2-4周，一单多烧人力' }]
+    const s = buildSemantic({ ...doc }, 'insight', { cues: cues as any })
+    const stats = s.sections.filter((x) => x.role === 'stat')
+    expect(stats.length).toBe(1)
+    expect(stats[0]!.stat!.value).toBe('2-4周')
   })
 })
