@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
-import { api, subscribeTask, type AutoScoutStatus, type Candidate } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { api, type AutoScoutStatus, type Candidate } from '../api'
+import TaskProgress from '../components/TaskProgress'
+import { useTaskRun } from '../useTaskRun'
 import CandidateCard from './board/CandidateCard'
 import CandidateDrawer from './board/CandidateDrawer'
 import DualTrackView from './board/DualTrackView'
@@ -28,11 +30,21 @@ function dayLabel(day: string, today: string): string {
 
 export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
-  const [logs, setLogs] = useState<string[]>([])
-  const [scanning, setScanning] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
   const [tab, setTab] = useState<Tab>('all')
   const [detailId, setDetailId] = useState<number | null>(null)
+
+  const [activeKey, setActiveKey] = useState<'scout' | 'breakout' | 'rescore' | 'backfill' | 'addUrl'>('scout')
+  const scoutRun = useTaskRun()
+  const breakoutRun = useTaskRun()
+  const rescoreAllRun = useTaskRun()
+  const backfillRun = useTaskRun()
+  const addUrlRun = useTaskRun()
+  const runs = { scout: scoutRun, breakout: breakoutRun, rescore: rescoreAllRun, backfill: backfillRun, addUrl: addUrlRun }
+  const activeRun = runs[activeKey]
+  // 任一长任务在跑时，其余按钮统一禁用（沿用原先各 handler 里的互斥守卫）
+  const busy = scoutRun.running || breakoutRun.running || rescoreAllRun.running || backfillRun.running
+  useEffect(() => { logRef.current?.scrollTo({ top: 999999 }) }, [activeRun.logs.length])
 
   const candidates = useQuery({ queryKey: ['candidates'], queryFn: () => api<Candidate[]>('/api/candidates') })
   const autoStatus = useQuery({ queryKey: ['auto-scout'], queryFn: () => api<AutoScoutStatus>('/api/scout/auto-status') })
@@ -69,57 +81,38 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
     onSettled: (_d, _e, c) => setFavPendingIds((prev) => { const next = new Set(prev); next.delete(c.id); return next }),
   })
 
-  async function scout() {
-    if (scanning || scanningBreakouts) return
-    setScanning(true); setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/scout', { method: 'POST', body: '{}' })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') { setScanning(false); qc.invalidateQueries({ queryKey: ['candidates'] }) }
-      })
-    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setScanning(false) }
+  function scout() {
+    setActiveKey('scout')
+    scoutRun.run(
+      async () => (await api<{ taskId: string }>('/api/scout', { method: 'POST', body: '{}' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+    )
   }
-  const [scanningBreakouts, setScanningBreakouts] = useState(false)
-  async function scoutBreakouts() {
-    if (scanningBreakouts || scanning) return
-    setScanningBreakouts(true); setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/scout/breakouts', { method: 'POST', body: '{}' })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') { setScanningBreakouts(false); qc.invalidateQueries({ queryKey: ['candidates'] }) }
-      })
-    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setScanningBreakouts(false) }
+  function scoutBreakouts() {
+    setActiveKey('breakout')
+    breakoutRun.run(
+      async () => (await api<{ taskId: string }>('/api/scout/breakouts', { method: 'POST', body: '{}' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+    )
   }
-  const [rescoringAll, setRescoringAll] = useState(false)
-  async function rescoreAll() {
-    if (rescoringAll || scanning) return
+  function rescoreAll() {
     const n = (candidates.data ?? []).filter((c) => {
       try { return !(c.score_detail && (JSON.parse(c.score_detail) as any)?.targetBuyer) } catch { return true }
     }).length
     if (n === 0) { alert('候选都已真评过，无需批量评分'); return }
     if (!window.confirm(`将对 ${n} 个未评候选真评分，消耗 key 额度、耗时较长（每个几秒），继续？`)) return
-    setRescoringAll(true); setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/candidates/rescore-all', { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') { setRescoringAll(false); qc.invalidateQueries({ queryKey: ['candidates'] }) }
-      })
-    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setRescoringAll(false) }
+    setActiveKey('rescore')
+    rescoreAllRun.run(
+      async () => (await api<{ taskId: string }>('/api/candidates/rescore-all', { method: 'POST' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+    )
   }
-  const [backfillingSummary, setBackfillingSummary] = useState(false)
-  async function backfillSummary() {
-    if (backfillingSummary || scanning || scanningBreakouts || rescoringAll) return
-    setBackfillingSummary(true); setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/candidates/backfill-summary', { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') { setBackfillingSummary(false); qc.invalidateQueries({ queryKey: ['candidates'] }) }
-      })
-    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]); setBackfillingSummary(false) }
+  function backfillSummary() {
+    setActiveKey('backfill')
+    backfillRun.run(
+      async () => (await api<{ taskId: string }>('/api/candidates/backfill-summary', { method: 'POST' })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+    )
   }
   const [cat, setCat] = useState<string | null>(null)
   const catOf = (c: { score_detail: string | null }): string => {
@@ -133,17 +126,15 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
   }
   const [addUrlOpen, setAddUrlOpen] = useState(false)
   const [addUrl, setAddUrl] = useState('')
-  async function addUrlSubmit() {
+  function addUrlSubmit() {
     const url = addUrl.trim()
     if (!url) return
-    setAddUrlOpen(false); setAddUrl(''); setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/candidates/add', { method: 'POST', body: JSON.stringify({ url }) })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, e.message]); logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') qc.invalidateQueries({ queryKey: ['candidates'] })
-      })
-    } catch (err) { setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`]) }
+    setAddUrlOpen(false); setAddUrl('')
+    setActiveKey('addUrl')
+    addUrlRun.run(
+      async () => (await api<{ taskId: string }>('/api/candidates/add', { method: 'POST', body: JSON.stringify({ url }) })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+    )
   }
 
   const rows = candidates.data ?? []
@@ -186,24 +177,25 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
         找项目<span className="ml-3 text-xs font-normal text-faint">从 GitHub 矿脉里挑能换钱的坯料</span>
       </h1>
       <div className="flex items-center gap-3">
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={scout}>
-          {scanning ? '抓取中…' : '抓取候选'}
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={scout}>
+          {scoutRun.running ? '抓取中…' : '抓取候选'}
         </button>
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={scoutBreakouts}>
-          {scanningBreakouts ? '检测中…' : '🔥 找爆款'}
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={scoutBreakouts}>
+          {breakoutRun.running ? '检测中…' : '🔥 找爆款'}
         </button>
-        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={rescoreAll}>
-          {rescoringAll ? '评分中…' : '全部重新评分'}
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={rescoreAll}>
+          {rescoreAllRun.running ? '评分中…' : '全部重新评分'}
         </button>
-        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={backfillCats}>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={backfillCats}>
           分类回填
         </button>
-        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={backfillSummary}>
-          {backfillingSummary ? '生成中…' : '补中文简介'}
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={backfillSummary}>
+          {backfillRun.running ? '生成中…' : '补中文简介'}
         </button>
-        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={scanning || scanningBreakouts || rescoringAll || backfillingSummary} onClick={() => setAddUrlOpen(true)}>
+        <button className="btn-ink px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={() => setAddUrlOpen(true)}>
           + 投喂
         </button>
+        <TaskProgress run={activeRun} className="max-w-[420px]" />
         <span className="text-sm text-sub">共 {rows.length} 个候选</span>
         <span className="ml-auto text-xs text-faint">
           {auto ? (auto.enabled ? `每日 ${auto.time} 进料 · 上次：${lastText}` : '每日进料已关（设置页可开）') : ''}
@@ -229,9 +221,9 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
         </div>
       )}
 
-      {logs.length > 0 && (
+      {activeRun.logs.length > 0 && (
         <div ref={logRef} className="h-32 space-y-1 overflow-y-auto rounded-lg border bg-neutral-900 p-3 font-mono text-xs text-green-400">
-          {logs.map((l, i) => <div key={i}>{l}</div>)}
+          {activeRun.logs.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
 
