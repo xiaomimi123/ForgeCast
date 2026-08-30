@@ -25,7 +25,7 @@ export default function TemplatesTab() {
     tplRun.run(
       async () => {
         const res = await fetch('/api/templates', { method: 'POST', body: fd })
-        if (!res.ok) throw new Error(await res.text())
+        if (!res.ok) throw new Error(`上传失败: ${await res.text()}`)
         return (await res.json() as { taskId: string }).taskId
       },
       (ok) => {

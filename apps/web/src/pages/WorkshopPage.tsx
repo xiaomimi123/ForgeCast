@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, type Asset, type BgmList, type Project } from '../api'
-import TaskProgress from '../components/TaskProgress'
 import { useTaskRun } from '../useTaskRun'
 import CopyTab from './workshop/CopyTab'
 import ScriptTab from './workshop/ScriptTab'
@@ -98,7 +97,6 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
           {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
         </select>
         {selected && <button onClick={() => onOpenProject(selected)} className="text-xs text-fire">查看项目详情 →</button>}
-        <TaskProgress run={activeRun} className="max-w-[360px]" />
         <div className="ml-auto seg-tabs">
           {TABS.map((t) => (
             <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
