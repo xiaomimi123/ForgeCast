@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, subscribeTask, type TopicPattern, type TopicSource } from '../api'
+import { api, type TopicPattern, type TopicSource } from '../api'
+import TaskProgress from '../components/TaskProgress'
+import { useTaskRun } from '../useTaskRun'
 
 const HOOK_LABEL: Record<TopicPattern['hook_type'], string> = {
   pain: '行业痛点型', sideline: '副业型', infogap: '信息差型', story: '接单故事型',
@@ -44,18 +46,15 @@ export default function TopicsPage() {
     return '从未抓取'
   }
 
-  const [extracting, setExtracting] = useState(false)
-  const [extractLog, setExtractLog] = useState('')
-  async function extract() {
-    setExtracting(true); setExtractLog('')
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/topics/extract', { method: 'POST', body: '{}' })
-      subscribeTask(taskId, (e) => {
-        setExtractLog((s) => `${s}${e.message}\n`)
-        if (e.type === 'done') { setExtracting(false); qc.invalidateQueries({ queryKey: ['topics', 'patterns'] }) }
-        if (e.type === 'error') setExtracting(false)
-      })
-    } catch (e) { alert(e instanceof Error ? e.message : String(e)); setExtracting(false) }
+  const extractRun = useTaskRun()
+  function extract() {
+    extractRun.run(
+      async () => (await api<{ taskId: string }>('/api/topics/extract', { method: 'POST', body: '{}' })).taskId,
+      (ok, e) => {
+        if (ok) qc.invalidateQueries({ queryKey: ['topics', 'patterns'] })
+        else alert(e?.message ?? '提炼失败')
+      },
+    )
   }
 
   const inp = 'rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm'
@@ -102,14 +101,15 @@ export default function TopicsPage() {
       <div className="card-forge p-4">
         <div className="mb-2 flex items-center justify-between">
           <div className="font-semibold">选题库</div>
-          <div>
-            <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={extracting} onClick={extract}>
-              {extracting ? '提炼中…' : '重新提炼'}
+          <div className="flex items-center gap-2">
+            <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={extractRun.running} onClick={extract}>
+              {extractRun.running ? '提炼中…' : '重新提炼'}
             </button>
+            <TaskProgress run={extractRun} />
           </div>
         </div>
         <p className="mb-3 text-xs text-faint">抓取笔记数据需要在对话里让 Claude 帮你跑一次，这里只能对已导入的数据重新提炼。</p>
-        {extractLog && <pre className="mb-3 whitespace-pre-wrap rounded bg-black/5 p-2 text-xs">{extractLog}</pre>}
+        {extractRun.logs.length > 0 && <pre className="mb-3 whitespace-pre-wrap rounded bg-black/5 p-2 text-xs">{extractRun.logs.join('\n')}</pre>}
         <div className="grid grid-cols-2 gap-4">
           {grouped.map(({ hook, items }) => (
             <div key={hook} className="rounded-md border-[1.5px] border-ink p-3">

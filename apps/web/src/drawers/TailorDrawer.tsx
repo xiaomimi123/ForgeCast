@@ -1,8 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, subscribeTask, type TailorCapability, type TailorDetail } from '../api'
+import { api, type TailorCapability, type TailorDetail } from '../api'
 import Drawer from '../components/Drawer'
+import TaskProgress from '../components/TaskProgress'
+import { useTaskRun } from '../useTaskRun'
 
 export default function TailorDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const qc = useQueryClient()
@@ -13,25 +15,27 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
     enabled: detail.data?.request.status === 'proposed',
     retry: false,
   })
-  const [logs, setLogs] = useState<string[]>([])
-  const [running, setRunning] = useState<'decompose' | 'search' | 'proposal' | null>(null)
+  const [activeKey, setActiveKey] = useState<'decompose' | 'search' | 'proposal'>('decompose')
+  const decomposeRun = useTaskRun()
+  const searchRun = useTaskRun()
+  const proposalRun = useTaskRun()
+  const runs = { decompose: decomposeRun, search: searchRun, proposal: proposalRun }
+  const activeRun = runs[activeKey]
+  const busy = decomposeRun.running || searchRun.running || proposalRun.running
 
-  async function runAction(action: 'decompose' | 'search' | 'proposal') {
-    if (running) return
+  function runAction(action: 'decompose' | 'search' | 'proposal') {
     if (action === 'decompose' && (detail.data?.capabilities.length ?? 0) > 0
       && !window.confirm('重新拆解会清掉现有能力清单和已搜的轮子，继续？')) return
-    setRunning(action); setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/tailor/${id}/${action}`, { method: 'POST', body: '{}' })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, e.message])
-        if (e.type === 'done' || e.type === 'error') {
-          setRunning(null)
-          qc.invalidateQueries({ queryKey: ['tailor', id] })
-          qc.invalidateQueries({ queryKey: ['tailor-proposal', id] })
-        }
-      })
-    } catch (err) { alert(err instanceof Error ? err.message : String(err)); setRunning(null) }
+    setActiveKey(action)
+    const r = action === 'decompose' ? decomposeRun : action === 'search' ? searchRun : proposalRun
+    r.run(
+      async () => (await api<{ taskId: string }>(`/api/tailor/${id}/${action}`, { method: 'POST', body: '{}' })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['tailor', id] })
+        qc.invalidateQueries({ queryKey: ['tailor-proposal', id] })
+        if (!ok) alert(e?.message ?? '任务失败')
+      },
+    )
   }
 
   async function patchCap(capId: number, patch: Record<string, unknown>) {
@@ -75,22 +79,23 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
           </div>
           <div className="mt-2 whitespace-pre-wrap text-sm text-sub">{d.request.raw_need}</div>
           <div className="mt-3 flex gap-2">
-            <button className={btn} disabled={!!running} onClick={() => runAction('decompose')}>
-              {running === 'decompose' ? '拆解中…' : caps.length ? '重新拆解' : '拆解需求'}
+            <button className={btn} disabled={busy} onClick={() => runAction('decompose')}>
+              {decomposeRun.running ? '拆解中…' : caps.length ? '重新拆解' : '拆解需求'}
             </button>
-            <button className={btn} disabled={!!running || d.request.status === 'draft'} onClick={() => runAction('search')}>
-              {running === 'search' ? '搜索中…' : '搜轮子'}
+            <button className={btn} disabled={busy || d.request.status === 'draft'} onClick={() => runAction('search')}>
+              {searchRun.running ? '搜索中…' : '搜轮子'}
             </button>
-            <button className={btn} disabled={!!running || !caps.length || pendingCount > 0}
+            <button className={btn} disabled={busy || !caps.length || pendingCount > 0}
               title={pendingCount ? `还有 ${pendingCount} 项未决策` : ''} onClick={() => runAction('proposal')}>
-              {running === 'proposal' ? '生成中…' : '生成方案书'}
+              {proposalRun.running ? '生成中…' : '生成方案书'}
             </button>
             {pendingCount > 0 && caps.length > 0 && <span className="self-center text-xs text-faint">每项能力选「轮子/自研/不做」后才能出方案书</span>}
+            <TaskProgress run={activeRun} className="self-center max-w-[320px]" />
           </div>
         </div>
-        {logs.length > 0 && (
+        {activeRun.logs.length > 0 && (
           <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border bg-neutral-900 p-3 font-mono text-xs text-green-400">
-            {logs.map((l, i) => <div key={i}>{l}</div>)}
+            {activeRun.logs.map((l, i) => <div key={i}>{l}</div>)}
           </div>
         )}
         {caps.map((c) => <CapabilityCard key={c.id} cap={c} onPatch={patchCap} onRemove={removeCap} />)}

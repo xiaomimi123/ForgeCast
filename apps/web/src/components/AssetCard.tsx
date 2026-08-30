@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, subscribeTask, type Asset } from '../api'
+import { api, type Asset } from '../api'
+import TaskProgress from './TaskProgress'
+import { useTaskRun } from '../useTaskRun'
 
 const COVER_TEMPLATES = [
   { value: '', label: '自动' },
@@ -39,7 +41,7 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
   const [feedback, setFeedback] = useState('')
   const [coverTemplate, setCoverTemplate] = useState('')
   const [coverShot, setCoverShot] = useState('')
-  const [coverBusy, setCoverBusy] = useState(false)
+  const coverRun = useTaskRun()
   const warnings: string[] = asset.warnings ? JSON.parse(asset.warnings) : []
 
   const content = useQuery({
@@ -71,24 +73,17 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
     },
   })
 
-  async function regenerateCover() {
-    if (coverBusy) return
-    setCoverBusy(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/assets/${asset.id}/cover`, {
-        method: 'POST', body: JSON.stringify({ template: coverTemplate || undefined, shot: coverShot || undefined }),
-      })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          setCoverBusy(false)
-          qc.invalidateQueries({ queryKey: ['assets'] })
-          if (e.type === 'error') alert('封面生成失败：' + e.message)
-        }
-      })
-    } catch (err) {
-      setCoverBusy(false)
-      alert('封面生成失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+  function regenerateCover() {
+    coverRun.run(
+      async () => (await api<{ taskId: string }>(`/api/assets/${asset.id}/cover`, {
+        method: 'POST',
+        body: JSON.stringify({ template: coverTemplate || undefined, shot: coverShot || undefined }),
+      })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['assets'] })
+        if (!ok) alert('封面生成失败：' + (e?.message ?? '未知错误'))
+      },
+    )
   }
 
   const approveButton = asset.status === 'draft' && (
@@ -187,9 +182,10 @@ export default function AssetCard({ asset, slug, onRegenerate, onVideo }: {
           <option value="">自动选图</option>
           {raw.data?.files.map((f) => <option key={f} value={f}>{f}</option>)}
         </select>
-        <button className="btn-ink px-3 py-1 text-xs disabled:opacity-50" disabled={coverBusy} onClick={regenerateCover}>
-          {coverBusy ? '生成中…' : '生成'}
+        <button className="btn-ink px-3 py-1 text-xs disabled:opacity-50" disabled={coverRun.running} onClick={regenerateCover}>
+          {coverRun.running ? '生成中…' : '生成'}
         </button>
+        <TaskProgress run={coverRun} />
       </div>
     </div>
   )
