@@ -67,15 +67,23 @@ function beatsFor(opts: LowerOpts): number[] | undefined {
   return opts.beatGrid ? gridBeats(opts.beatGrid, opts.durationSec) : undefined
 }
 
+/** 整层解码：不带 params.line 的 `decode` effect——渲染器（render-html.ts）读到它时，把
+ *  content.text 按 '\n' 拆出的每一行都套 `.tw`。绝大多数 textLayer 都是单行文本，这就是
+ *  「整个 div 都解码」的旧版观感；仅 changelog 的 clTitle 是例外（三行合一层、只有两行该解码），
+ *  那处改用 DECODE_LINE() 显式指定行号，见 lowerChangelog。 */
+const DECODE_ALL: Effect[] = [{ type: 'decode' }]
+function DECODE_LINE(line: number): Effect { return { type: 'decode', params: { line } } }
+
 function textLayer(
   id: string, from: string | null, start: number, duration: number, track: number, text: string, cssClass?: string,
+  effects: Effect[] = [],
 ): Layer {
   return {
     id, kind: 'text', from, overridden: false,
     start: +start.toFixed(4), duration: +Math.max(0, duration).toFixed(4), track,
     content: { kind: 'text', text } as LayerContent,
     style: cssClass ? { cssClass } : {},
-    effects: [],
+    effects,
   }
 }
 
@@ -115,8 +123,14 @@ function lowerFlash(sections: Section[], opts: LowerOpts): Layer[] {
   const midStart = hookDur
   const midEnd = Math.max(midStart, durationSec - ctaDur)
 
+  // 逐字解码（.tw）+ 入场淡入迁移：buildFlashSections 里 painT/flowCap/sell/cta 四类文字全部套
+  // `.tw`（hyperframes.ts:566,580,585,589），且各自紧跟一条 `tl.from(...)` 入场强调
+  // （hyperframes.ts:567,581,586,590）。数值原样保留：hook/cta 是 y:20/duration:.4，
+  // flowCap 是 y:16/duration:.35，highlight 是**缩放**淡入 scale:.9/duration:.35（不是位移）。
+  // 每条 accent 都在各自 layer 起点触发（原版就是 clip 出现的同一刻），故 at 全部相对偏移 0。
   const layers: Layer[] = []
-  layers.push(textLayer('flashHook', fromId(sections, 'pain'), 0, hookDur, 1, painTitle, 'painT'))
+  layers.push(textLayer('flashHook', fromId(sections, 'pain'), 0, hookDur, 1, painTitle, 'painT',
+    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]))
 
   // 高亮卡片先算窗口：流动字幕要避开这段（两者都满屏居中，叠一起看不清）
   const highlightStart = midStart + (midEnd - midStart) * 0.4
@@ -128,11 +142,14 @@ function lowerFlash(sections: Section[], opts: LowerOpts): Layer[] {
     .filter((c) => c.end - c.start > 0.1)
     .filter((c) => c.end <= highlightStart || c.start >= highlightEnd)
   midCues.forEach((c, i) => {
-    layers.push(textLayer(`flashCap${i}`, null, c.start, c.end - c.start, 2, c.text, 'flowCap'))
+    layers.push(textLayer(`flashCap${i}`, null, c.start, c.end - c.start, 2, c.text, 'flowCap',
+      [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.35, params: { y: 16 } }]))
   })
 
-  layers.push(textLayer('flashHighlight', fromId(sections, 'body'), highlightStart, highlightDur, 3, sellingPoint, 'highlightCard'))
-  layers.push(textLayer('flashCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'cta'))
+  layers.push(textLayer('flashHighlight', fromId(sections, 'body'), highlightStart, highlightDur, 3, sellingPoint, 'highlightCard',
+    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.35, params: { scale: 0.9 } }]))
+  layers.push(textLayer('flashCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'cta',
+    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]))
   return layers
 }
 
@@ -159,17 +176,42 @@ function lowerChangelog(sections: Section[], opts: LowerOpts): Layer[] {
   const midStart = titleDur
   const midEnd = Math.max(midStart, durationSec - ctaDur)
 
+  // clTitle 是三行拼一层（label+title+subtitle），但只有 title/subtitle 该解码——原版
+  // buildChangelogSections 里 label 是纯 `<span class="label">`（没有 tw），title/sub 才是
+  // `.tw`（hyperframes.ts:624）。label 永远非空（写死常量），title/subtitle 则可能因内容缺失被
+  // `.filter(Boolean)` 挤掉、导致拼出来的行号跟着变——所以先按「谁该解码」标记好，再一起 filter，
+  // decode 的行号从 filter 之后的最终数组下标算，不能直接写死 1/2。
+  const titleLines = [
+    { text: label, decode: false },
+    { text: title, decode: true },
+    { text: subtitle, decode: true },
+  ].filter((l) => l.text)
+  const titleText = titleLines.map((l) => l.text).join('\n')
+  // label（永远是第 0 行——它写死非空，filter 不会把它挤掉）另有一条入场强调：
+  // `tl.from("#clTitle .label", { opacity: 0, y: -30, duration: .5 }, 0.1)`（hyperframes.ts:625）。
+  // 原版目标是 class 选择器 `.label`，这里用 line0 的可寻址子元素 id 精确等价地打同一个元素。
+  const titleEffects: Effect[] = [
+    ...titleLines.map((l, i) => (l.decode ? DECODE_LINE(i) : null)).filter((e): e is Effect => e !== null),
+    { type: 'fadeIn', at: 0.1, duration: 0.5, params: { line: 0, y: -30 } },
+  ]
+
   const layers: Layer[] = []
-  layers.push(textLayer('clTitle', firstFromId(sections, ['pain', 'body']), 0, titleDur, 1, [label, title, subtitle].filter(Boolean).join('\n'), 'title'))
+  layers.push(textLayer('clTitle', firstFromId(sections, ['pain', 'body']), 0, titleDur, 1, titleText, 'title', titleEffects))
 
   const midCues = cues
     .map((c) => ({ start: Math.max(c.start, midStart), end: Math.min(c.end, midEnd), text: c.text }))
     .filter((c) => c.end - c.start > 0.1)
   midCues.forEach((c, i) => {
-    layers.push(textLayer(`clCap${i}`, null, c.start, c.end - c.start, 2, c.text, 'tag'))
+    layers.push(textLayer(`clCap${i}`, null, c.start, c.end - c.start, 2, c.text, 'tag',
+      [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.35, params: { y: 16 } }]))
   })
 
-  layers.push(textLayer('clCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'brand'))
+  // clCta 原版同时渲 brand 与 cta 两行、都 `.tw`（hyperframes.ts:638）；VideoSpec 没有 brandName
+  // 字段（Task 3 起 brandName 就没进 Semantic/VideoSpec，见 task-4-report.md「未做/发现但不修」），
+  // 这里只剩 cta 一行可解码——twCount 会比基线少 1，是 schema 缺字段的已知遗留，不是本任务引入的
+  // 回归，已在等价性基线里对应这一条加注释说明（不编造一行空 brand 文本去凑数）。
+  layers.push(textLayer('clCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'brand',
+    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]))
   return layers
 }
 
@@ -194,10 +236,25 @@ function lowerStory(sections: Section[], opts: LowerOpts): Layer[] {
   ], beats)
 
   const chatText = bubbles.map((b) => `${b.who === 'them' ? '对方' : '我'}：${b.text}`).join('\n')
+
+  // 气泡逐条淡入：原版 buildStorySections 给每个气泡单独一条 accent（hyperframes.ts:518-522），
+  // `t = st[0] + Math.min(chatDur-1, i*step)`——Task 3 把多轮对话揉进了一个 layer（没有各自的
+  // data-start），所以这份逐条时机现在只能落在 storyChat 这一个 layer 的 effects[] 里，靠
+  // `params.line` 指认「渲染出来的第几行」（render-html.ts 按 '\n' 拆行、行号从 0 开始，
+  // 与这里的 bubbles 下标一一对应）。offset 是相对 storyChat.start 的偏移量（Effect.at 的约定），
+  // 这里直接照抄原公式，不需要再加 st[0]——effect.at 本就已经是"相对图层起点"。
+  // 气泡本身不解码（原版 bubble div 没有 tw 类，跟其余四个模板的大字标题不同）。
+  const step = bubbles.length > 1 ? Math.max(2.5, (chatDur - 1) / (bubbles.length - 1)) : 0
+  const bubbleReveal: Effect[] = bubbles.map((_, i) => ({
+    type: 'slideUp', at: +Math.min(chatDur - 1, i * step).toFixed(4), duration: 0.5, params: { line: i },
+  }))
+
+  // storySell/storyCta 各带一条入场淡入（原样保留数值：y:20/duration:.4，hyperframes.ts:523-524）。
+  const entranceFadeIn: Effect = { type: 'fadeIn', at: 0, duration: 0.4 }
   return [
-    textLayer('storyChat', fromId(sections, 'body-1'), st[0], chatDur, 1, chatText, 'chat'),
-    textLayer('storySell', fromId(sections, 'body'), st[1], 3, 1, sellingPoint, 'sell'),
-    textLayer('storyCta', fromId(sections, 'cta'), st[2], 3, 1, cta, 'cta'),
+    textLayer('storyChat', fromId(sections, 'body-1'), st[0], chatDur, 1, chatText, 'chat', bubbleReveal),
+    textLayer('storySell', fromId(sections, 'body'), st[1], 3, 1, sellingPoint, 'sell', [...DECODE_ALL, entranceFadeIn]),
+    textLayer('storyCta', fromId(sections, 'cta'), st[2], 3, 1, cta, 'cta', [...DECODE_ALL, entranceFadeIn]),
   ]
 }
 
@@ -223,6 +280,10 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
 
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
   const beats = beatsFor(opts)
+  // 图片强拍弹跳的开关（迁自 buildDemoSections 的 `hasBeats` 判定，hyperframes.ts:422）：
+  // 有节拍网格 **或** 用了显式 cutplan（方案本身就是卡点，同样按刀弹一下）——注意这跟下面
+  // 密度启发式分支里同名的局部 hasBeats 不是一回事，那个只看 beats、不看 plan。
+  const pulseEnabled = !!(beats && beats.length) || !!(opts.plan && opts.plan.cuts.length)
 
   let carItems: Array<{ id: string; start: number; dur: number; shot: Shot | undefined }>
   if (opts.plan && opts.plan.cuts.length) {
@@ -264,9 +325,11 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
   ]
   const st = snapStarts(segs, beats)
 
+  // demo-pain 原版每条痛点各自一个 `.pain.tw` div（hyperframes.ts:452）——每一行都解码，
+  // 不是只解码整块里的第一行，DECODE_ALL（不带 params.line）就是"这一层渲出来的每一行都 tw"。
   const layers: Layer[] = []
-  layers.push(textLayer('demo-hook', fromId(sections, 'pain'), st[0], 3, 1, painTitle, 'hookT'))
-  layers.push(textLayer('demo-pain', fromId(sections, 'pain-1'), st[1], 3, 1, painPoints.join('\n'), 'painWrap'))
+  layers.push(textLayer('demo-hook', fromId(sections, 'pain'), st[0], 3, 1, painTitle, 'hookT', DECODE_ALL))
+  layers.push(textLayer('demo-pain', fromId(sections, 'pain-1'), st[1], 3, 1, painPoints.join('\n'), 'painWrap', DECODE_ALL))
 
   carItems.forEach((c, k) => {
     layers.push({
@@ -274,13 +337,16 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
       start: +st[2 + k].toFixed(4), duration: +c.dur.toFixed(4), track: 2,
       content: { kind: 'image', src: c.shot ? `assets/${c.shot.rel}` : '' } as LayerContent,
       style: { cssClass: c.shot?.orientation === 'portrait' ? 'phoneWrap' : 'wideWrap' },
-      effects: [],
+      // 图片弹跳：每张切进来时（吸附后的 start，与画面切同拍）scale 1→1.06→1.0 弹一下
+      // （迁自 buildDemoSections，hyperframes.ts:484-488）——at:0 是相对本图层起点，与原版
+      // "在图片自己出现的同一刻触发"完全一致。
+      effects: pulseEnabled ? [{ type: 'pulse', at: 0 }] : [],
     })
   })
 
   const nCar = carItems.length
-  layers.push(textLayer('demo-price', fromId(sections, 'body-1'), st[2 + nCar], 3, 1, priceAnchor, 'price'))
-  layers.push(textLayer('demo-cta', fromId(sections, 'cta'), st[2 + nCar + 1], 3, 1, cta, 'cta'))
+  layers.push(textLayer('demo-price', fromId(sections, 'body-1'), st[2 + nCar], 3, 1, priceAnchor, 'price', DECODE_ALL))
+  layers.push(textLayer('demo-cta', fromId(sections, 'cta'), st[2 + nCar + 1], 3, 1, cta, 'cta', DECODE_ALL))
   return layers
 }
 
@@ -334,7 +400,7 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
   const introEnd = cards.length === 0 ? outroStart : (cards[0]?.start ?? fallbackIntroEnd)
 
   const layers: Layer[] = []
-  layers.push(textLayer('insight-intro', fromId(sections, 'pain'), 0, introEnd, 1, painTitle, 'painT'))
+  layers.push(textLayer('insight-intro', fromId(sections, 'pain'), 0, introEnd, 1, painTitle, 'painT', DECODE_ALL))
 
   groups.forEach((group, gi) => {
     const sceneEnd = Math.min(outroStart, groups[gi + 1]?.[0]?.start ?? outroStart)
@@ -360,9 +426,19 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
 
     spans.forEach((card) => {
       const id = `insCard${gi}_${card.idx}`
-      const effects: Effect[] = demotions
-        .filter((d) => d.idx === card.idx)
-        .map((d) => ({ type: 'demote', at: +(d.at - card.start).toFixed(4), duration: 0.3 }))
+      // 每张卡三类 accent 全部迁回来（原来只搬了 demote，entrance/exit 漏了——这两类在原版里
+      // 每张卡都有、不看是否被降级，hyperframes.ts:733,738-741）：
+      // 1. 入场淡入+上移（y:24, duration:.45），在卡片自己的起点触发（at:0，相对本层起点）。
+      // 2. hero 降级（若适用）——已有逻辑不变。
+      // 3. 退场：exitDur = min(.4, card.dur)，'exit' 一个 effect 就产出「缩小淡出+硬收尾」两行
+      //    （render-html.ts 里读 layer.start+layer.duration 算退场终点，不在这里重算）。
+      const effects: Effect[] = [
+        { type: 'fadeIn', at: 0, duration: 0.45, params: { y: 24 } },
+        ...demotions
+          .filter((d) => d.idx === card.idx)
+          .map((d): Effect => ({ type: 'demote', at: +(d.at - card.start).toFixed(4), duration: 0.3 })),
+        { type: 'exit', duration: Math.min(0.4, card.dur) },
+      ]
       layers.push({
         id, kind: 'text', from: null, overridden: false,
         start: +card.start.toFixed(4), duration: +card.dur.toFixed(4), track: 2 + card.idx,
@@ -373,7 +449,7 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
     })
   })
 
-  layers.push(textLayer('insight-outro', fromId(sections, 'cta'), outroStart, Math.max(0.5, durationSec - outroStart), 1, cta, 'cta'))
+  layers.push(textLayer('insight-outro', fromId(sections, 'cta'), outroStart, Math.max(0.5, durationSec - outroStart), 1, cta, 'cta', DECODE_ALL))
   return layers
 }
 

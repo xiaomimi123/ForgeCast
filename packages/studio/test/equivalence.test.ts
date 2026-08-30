@@ -20,6 +20,12 @@ import { buildSemantic } from '../src/semantic'
  * 那等于把「验证重构没破坏东西」变成「重构声称自己没破坏东西」，会让一次真实的回归静默过关。
  * 变红说明你的改动改变了 clip 时间轴，先去核实这是不是预期内的语义变更；只有在人工确认「基线本身
  * 需要更新」之后，才用下面的 FORGECAST_REGEN_BASELINE=1 显式重建，并在提交里说明原因。
+ *
+ * 本文件完全是从「改造前」的 build*Sections 原样重建出来的，不含任何手工改动——包括
+ * `changelog.clCta.twCount=2`：那是原版 clCta 同时渲 `brand`（品牌名）与 `tag`（CTA 文案）两个
+ * `.tw` 元素的真实值。新管线这一条会以 1 收场（VideoSpec 没有 brandName 字段，凑不出第二个可
+ * 解码的元素），这是「新管线与基线等价」describe 里显式记录、跳过比较的**唯一例外**，不改这份
+ * 基线本身去迁就它——理由见下面那条 describe 里的注释。
  */
 const REGEN = process.env.FORGECAST_REGEN_BASELINE === '1'
 
@@ -32,18 +38,56 @@ const BASELINE = path.join(fileURLToPath(new URL('.', import.meta.url)), 'equiva
  * demo/insight 是 `<div class="clip" id=...`，changelog 还是 `class="clip fill pad"`。
  * 所以**不能**用 `/<div class="clip"/` 去匹配——那样只能抓到 5 个里的 2 个，另外 3 个静默为空。
  * 这里先抓所有 div 的属性串，再按 class 含 clip 过滤。
+ *
+ * **Fix round 1 扩容**：原指纹只看 id/start/dur/track——完全看不见「这个 clip 有没有做逐字解码」
+ * 「这个 clip 有没有强调动画」。这是一个真实的验收漏洞：VideoSpec 重构可以在这条指纹全绿的情况下
+ * 把全部 16 处 `.tw` 逐字解码和几乎全部强调动画悄悄丢光——因为指纹从没检查过它们。补两个字段：
+ * - `twCount`：该 clip 渲染出的 HTML 块内，有多少个元素的 class 含独立单词 `tw`
+ *   （不比较具体类名组合——`brand`/`tag` 这类语义类名在 Task 3 里已经因为 brandName 整体从
+ *   VideoSpec 里消失而对不上了，那是已知且被允许的文案损失，见 task-4-report.md；这里只关心
+ *   "有没有解码"这个真正影响观感的信号，用计数足够、且对类名漂移免疫）。
+ * - `accentCount`：`accents` 里有多少行强调动画的目标选择器落在这个 clip 自己的 id 或它内部嵌套
+ *   的某个 id 上（扫 `id="..."` 找嵌套 id，不预设任何命名约定——旧版 story 气泡用完全独立的
+ *   `storyBubble0` 这类 id、新版用 `storyChat-l0` 这类前缀 id，两种命名都能被"块内有哪些 id"
+ *   这个通用扫描找到，不需要各自特判）。
+ *
+ * 两个新字段都是**计数**、不是逐字匹配 GSAP 调用文本——避免把"引号风格/参数顺序"这类纯格式差异
+ * 误判成语义差异。
  */
-export function clipFingerprint(html: string): Array<{ id: string; start: number; dur: number; track: number }> {
-  return [...html.matchAll(/<div\s([^>]*)>/g)]
-    .map((m) => m[1])
-    .filter((a) => /class="[^"]*\bclip\b/.test(a))
-    .map((a) => ({
-      id: /\bid="([^"]*)"/.exec(a)?.[1] ?? '',
-      start: Number(/data-start="([\d.]+)"/.exec(a)?.[1] ?? -1),
-      dur: Number(/data-duration="([\d.]+)"/.exec(a)?.[1] ?? -1),
-      track: Number(/data-track-index="(\d+)"/.exec(a)?.[1] ?? -1),
-    }))
-    .sort((x, y) => x.start - y.start || x.track - y.track || x.id.localeCompare(y.id))
+export function clipFingerprint(html: string, accents = ''): Array<{
+  id: string; start: number; dur: number; track: number; twCount: number; accentCount: number
+}> {
+  const allDivOpens = [...html.matchAll(/<div\s([^>]*)>/g)]
+  const clipOpens = allDivOpens
+    .map((m) => ({ attrs: m[1], index: m.index as number, len: m[0].length }))
+    .filter((d) => /class="[^"]*\bclip\b/.test(d.attrs))
+  const accentLines = accents.split('\n').map((l) => l.trim()).filter(Boolean)
+
+  return clipOpens.map((clip, i) => {
+    // clip 之间是同级兄弟节点（不互相嵌套，已核对全部 build*Sections 与 render-html.ts 的拼接方式），
+    // 所以「这个 clip 自己的内容块」= 从它开标签结束到下一个 clip 开标签开始（或到字符串末尾）。
+    const blockStart = clip.index + clip.len
+    const blockEnd = i + 1 < clipOpens.length ? clipOpens[i + 1].index : html.length
+    const block = html.slice(blockStart, blockEnd)
+    const twCount = (block.match(/class="[^"]*\btw\b[^"]*"/g) ?? []).length
+    const id = /\bid="([^"]*)"/.exec(clip.attrs)?.[1] ?? ''
+    const nestedIds = [...block.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1])
+    const relevantIds = id ? [id, ...nestedIds] : nestedIds
+    // 匹配目标选择器时不要求引号里恰好只有 "#id"——旧版 changelog 有一条形如
+    // `"#clTitle .label"` 的复合选择器（打 clTitle 内部一个没有自己 id 的 class 子元素），
+    // 前缀匹配（后面跟引号/空白/点号）才能既认出这种复合选择器、又不会把 "#flashHook2"
+    // 误判成命中 "#flashHook"。
+    const relevantRe = relevantIds.map((rid) => new RegExp(`["']#${rid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:["'\\s.])`))
+    const accentCount = accentLines.filter((l) => relevantRe.some((re) => re.test(l))).length
+    return {
+      id,
+      start: Number(/data-start="([\d.]+)"/.exec(clip.attrs)?.[1] ?? -1),
+      dur: Number(/data-duration="([\d.]+)"/.exec(clip.attrs)?.[1] ?? -1),
+      track: Number(/data-track-index="(\d+)"/.exec(clip.attrs)?.[1] ?? -1),
+      twCount,
+      accentCount,
+    }
+  }).sort((x, y) => x.start - y.start || x.track - y.track || x.id.localeCompare(y.id))
 }
 
 /** 固定输入。签名已按 hyperframes.ts 实际定义核对过——注意 story/demo 不吃 cues，吃 beats */
@@ -104,7 +148,10 @@ export const FIXTURES = {
 describe('改造前后视觉等价（clip 时间轴指纹）', () => {
   it('五个模板的指纹与基线一致', () => {
     const current = Object.fromEntries(
-      Object.entries(FIXTURES).map(([k, fn]) => [k, clipFingerprint(fn().html)]),
+      Object.entries(FIXTURES).map(([k, fn]) => {
+        const r = fn()
+        return [k, clipFingerprint(r.html, r.accents)]
+      }),
     )
     if (!fs.existsSync(BASELINE)) {
       if (!REGEN) {
@@ -132,10 +179,18 @@ describe('改造前后视觉等价（clip 时间轴指纹）', () => {
  */
 export const DOC_FIXTURE: CopyDoc = {
   titles: ['标题1', '标题2'],
-  xhsBody: '痛点一。痛点二。痛点三。',
+  // 只写 2 句：buildSemantic 的 demo 分支会切出至多 3 条 painPoints，FIXTURES.demo/demoCarousel/
+  // demoPlan 三个固定 fixture 用的都是 2 条（['痛点一','痛点二']）——句数得对齐，否则 demo-pain
+  // 这个 layer 渲出来的 tw 元素个数（twCount）会因为句子数量不同而跟基线对不上，跟时间轴无关但
+  // 会让等价性断言误报。
+  xhsBody: '痛点一。痛点二。',
   douyinScript: '【报价】\n台词：报价锚点\n【CTA】\n台词：行动号召',
   cover: { main: '标题', sub: '卖点' },
-  comments: { questions: ['能做吗'], replies: ['可以，等我一天'] },
+  // comments 留空：buildSemantic 的 story 分支会用 questions/replies 配对出额外的对话轮次
+  // （qaPairs），非空会让气泡数超过 FIXTURES.story 固定用的 3 条——气泡数会驱动 storyChat 这个
+  // layer 上挂多少条 slideUp reveal effect（每条气泡一条），数量得跟基线对齐，同样是内容无关但
+  // 会让 accentCount 误报的坑。
+  comments: { questions: [], replies: [] },
 }
 
 const AUDIO_OFF = { narration: null, bgm: null, beatGrid: null, captionsEnabled: false }
@@ -203,8 +258,17 @@ describe('新管线与基线等价', () => {
       const opts = NEW_PIPELINE_OPTS[key]()
       const sem = buildSemantic(DOC_FIXTURE, opts.template, { cues: CUES })
       const spec = lower(sem, opts)
-      const got = clipFingerprint(renderSpecToHtml(spec).html)
-      expect(got, `模板 ${key} 的时间轴指纹与改造前不一致`).toEqual(baseline[key])
+      const rendered = renderSpecToHtml(spec)
+      const got = clipFingerprint(rendered.html, rendered.accents)
+      // 唯一显式豁免：changelog 的 clCta，原版渲 brand+tag 两个 `.tw` 元素，新管线的 VideoSpec
+      // 没有 brandName 字段、物理上只剩 1 个可解码元素（见本文件头部注释）。只把这一个 id 的
+      // twCount 期望值从基线的 2 改写成写死的 1——不是抄 got 自己的值（那样以后就算它退化成 0
+      // 也会静默通过），其余全部字段（含同一个 clip 的 accentCount/start/dur/track）照常严格
+      // 对基线比较，不是整条跳过。
+      const expected = baseline[key].map((c: { id: string; twCount: number }) =>
+        (key === 'changelog' && c.id === 'clCta') ? { ...c, twCount: 1 } : c,
+      )
+      expect(got, `模板 ${key} 的时间轴指纹与改造前不一致`).toEqual(expected)
     }
   })
 })

@@ -69,9 +69,14 @@ export interface LayerStyle {
   cssClass?: string               // 逃生舱：模板 CSS 里已有的类名，如 'card' / 'painT'
 }
 
-/** 特效参数化——现在硬编码在 DECODE_RUNTIME/fillAccents 里的东西挪到这里 */
+/** 特效参数化——现在硬编码在 DECODE_RUNTIME/fillAccents 里的东西挪到这里。
+ *  `exit`（Fix round 1 新增）：迁自 buildInsightSections 的卡片退场——缩小+降透明度移出
+ *  （`tl.to(...opacity:0,scale:.85...)`）随即在 clip 结束时刻硬收尾（`tl.set(...opacity:0...)`，
+ *  StaticGuard 契约：非线性 seek 落在渐隐尾巴之后不能读到 stale 的可见状态）。这两行必须同时出现、
+ *  且退场终点必须精确对齐 layer.start+layer.duration，所以建成一个 effect 类型而不是拆两条，
+ *  避免消费方（render-html.ts）各自算错位。 */
 export interface Effect {
-  type: 'decode' | 'fadeIn' | 'slideUp' | 'pulse' | 'demote'
+  type: 'decode' | 'fadeIn' | 'slideUp' | 'pulse' | 'demote' | 'exit'
   at?: number                     // 相对图层起点的秒偏移
   duration?: number
   params?: Record<string, number | string>

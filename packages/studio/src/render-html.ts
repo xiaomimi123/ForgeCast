@@ -33,13 +33,31 @@ function styleAttr(style: LayerStyle): string {
   return decls.length ? ` style="${decls.join(';')}"` : ''
 }
 
-/** 文本/字幕内容：多行（lower() 里少数图层如 changelog 标题块、demo 痛点列表把多行拼进
- *  同一个 content.text，用 '\n' 分隔）逐行 escape 后用 <br> 连接——避免把换行符原样吐进 HTML
- *  被浏览器折叠成空格。decode 效果落成外层 span 的 `.tw` 类，供 DECODE_RUNTIME 消费。 */
-function renderTextContent(text: string, hasDecode: boolean): string {
-  const body = text.split('\n').map(escapeHtml).join('<br>')
-  const cls = hasDecode ? ' class="tw"' : ''
-  return `<span${cls}>${body}</span>`
+/**
+ * 文本/字幕内容：多行（lower() 里少数图层如 changelog 标题块、demo 痛点列表把多行拼进
+ * 同一个 content.text，用 '\n' 分隔）拆成一行一个可寻址元素——单行时也一样，都套 `id="{layerId}-l{i}"`
+ * （行号从 0 开始）。这不是「计算时间」，只是给同一 layer 内的多个子元素起稳定 id，好让
+ * `effects[]` 里按 `params.line` 指认「渲染出来的第几行」（decode 的精确逐行落位、story 气泡的
+ * 逐条 reveal 强调都靠这个）。
+ *
+ * decode（`.tw`）落位规则：effect.type==='decode' 且没有 `params.line` → 这一层渲出来的**每一行**
+ * 都套 `.tw`（原版五个模板里绝大多数文字图层本就是单行、整块解码，这是默认档）；带
+ * `params.line` → 只有指定行号解码（changelog 的 clTitle 是唯一例外：label+title+subtitle
+ * 三行拼一层，只有 title/subtitle 该解码，见 lower.ts DECODE_LINE）。
+ */
+function renderTextContent(layer: Layer, text: string): string {
+  const lines = text.split('\n')
+  const decodeEffects = layer.effects.filter((e) => e.type === 'decode')
+  const decodeAllLines = decodeEffects.some((e) => e.params?.line === undefined)
+  const decodeLineSet = new Set(
+    decodeEffects.map((e) => e.params?.line).filter((l): l is number => typeof l === 'number'),
+  )
+  const tag = lines.length > 1 ? 'div' : 'span'
+  return lines.map((line, i) => {
+    const isTw = decodeAllLines || decodeLineSet.has(i)
+    const cls = isTw ? ' class="tw"' : ''
+    return `<${tag} id="${escapeHtml(layer.id)}-l${i}"${cls}>${escapeHtml(line)}</${tag}>`
+  }).join('')
 }
 
 /** demo 轮播图承袭原 buildDemoSections 的两种取景框（phoneWrap 竖图套手机外框 / wideWrap 横图
@@ -56,11 +74,11 @@ function renderImageContent(src: string, cssClass: string | undefined): string {
   return `<img src="${escapedSrc}"/>`
 }
 
-function renderContent(layer: Layer, hasDecode: boolean): string {
+function renderContent(layer: Layer): string {
   switch (layer.content.kind) {
     case 'text':
     case 'caption':
-      return renderTextContent(layer.content.text, hasDecode)
+      return renderTextContent(layer, layer.content.text)
     case 'image':
       return renderImageContent(layer.content.src, layer.style.cssClass)
     case 'shape':
@@ -74,25 +92,49 @@ function renderContent(layer: Layer, hasDecode: boolean): string {
 }
 
 /** effect.at 是「相对图层起点的秒偏移」（videospec.ts 注释）——lower() 已经把它算成相对量，
- *  这里只做 layer.start + effect.at 的加法拼回绝对时间，不重新推导偏移量本身。 */
-function effectToAccentLine(layer: Layer, effect: Effect): string | null {
+ *  这里只做 layer.start + effect.at 的加法拼回绝对时间，不重新推导偏移量本身。
+ *  target：带 `params.line` 时打到 renderTextContent 生成的那个子行 id（`{layer.id}-l{line}`）——
+ *  story 气泡的逐条 reveal 就是这样落到 storyChat 的某一"行"上的；不带则打整个 clip 的 id
+ *  （原有的 demote/pulse 等用法不变）。
+ *  `params.y`/`params.scale`：fadeIn 默认是 y:20 位移淡入（迁自 flashHook/storySell 等最常见的
+ *  形态），但 flashHighlight 是 scale:.9 缩放淡入、changelog 的 label 是 y:-30——用 params 覆盖
+ *  默认值，不新增更多 effect 类型（形状仍是"淡入"，只是运动方向不同，不是不同语义）。
+ *  `exit` 一次产出两行：先缩小+降透明度移出，再在 clip 结束时刻硬 set 收尾（迁自
+ *  buildInsightSections 的卡片退场，见 videospec.ts Effect 类型注释）——退场终点直接用
+ *  `layer.start+layer.duration`，不是重新计算，是读 lower() 已经给好的时长。 */
+function effectToAccentLine(layer: Layer, effect: Effect): string[] {
   const at = +(layer.start + (effect.at ?? 0)).toFixed(4)
   const duration = effect.duration ?? 0.3
+  const line = effect.params?.line
+  const target = typeof line === 'number' ? `${layer.id}-l${line}` : layer.id
   switch (effect.type) {
     // demote：迁自 buildInsightSections 的 hero 降级动效（原样保留数值：透明度 .55、缩放 .78）
     case 'demote':
-      return `tl.to("#${layer.id}", { opacity: .55, scale: .78, duration: ${duration} }, ${at});`
-    case 'fadeIn':
-      return `tl.from("#${layer.id}", { opacity: 0, y: 20, duration: ${duration} }, ${at});`
+      return [`tl.to("#${target}", { opacity: .55, scale: .78, duration: ${duration} }, ${at});`]
+    case 'fadeIn': {
+      const scale = effect.params?.scale
+      const y = effect.params?.y ?? 20
+      const props = scale !== undefined ? `opacity: 0, scale: ${scale}` : `opacity: 0, y: ${y}`
+      return [`tl.from("#${target}", { ${props}, duration: ${duration} }, ${at});`]
+    }
+    // slideUp：迁自 buildStorySections 的逐条气泡淡入+上移（原样保留数值：y 40、duration .5）
     case 'slideUp':
-      return `tl.from("#${layer.id}", { opacity: 0, y: 40, duration: ${duration} }, ${at});`
+      return [`tl.from("#${target}", { opacity: 0, y: 40, duration: ${duration} }, ${at});`]
     // pulse：迁自 buildDemoSections 的图片弹跳强调（原样保留 keyframes 数值）
     case 'pulse':
-      return `tl.to("#${layer.id}", { keyframes: [{ scale: 1.06, duration: 0.08 }, { scale: 1.0, duration: 0.12 }] }, ${at});`
+      return [`tl.to("#${target}", { keyframes: [{ scale: 1.06, duration: 0.08 }, { scale: 1.0, duration: 0.12 }] }, ${at});`]
+    case 'exit': {
+      const clipEnd = +(layer.start + layer.duration).toFixed(4)
+      const exitAt = +(clipEnd - duration).toFixed(4)
+      return [
+        `tl.to("#${target}", { opacity: 0, scale: .85, duration: ${duration} }, ${exitAt});`,
+        `tl.set("#${target}", { opacity: 0 }, ${clipEnd});`,
+      ]
+    }
     case 'decode':
-      return null // decode 不落 accent 行，落成 .tw 类（见 renderContent）
+      return [] // decode 不落 accent 行，落成 .tw 类（见 renderTextContent）
     default:
-      return null
+      return []
   }
 }
 
@@ -100,14 +142,11 @@ function effectToAccentLine(layer: Layer, effect: Effect): string | null {
  *  data-start/data-duration/data-track-index 直接原样写 layer.start/duration/track——
  *  这是本函数的唯一时间来源，不做任何 clamp/round/重算。 */
 function renderLayer(layer: Layer): { clipHtml: string; accentLines: string[] } {
-  const hasDecode = layer.effects.some((e) => e.type === 'decode')
   const cls = ['clip', layer.style.cssClass].filter(Boolean).join(' ')
-  const inner = renderContent(layer, hasDecode)
+  const inner = renderContent(layer)
   const clipHtml = `<div id="${escapeHtml(layer.id)}" class="${cls}"${styleAttr(layer.style)}`
     + ` data-start="${layer.start}" data-duration="${layer.duration}" data-track-index="${layer.track}">${inner}</div>`
-  const accentLines = layer.effects
-    .map((e) => effectToAccentLine(layer, e))
-    .filter((l): l is string => l !== null)
+  const accentLines = layer.effects.flatMap((e) => effectToAccentLine(layer, e))
   return { clipHtml, accentLines }
 }
 
