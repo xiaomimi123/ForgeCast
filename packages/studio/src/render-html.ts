@@ -61,26 +61,44 @@ function renderTextContent(layer: Layer, text: string): string {
 }
 
 /**
+ * 逐段编码一条相对路径：按 `/` 切开、每一段单独喂 `encodeURIComponent`、再用 `/` 拼回去。
+ *
+ * Fix round 4：round 3 用的是 `encodeURI`（原版 buildDemoSections 同款，hyperframes.ts:467），
+ * 但 `encodeURI` 故意放过一整串 URL 结构字符不转义——包括 `#`（fragment 分隔符）和 `?`
+ * （query 分隔符）。这两个字符出现在文件名里是真实场景（截图工具/系统相册常见），一旦出现，
+ * 浏览器会把 `#`/`?` 之后的部分整段切掉当成 fragment/query，而不是文件名的一部分——
+ * `my shot#1.png` 用 encodeURI 编码后是 `my%20shot#1.png`，浏览器实际请求的是
+ * `.../my%20shot`（`#1.png` 变成锚点），文件找不到。这是原版就带的 bug，照抄只会把缺陷继续
+ * 传下去，不属于"忠于原版"该忠的部分。
+ *
+ * 之所以不能整串扔给 `encodeURIComponent`：那会把路径分隔符 `/` 也编码成 `%2F`，
+ * `rel` 允许带子目录（如 `screens/a.png`），整串编码会把目录结构拆没。所以按段编码、
+ * 段与段之间的 `/` 原样保留。
+ */
+function encodePathForUrl(src: string): string {
+  return src.split('/').map((seg) => encodeURIComponent(seg)).join('/')
+}
+
+/**
  * demo 轮播图承袭原 buildDemoSections 的两种取景框（phoneWrap 竖图套手机外框 / wideWrap 横图
  * 居中+同图虚化背景）——cssClass 由 lower() 按 shot.orientation 写好，这里只按名字分流结构，
  * 不重新判断朝向（朝向判断是 lower() 的活）。未知/缺省 cssClass 时退化成裸 <img>。
  *
  * URL 编码故意放在这里、不放在 lower()（Fix round 3）：`layer.content.src` 是"这张图逻辑上在哪"
- * 的一条路径，`encodeURI` 是"往 HTML/CSS 里写一条 URL 时才需要做"的转换——这是两件事，混在一起会
- * 出问题。spec 是要按视频存盘、被剪辑台加载**手工编辑**的：如果在 lower() 里就编码，存盘的 spec
- * 里 `content.src` 会变成形如 `my%20shot.png` 这种给机器看的字符串，用户在剪辑台里看到的就是
- * 这个乱码，而不是真实文件名 `my shot.png`；更糟的是，如果用户再手改一次并存盘，下一次渲染会对
- * 一个已经编码过的字符串再编码一遍（双重编码，`%2520` 这类）。所以 `lower()` 只存"逻辑路径"这个
- * 原始真相，`encodeURI` 放在真正"发射一条 URL"的这一刻——不管 spec 是刚生成的、手改过的、还是
- * 从存盘 JSON 读回来重渲的，这里都会对它当前的路径值正确编码一次，不会算重也不会漏算。
- * 两处发射点（`<img src>` 和 `background-image:url(...)`）都要编码；`encodeURI` 处理 URL 安全性
- * （空格/`#`/`?`/`%` 等），`escapeHtml` 处理 HTML 属性安全性，两者管不同的问题、缺一不可，且顺序
- * 固定是先 `encodeURI` 再 `escapeHtml`（迁自 buildDemoSections 的 `escapeHtml(\`assets/${encodeURI(s.rel)}\`)`，
- * hyperframes.ts:467）——颠倒顺序会把 `encodeURI` 产出的 `%` 又喂给 `escapeHtml`（那不转义
- * `%`，无害，但顺序仍以原版为准，不做无谓的偏离）。
+ * 的一条路径，编码是"往 HTML/CSS 里写一条 URL 时才需要做"的转换——这是两件事，混在一起会出问题。
+ * spec 是要按视频存盘、被剪辑台加载**手工编辑**的：如果在 lower() 里就编码，存盘的 spec 里
+ * `content.src` 会变成形如 `my%20shot.png` 这种给机器看的字符串，用户在剪辑台里看到的就是这个
+ * 乱码，而不是真实文件名 `my shot.png`；更糟的是，如果用户再手改一次并存盘，下一次渲染会对一个
+ * 已经编码过的字符串再编码一遍（双重编码，`%2520` 这类）。所以 `lower()` 只存"逻辑路径"这个原始
+ * 真相，编码放在真正"发射一条 URL"的这一刻——不管 spec 是刚生成的、手改过的、还是从存盘 JSON
+ * 读回来重渲的，这里都会对它当前的路径值正确编码一次，不会算重也不会漏算。
+ * 两处发射点（`<img src>` 和 `background-image:url(...)`）都要编码；`encodePathForUrl` 处理 URL
+ * 安全性（空格/`#`/`?`/`%` 等，逐段编码保留 `/`），`escapeHtml` 处理 HTML 属性安全性，两者管
+ * 不同的问题、缺一不可，且顺序固定是先编码 URL 再转义 HTML——颠倒顺序会把编码产出的 `%` 又喂给
+ * `escapeHtml`（那不转义 `%`，无害，但顺序仍按这个来，不做无谓的偏离）。
  */
 function renderImageContent(src: string, cssClass: string | undefined): string {
-  const safeSrc = escapeHtml(encodeURI(src))
+  const safeSrc = escapeHtml(encodePathForUrl(src))
   if (cssClass === 'phoneWrap') {
     return `<div class="phoneWrap"><div class="phone"><img src="${safeSrc}"/></div></div>`
   }
