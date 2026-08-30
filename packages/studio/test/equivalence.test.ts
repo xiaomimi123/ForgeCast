@@ -7,6 +7,18 @@ import {
   buildInsightSections, buildStorySections,
 } from '../src/hyperframes'
 
+/**
+ * 这份基线是整个 VideoSpec 重构（copy → semantic → layers → HTML）的**唯一验收门禁**：
+ * 后续每个 Task 改造管线时，本测试比对「改造后生成的 clip 时间轴指纹」与这份改造前基线是否一致，
+ * 一致即视为视觉等价。
+ *
+ * 如果你是后续某个 Task 的执行者、看到本测试变红：**不要删掉/重新生成基线让它变绿**。
+ * 那等于把「验证重构没破坏东西」变成「重构声称自己没破坏东西」，会让一次真实的回归静默过关。
+ * 变红说明你的改动改变了 clip 时间轴，先去核实这是不是预期内的语义变更；只有在人工确认「基线本身
+ * 需要更新」之后，才用下面的 FORGECAST_REGEN_BASELINE=1 显式重建，并在提交里说明原因。
+ */
+const REGEN = process.env.FORGECAST_REGEN_BASELINE === '1'
+
 const BASELINE = path.join(fileURLToPath(new URL('.', import.meta.url)), 'equivalence-baseline.json')
 
 /**
@@ -91,8 +103,15 @@ describe('改造前后视觉等价（clip 时间轴指纹）', () => {
       Object.entries(FIXTURES).map(([k, fn]) => [k, clipFingerprint(fn().html)]),
     )
     if (!fs.existsSync(BASELINE)) {
+      if (!REGEN) {
+        throw new Error(
+          '等价性基线缺失。这是整轮重构的唯一验收门禁，不会自动重新生成——\n' +
+          '若确需重建（例如刻意变更了时间轴语义并已人工确认），显式运行：\n' +
+          '  FORGECAST_REGEN_BASELINE=1 npx pnpm --filter @forgecast/studio test -- equivalence',
+        )
+      }
       fs.writeFileSync(BASELINE, JSON.stringify(current, null, 2))
-      console.warn('基线不存在，已写入。请 review 后提交，再重跑本测试。')
+      console.warn('已按 FORGECAST_REGEN_BASELINE=1 重新生成基线，请人工 review 后提交。')
       return
     }
     expect(current).toEqual(JSON.parse(fs.readFileSync(BASELINE, 'utf8')))
