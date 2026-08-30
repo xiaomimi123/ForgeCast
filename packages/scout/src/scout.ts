@@ -58,12 +58,17 @@ async function ingest(
  *  onlyNew：已存在的 repo 只刷元数据（不评分不覆盖旧评分），只有新 repo 进入评分池。 */
 export async function scoutCandidates(
   ctx: CoreCtx,
-  opts: { topics?: string[]; limit?: number; pushedAfter?: string; onlyNew?: boolean } = {},
+  opts: {
+    topics?: string[]; limit?: number; pushedAfter?: string; onlyNew?: boolean
+    onProgress?: (msg: string) => void
+  } = {},
 ): Promise<{ found: number; scored: number; rejected: number; added: number }> {
+  const log = opts.onProgress ?? (() => {})
   const gh = createGithubClient(ctx.config.github)
   const topics = opts.topics ?? DEFAULT_TOPICS
   const limit = opts.limit ?? 30
   const pushedAfter = opts.pushedAfter ?? new Date(Date.now() - 183 * 864e5).toISOString().slice(0, 10)
+  log(`搜索 GitHub（${topics.length} 个 topic）…`)
   const found = await gh.searchRepos(topics, { minStars: 300, pushedAfter, perTopic: 20 })
 
   const existing = new Set(
@@ -77,6 +82,10 @@ export async function scoutCandidates(
     .filter((m) => isLicenseOk(m.license) && (!opts.onlyNew || isNew(m)))
     .sort((a, b) => b.stars - a.stars)
   const toScore = new Set(scorePool.slice(0, limit).map((m) => m.repo))
+  // 口径说明：可商用数按 found 全量算（不受 onlyNew 影响），评分数按 toScore 算——
+  // 两者在 onlyNew 模式下会差很多，分开报才不误导。
+  const licenseOkCount = found.filter((m) => isLicenseOk(m.license)).length
+  log(`搜到 ${found.length} 个仓库 · 协议可商用 ${licenseOkCount} 个 · 本次评分 ${toScore.size} 个`)
 
   let scored = 0
   let rejected = 0
@@ -90,6 +99,7 @@ export async function scoutCandidates(
       })
     } else {
       const willScore = toScore.has(m.repo)
+      if (willScore) log(`评分 ${scored + 1}/${toScore.size}：${m.repo}`)
       await ingest(ctx, gh, m, willScore)
       if (willScore) scored++
       if (isNew(m) && ok) added++
@@ -191,21 +201,29 @@ export async function cleanupCandidates(
  *  手动偶发触发，不做 onlyNew 限制——命中的协议 OK 仓库每次都重新评分覆盖。 */
 export async function scoutBreakouts(
   ctx: CoreCtx,
-  opts: { minStars?: number; withinDays?: number; limit?: number } = {},
+  opts: {
+    minStars?: number; withinDays?: number; limit?: number
+    onProgress?: (msg: string) => void
+  } = {},
 ): Promise<{ found: number; scored: number; rejected: number; added: number; hits: Array<{ repo: string; url: string }> }> {
+  const log = opts.onProgress ?? (() => {})
   const gh = createGithubClient(ctx.config.github)
   const minStars = opts.minStars ?? 2000
   const withinDays = opts.withinDays ?? 7
   const limit = opts.limit ?? 30
   const createdAfter = new Date(Date.now() - withinDays * 864e5).toISOString().slice(0, 10)
+  log(`检测新晋高星仓库（≥${minStars} star · ${withinDays} 天内新建）…`)
   const found = await gh.searchBreakouts({ minStars, createdAfter, perPage: limit })
 
   let scored = 0
   let rejected = 0
   let added = 0
   const hits: Array<{ repo: string; url: string }> = []
+  const okTotal = found.filter((m) => isLicenseOk(m.license)).length
+  log(`命中 ${found.length} 个仓库 · 协议可商用 ${okTotal} 个，开始评分…`)
   for (const m of found) {
     const ok = isLicenseOk(m.license)
+    if (ok) log(`评分 ${scored + 1}/${okTotal}：${m.repo}`)
     await ingest(ctx, gh, m, ok)
     if (ok) { scored++; added++; hits.push({ repo: m.repo, url: m.url }) }
     else rejected++

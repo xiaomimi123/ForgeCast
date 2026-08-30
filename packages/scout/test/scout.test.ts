@@ -48,6 +48,27 @@ describe('scoutCandidates (mock)', () => {
     const detail = JSON.parse(row.score_detail)
     expect(detail.summaryZh).toBe('')
   })
+
+  it('onProgress：报搜索阶段 + 逐条评分进度，分母是真正评分条数', async () => {
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+
+    expect(msgs[0]).toMatch(/^搜索 GitHub（\d+ 个 topic）…$/)
+    expect(msgs[1]).toMatch(/^搜到 \d+ 个仓库 · 协议可商用 \d+ 个 · 本次评分 \d+ 个$/)
+
+    const scoreLines = msgs.filter((m) => m.startsWith('评分 '))
+    expect(scoreLines).toHaveLength(r.scored)
+    // 分母恒为本次真评分条数（不是搜到的总数——否则进度看着像卡在个位数）
+    scoreLines.forEach((m, i) => expect(m).toMatch(new RegExp(`^评分 ${i + 1}/${r.scored}：`)))
+  })
+
+  it('不传 onProgress 时不抛错，返回值结构完好（向后兼容）', async () => {
+    const r = await scoutCandidates(ctx)
+    expect(r.found).toBeGreaterThan(0)
+    expect(r.scored).toBeGreaterThan(0)
+    expect(typeof r.rejected).toBe('number')
+    expect(typeof r.added).toBe('number')
+  })
 })
 
 describe('addRepo (mock)', () => {
@@ -254,6 +275,18 @@ describe('scoutBreakouts (mock)', () => {
     expect(r.hits.every((h) => typeof h.repo === 'string' && typeof h.url === 'string')).toBe(true)
     const gplHit = r.hits.find((h) => h.repo === 'gpl-example/copyleft-tool')
     expect(gplHit).toBeUndefined() // 协议不过的不该出现在 hits 里
+  })
+
+  it('onProgress：报检测阶段 + 逐条评分进度，分母是协议可商用条数', async () => {
+    const msgs: string[] = []
+    const r = await scoutBreakouts(ctx, { onProgress: (m) => msgs.push(m) })
+
+    expect(msgs[0]).toMatch(/^检测新晋高星仓库（≥\d+ star · \d+ 天内新建）…$/)
+    expect(msgs[1]).toMatch(/^命中 \d+ 个仓库 · 协议可商用 \d+ 个，开始评分…$/)
+
+    const scoreLines = msgs.filter((m) => m.startsWith('评分 '))
+    expect(scoreLines).toHaveLength(r.scored)
+    scoreLines.forEach((m, i) => expect(m).toMatch(new RegExp(`^评分 ${i + 1}/${r.scored}：`)))
   })
 })
 

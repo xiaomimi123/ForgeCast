@@ -448,6 +448,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const taskId = queue.enqueue((log) => scoutCandidates(ctx, {
       topics: Array.isArray(body.topics) ? body.topics : undefined,
       limit: typeof body.limit === 'number' ? body.limit : undefined,
+      onProgress: log,
     }).then((r) => { log(`发现 ${r.found} 个，评分 ${r.scored}，协议不过 ${r.rejected}`); return r }))
     return c.json({ taskId })
   })
@@ -458,6 +459,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       minStars: typeof body.minStars === 'number' ? body.minStars : undefined,
       withinDays: typeof body.withinDays === 'number' ? body.withinDays : undefined,
       limit: typeof body.limit === 'number' ? body.limit : undefined,
+      onProgress: log,
     }).then((r) => {
       log(`发现 ${r.found} 个爆款候选，评分 ${r.scored}，协议不过 ${r.rejected}`)
       for (const h of r.hits) log(`  🔥 ${h.repo}`)
