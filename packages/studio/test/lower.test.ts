@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { buildDemoSections, gridBeats } from '../src/hyperframes'
 import { lower } from '../src/lower'
+import { clipFingerprint } from './equivalence.test'
 
 const base = {
   videoId: 'v1', slug: 's', canvas: { width: 1080, height: 1920 },
@@ -39,10 +41,13 @@ describe('lower 通用不变量（五个模板都必须满足）', () => {
       for (const l of spec.layers) expect(l.start + l.duration).toBeLessThanOrEqual(base.durationSec + 1e-6)
     })
 
-    it(`${template}: 每个来自 section 的图层都带 from 且 overridden=false`, () => {
-      const spec = lower(sem([{ id: 'hook', role: 'hook', text: 'x' }]), { ...base, template } as any)
-      const fromSection = spec.layers.filter((l) => l.kind !== 'caption')
-      expect(fromSection.every((l) => l.from !== null && l.overridden === false)).toBe(true)
+    it(`${template}: from 要么为 null，要么指向 semantic.sections 里真实存在的 id（不留悬空引用）`, () => {
+      const sections = [{ id: 'hook', role: 'hook', text: 'x' }]
+      const spec = lower(sem(sections), { ...base, template } as any)
+      const validIds = new Set(sections.map((s) => s.id))
+      const nonCaption = spec.layers.filter((l) => l.kind !== 'caption')
+      expect(nonCaption.every((l) => l.overridden === false)).toBe(true)
+      expect(nonCaption.every((l) => l.from === null || validIds.has(l.from as string))).toBe(true)
     })
   }
 })
@@ -173,17 +178,35 @@ describe('lower：story/demo 节拍吸附与 demo cutplan', () => {
     for (const img of images) { expect(img.start).toBeGreaterThanOrEqual(6); expect(img.start).toBeLessThan(24) }
   })
 
-  it('demo 未提供 plan 但有 beatGrid 时用 autoCutPlan 兜底生成轮播', () => {
+  it('demo 未提供 plan 时的轮播切点与原 buildDemoSections 密度启发式逐帧一致（非 autoCutPlan）', () => {
+    // 复用 equivalence.test.ts 的 demoCarousel 固定输入：3 张图、durationSec=40、
+    // beats 为 0..40 步长 2 的密集网格——这条断言直接对照原函数的产出，证明 lower() 走的是
+    // 原密度启发式（win 内均匀抽样 + 不足则均分兜底），不是 autoCutPlan（那是不同算法/不同输入）。
     const shots = [
       { rel: 's1.jpg', orientation: 'portrait' as const },
       { rel: 's2.jpg', orientation: 'landscape' as const },
+      { rel: 's3.jpg', orientation: 'portrait' as const },
     ]
     const beatGrid = { t0: 0, T: 2, bpm: 30, beats: [], strongBeats: [], duration: 40 }
-    const spec = lower(sem([{ id: 'pain', role: 'pain', text: '标题' }, { id: 'cta', role: 'cta', text: '行动' }]), {
+    const beats = gridBeats(beatGrid, 40)
+    const spec = lower(sem([{ id: 'pain', role: 'pain', text: '钩子' }, { id: 'cta', role: 'cta', text: '行动' }]), {
       ...base, template: 'demo', durationSec: 40, shots, beatGrid,
     } as any)
-    const images = spec.layers.filter((l) => l.kind === 'image')
+    const images = spec.layers.filter((l) => l.kind === 'image').sort((a, b) => a.start - b.start)
+
+    const original = buildDemoSections({
+      hookTitle: '钩子', painPoints: ['痛点一', '痛点二'], priceAnchor: '报价', cta: '行动', brandName: '品牌',
+      shots, durationSec: 40, beats,
+    })
+    const originalStarts = clipFingerprint(original.html)
+      .filter((c) => c.id.startsWith('car'))
+      .sort((a, b) => a.start - b.start)
+      .map((c) => c.start)
+
     expect(images.length).toBeGreaterThan(0)
+    expect(images.map((l) => l.start)).toEqual(originalStarts)
+    expect(images.map((l) => +l.duration.toFixed(2))).toEqual(originalStarts.map((_, k, arr) =>
+      +(clipFingerprint(original.html).filter((c) => c.id.startsWith('car')).sort((a, b) => a.start - b.start)[k].dur).toFixed(2)))
   })
 })
 

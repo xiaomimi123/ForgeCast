@@ -4,16 +4,17 @@
  * 现有 hyperframes.ts 里 build*Sections 五个函数中「算时间/分组/轨道」的逻辑全部迁到这里，
  * 拼 HTML 的部分留给 Task 4（渲染器只读 layers，不再自己算时间）。
  *
- * from 字段约定：
+ * from 字段约定（schema 定义：「来源 section id」——不是「来源某种数据」）：
  * - 字面来自某个 Section 文本/items/dialogue 字段的图层：from = 该 section 的 id。
- * - 字面来自旁白 cue（不对应任何 Section，如 flash/changelog 的流动字幕、insight 数据卡）：
- *   from = 'cues'（诚实标注来源，不是真正的 section id，但绝不为 null——null 专留给
- *   kind: 'caption' 的字幕轨图层与真正手工新建的图层）。
- * - 字面来自 opts.shots（demo 轮播图，不对应任何 Section）：from = null
- *   （的确不来自 section；也没有任何测试要求非空——见 task-3-report.md 的说明）。
+ * - 字面来自旁白 cue（不对应任何 Section，如 flash/changelog 的流动字幕、insight 数据卡）
+ *   或来自 opts.shots（demo 轮播图，同样不对应任何 Section）：from = null。
+ *   这两类图层确实不属于任何语义 section（cue 来自 TTS，shots 来自截图目录），塞一个
+ *   看起来像 section id 实则不存在的字符串（如曾经用过的 'cues'）是悬空引用——
+ *   剪辑台子项目会拿 from 去 semantic.sections 里找对应 section 决定「文案重新生成时哪些图层
+ *   要被替换」，查不到的假 id 会在那里出错。null 就是诚实的答案。
  */
 import type { BeatGrid, Shot } from './hyperframes'
-import { autoCutPlan, gridBeats, planCutTimes, snapStarts } from './hyperframes'
+import { gridBeats, planCutTimes, snapStarts } from './hyperframes'
 import type { Cue } from './tts'
 import type { AudioSpec, Effect, Layer, LayerContent, Section, Semantic, VideoSpec } from './videospec'
 
@@ -49,6 +50,19 @@ function dialogueOf(sections: Section[], id: string): Array<{ who: 'them' | 'me'
   return sections.find((s) => s.id === id)?.dialogue ?? []
 }
 
+/** from 只能指向真实存在的 section id——即便按约定应该有这个 id，若 semantic.sections 里实际
+ *  没有，也必须回落 null，不能留一个查不到的悬空引用（剪辑台靠 from 反查 section 决定重生成时
+ *  哪些图层要被替换，假 id 会在那里出错）。 */
+function fromId(sections: Section[], id: string): string | null {
+  return sections.some((s) => s.id === id) ? id : null
+}
+/** 多个候选 id 里取第一个真实存在的（changelog 标题块同时糅合了 pain/body 两个 section 的内容，
+ *  只能记一个 from，优先记 pain）。 */
+function firstFromId(sections: Section[], ids: string[]): string | null {
+  for (const id of ids) if (sections.some((s) => s.id === id)) return id
+  return null
+}
+
 function beatsFor(opts: LowerOpts): number[] | undefined {
   return opts.beatGrid ? gridBeats(opts.beatGrid, opts.durationSec) : undefined
 }
@@ -78,17 +92,6 @@ function captionLayers(cues: Cue[]): Layer[] {
   })
 }
 
-// ---- demo 轮播卡点：opts.plan 提供则 planCutTimes；否则有 beatGrid 就 autoCutPlan 兜底；都没有则空 ----
-function demoCutTimes(opts: LowerOpts, shotCount: number): Array<{ start: number; shot: number }> {
-  if (shotCount <= 0) return []
-  if (opts.plan) return planCutTimes(opts.plan, shotCount)
-  if (opts.beatGrid) {
-    const grid = { t0: opts.beatGrid.t0, T: opts.beatGrid.T }
-    const cuts = autoCutPlan(grid, shotCount, opts.durationSec, 4)
-    return planCutTimes({ grid, offsetSec: 0, cuts }, shotCount)
-  }
-  return []
-}
 
 /**
  * flash：钩子/CTA 时长按片长比例 clamp（不再是写死各 4s，视频多长内容就铺多长）；
@@ -113,7 +116,7 @@ function lowerFlash(sections: Section[], opts: LowerOpts): Layer[] {
   const midEnd = Math.max(midStart, durationSec - ctaDur)
 
   const layers: Layer[] = []
-  layers.push(textLayer('flashHook', 'pain', 0, hookDur, 1, painTitle, 'painT'))
+  layers.push(textLayer('flashHook', fromId(sections, 'pain'), 0, hookDur, 1, painTitle, 'painT'))
 
   // 高亮卡片先算窗口：流动字幕要避开这段（两者都满屏居中，叠一起看不清）
   const highlightStart = midStart + (midEnd - midStart) * 0.4
@@ -125,11 +128,11 @@ function lowerFlash(sections: Section[], opts: LowerOpts): Layer[] {
     .filter((c) => c.end - c.start > 0.1)
     .filter((c) => c.end <= highlightStart || c.start >= highlightEnd)
   midCues.forEach((c, i) => {
-    layers.push(textLayer(`flashCap${i}`, 'cues', c.start, c.end - c.start, 2, c.text, 'flowCap'))
+    layers.push(textLayer(`flashCap${i}`, null, c.start, c.end - c.start, 2, c.text, 'flowCap'))
   })
 
-  layers.push(textLayer('flashHighlight', 'body', highlightStart, highlightDur, 3, sellingPoint, 'highlightCard'))
-  layers.push(textLayer('flashCta', 'cta', midEnd, ctaDur, 1, cta, 'cta'))
+  layers.push(textLayer('flashHighlight', fromId(sections, 'body'), highlightStart, highlightDur, 3, sellingPoint, 'highlightCard'))
+  layers.push(textLayer('flashCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'cta'))
   return layers
 }
 
@@ -157,16 +160,16 @@ function lowerChangelog(sections: Section[], opts: LowerOpts): Layer[] {
   const midEnd = Math.max(midStart, durationSec - ctaDur)
 
   const layers: Layer[] = []
-  layers.push(textLayer('clTitle', 'pain', 0, titleDur, 1, [label, title, subtitle].filter(Boolean).join('\n'), 'title'))
+  layers.push(textLayer('clTitle', firstFromId(sections, ['pain', 'body']), 0, titleDur, 1, [label, title, subtitle].filter(Boolean).join('\n'), 'title'))
 
   const midCues = cues
     .map((c) => ({ start: Math.max(c.start, midStart), end: Math.min(c.end, midEnd), text: c.text }))
     .filter((c) => c.end - c.start > 0.1)
   midCues.forEach((c, i) => {
-    layers.push(textLayer(`clCap${i}`, 'cues', c.start, c.end - c.start, 2, c.text, 'tag'))
+    layers.push(textLayer(`clCap${i}`, null, c.start, c.end - c.start, 2, c.text, 'tag'))
   })
 
-  layers.push(textLayer('clCta', 'cta', midEnd, ctaDur, 1, cta, 'brand'))
+  layers.push(textLayer('clCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'brand'))
   return layers
 }
 
@@ -192,16 +195,21 @@ function lowerStory(sections: Section[], opts: LowerOpts): Layer[] {
 
   const chatText = bubbles.map((b) => `${b.who === 'them' ? '对方' : '我'}：${b.text}`).join('\n')
   return [
-    textLayer('storyChat', 'body-1', st[0], chatDur, 1, chatText, 'chat'),
-    textLayer('storySell', 'body', st[1], 3, 1, sellingPoint, 'sell'),
-    textLayer('storyCta', 'cta', st[2], 3, 1, cta, 'cta'),
+    textLayer('storyChat', fromId(sections, 'body-1'), st[0], chatDur, 1, chatText, 'chat'),
+    textLayer('storySell', fromId(sections, 'body'), st[1], 3, 1, sellingPoint, 'sell'),
+    textLayer('storyCta', fromId(sections, 'cta'), st[2], 3, 1, cta, 'cta'),
   ]
 }
 
 /**
- * demo：钩子/痛点/报价/CTA 固定 3s，轮播窗口 [6, dur-6) 内的切点靠 demoCutTimes 给出
- * （opts.plan 提供则钉曲用方案 cuts；否则有节拍网格就 autoCutPlan 兜底生成；都没有则空——
- * 无轮播时钩子/痛点/报价/CTA 仍固定在原位，只是中段空档不铺图）。
+ * demo：钩子/痛点/报价/CTA 固定 3s，轮播窗口 [6, dur-6) 内的切点：
+ * - opts.plan 提供 → 钉曲，直接用方案 cuts（`planCutTimes`），过滤落在窗口内的、按 start 排序。
+ * - 否则 → **原样迁移** buildDemoSections 的密度启发式（hyperframes.ts:433-450），
+ *   不是 autoCutPlan（那是 cutplan 编辑器的候选生成器，输入/输出都不同，硬套会让 equivalence
+ *   基线里 demoCarousel 那条变红——已实测踩过一次）：
+ *   在窗口内的拍点 `win` 里，按 `cutCount = min(win.length, max(shots.length, ceil(win.length/4)))`
+ *   均匀抽取拍点做切点；若抽出的切点数不足 2 或不足图数（不够保证每张图至少播到一次），
+ *   退回按图数把窗口均分——两个触发条件都要保留，任一命中就整体换成均分结果，不是叠加修正。
  * 五段一次性 snapStarts 顺序吸附节拍，与原版一致（防止相邻段吸到同一拍/倒序）。
  * 迁自 buildDemoSections（hyperframes.ts:412-490）。
  */
@@ -214,12 +222,36 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
   const cta = textOf(sections, 'cta')
 
   const carStart = 6, carEnd = Math.max(carStart + 1, durationSec - 6)
-  const cutTimes = demoCutTimes(opts, shots.length)
-    .filter((c) => c.start >= carStart && c.start < carEnd)
-    .sort((a, b) => a.start - b.start)
-  const carItems = cutTimes.map((c, k) => ({
-    id: `demoCar${k}`, start: c.start, dur: (cutTimes[k + 1]?.start ?? carEnd) - c.start, shot: shots[c.shot],
-  }))
+  const beats = beatsFor(opts)
+
+  let carItems: Array<{ id: string; start: number; dur: number; shot: Shot | undefined }>
+  if (opts.plan && opts.plan.cuts.length) {
+    const cutTimes = planCutTimes(opts.plan, shots.length)
+      .filter((c) => c.start >= carStart && c.start < carEnd)
+      .sort((a, b) => a.start - b.start)
+    carItems = cutTimes.map((c, k) => ({
+      id: `demoCar${k}`, start: c.start, dur: (cutTimes[k + 1]?.start ?? carEnd) - c.start, shot: shots[c.shot],
+    }))
+  } else {
+    // 密度启发式（原样迁自 buildDemoSections 的 hasBeats 分支）
+    const hasBeats = !!(beats && beats.length)
+    let cutStarts: number[] = []
+    if (hasBeats) {
+      const win = beats!.filter((b) => b >= carStart && b < carEnd)
+      // 切点数至少等于图数（保证每张图播到），但不超过窗口内拍数；否则按"每 4 拍一刀"的密度均匀取拍
+      const cutCount = Math.min(win.length, Math.max(shots.length, Math.ceil(win.length / 4)))
+      cutStarts = cutCount > 0 ? Array.from({ length: cutCount }, (_, i) => win[Math.floor((i * win.length) / cutCount)]) : []
+    }
+    if (cutStarts.length < 2 || cutStarts.length < shots.length) {
+      // 无 BGM / 窗口内拍太少（不够切出每图至少一刀）：退回按图数均分（保证每张图都能播到）
+      const per = shots.length ? (carEnd - carStart) / shots.length : 0
+      cutStarts = shots.map((_, i) => carStart + i * per)
+    }
+    // 每刀循环取一张图；时长 = 到下一刀（末刀到 carEnd）
+    carItems = cutStarts.map((start, k) => ({
+      id: `demoCar${k}`, start, dur: (cutStarts[k + 1] ?? carEnd) - start, shot: shots[k % shots.length],
+    }))
+  }
 
   const segs = [
     { start: 0, dur: 3 },
@@ -228,11 +260,11 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
     { start: durationSec - 6, dur: 3 },
     { start: durationSec - 3, dur: 3 },
   ]
-  const st = snapStarts(segs, beatsFor(opts))
+  const st = snapStarts(segs, beats)
 
   const layers: Layer[] = []
-  layers.push(textLayer('demo-hook', 'pain', st[0], 3, 1, painTitle, 'hookT'))
-  layers.push(textLayer('demo-pain', 'pain-1', st[1], 3, 1, painPoints.join('\n'), 'painWrap'))
+  layers.push(textLayer('demo-hook', fromId(sections, 'pain'), st[0], 3, 1, painTitle, 'hookT'))
+  layers.push(textLayer('demo-pain', fromId(sections, 'pain-1'), st[1], 3, 1, painPoints.join('\n'), 'painWrap'))
 
   carItems.forEach((c, k) => {
     layers.push({
@@ -245,8 +277,8 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
   })
 
   const nCar = carItems.length
-  layers.push(textLayer('demo-price', 'body-1', st[2 + nCar], 3, 1, priceAnchor, 'price'))
-  layers.push(textLayer('demo-cta', 'cta', st[2 + nCar + 1], 3, 1, cta, 'cta'))
+  layers.push(textLayer('demo-price', fromId(sections, 'body-1'), st[2 + nCar], 3, 1, priceAnchor, 'price'))
+  layers.push(textLayer('demo-cta', fromId(sections, 'cta'), st[2 + nCar + 1], 3, 1, cta, 'cta'))
   return layers
 }
 
@@ -300,7 +332,7 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
   const introEnd = cards.length === 0 ? outroStart : (cards[0]?.start ?? fallbackIntroEnd)
 
   const layers: Layer[] = []
-  layers.push(textLayer('insight-intro', 'pain', 0, introEnd, 1, painTitle, 'painT'))
+  layers.push(textLayer('insight-intro', fromId(sections, 'pain'), 0, introEnd, 1, painTitle, 'painT'))
 
   groups.forEach((group, gi) => {
     const sceneEnd = Math.min(outroStart, groups[gi + 1]?.[0]?.start ?? outroStart)
@@ -330,7 +362,7 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
         .filter((d) => d.idx === card.idx)
         .map((d) => ({ type: 'demote', at: +(d.at - card.start).toFixed(4), duration: 0.3 }))
       layers.push({
-        id, kind: 'text', from: 'cues', overridden: false,
+        id, kind: 'text', from: null, overridden: false,
         start: +card.start.toFixed(4), duration: +card.dur.toFixed(4), track: 2 + card.idx,
         content: { kind: 'text', text: `${card.stat} ${card.label}`.trim() } as LayerContent,
         style: { cssClass: 'card', color: primaryColor },
@@ -339,7 +371,7 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
     })
   })
 
-  layers.push(textLayer('insight-outro', 'cta', outroStart, Math.max(0.5, durationSec - outroStart), 1, cta, 'cta'))
+  layers.push(textLayer('insight-outro', fromId(sections, 'cta'), outroStart, Math.max(0.5, durationSec - outroStart), 1, cta, 'cta'))
   return layers
 }
 
