@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
-import { api, subscribeTask, type Asset, type BgmList, type Project } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { api, type Asset, type BgmList, type Project } from '../api'
+import TaskProgress from '../components/TaskProgress'
+import { useTaskRun } from '../useTaskRun'
 import CopyTab from './workshop/CopyTab'
 import ScriptTab from './workshop/ScriptTab'
 import UploadTab from './workshop/UploadTab'
@@ -25,9 +27,17 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
   const [slug, setSlug] = useState('')
   const [hook, setHook] = useState('pain')
   const [n, setN] = useState(1)
-  const [logs, setLogs] = useState<string[]>([])
-  const [running, setRunning] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
+
+  const copyRun = useTaskRun()
+  const videoRun = useTaskRun()
+  // 生成脚本的 run 由 ScriptTab 自己持有，通过 onRunningChange 回传忙碌态
+  const [scriptBusy, setScriptBusy] = useState(false)
+  const busy = copyRun.running || videoRun.running || scriptBusy
+  const [activeKey, setActiveKey] = useState<'copy' | 'video'>('copy')
+  const runs = { copy: copyRun, video: videoRun }
+  const activeRun = runs[activeKey]
+  useEffect(() => { logRef.current?.scrollTo({ top: 999999 }) }, [activeRun.logs.length])
 
   // 视频渲染参数：默认值与后端 config.video 默认一致（bgm/mood 空串=自动，bg=grid，旁白字幕默认关）
   const [vp, setVp] = useState<VideoParams>({ tpl: 'flash', bgm: '', mood: '', bg: 'grid', captions: false, ratio: 'portrait' })
@@ -43,48 +53,27 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
   })
   const bgmList = useQuery({ queryKey: ['bgm'], queryFn: () => api<BgmList>('/api/bgm') })
 
-  async function generate(feedback?: string, hookOverride?: string, nOverride?: number) {
-    if (!selected || running) return
-    setRunning(true)
-    setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/copy`, {
-        method: 'POST', body: JSON.stringify({ hook: hookOverride ?? hook, n: nOverride ?? n, feedback }),
-      })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
-        logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') {
-          setRunning(false)
-          qc.invalidateQueries({ queryKey: ['assets', selected] })
-        }
-      })
-    } catch (err) {
-      setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
-      setRunning(false)
-    }
+  function generate(feedback?: string, hookOverride?: string, nOverride?: number) {
+    if (!selected) return
+    setActiveKey('copy')
+    copyRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${selected}/copy`, {
+        method: 'POST',
+        body: JSON.stringify({ hook: hookOverride ?? hook, n: nOverride ?? n, feedback }),
+      })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['assets', selected] }),
+    )
   }
 
-  async function makeVideo(assetId: number) {
-    if (!selected || running) return
-    setRunning(true)
-    setLogs([])
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
+  function makeVideo(assetId: number) {
+    if (!selected) return
+    setActiveKey('video')
+    videoRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
         method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions, ratio: vp.ratio }),
-      })
-      subscribeTask(taskId, (e) => {
-        setLogs((l) => [...l, `${e.type === 'error' ? '❌ ' : ''}${e.message}`])
-        logRef.current?.scrollTo({ top: 999999 })
-        if (e.type === 'done' || e.type === 'error') {
-          setRunning(false)
-          qc.invalidateQueries({ queryKey: ['assets', selected] })
-        }
-      })
-    } catch (err) {
-      setLogs((l) => [...l, `❌ ${err instanceof Error ? err.message : String(err)}`])
-      setRunning(false)
-    }
+      })).taskId,
+      () => qc.invalidateQueries({ queryKey: ['assets', selected] }),
+    )
   }
 
   const copyAssets = (assets.data ?? []).filter((a) => a.type === 'copy')
@@ -109,6 +98,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
           {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
         </select>
         {selected && <button onClick={() => onOpenProject(selected)} className="text-xs text-fire">查看项目详情 →</button>}
+        <TaskProgress run={activeRun} className="max-w-[360px]" />
         <div className="ml-auto seg-tabs">
           {TABS.map((t) => (
             <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
@@ -118,7 +108,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
 
       {tab === 'copy' && (
         <CopyTab
-          selected={selected} hook={hook} setHook={setHook} n={n} setN={setN} running={running}
+          selected={selected} hook={hook} setHook={setHook} n={n} setN={setN} running={busy} run={copyRun}
           onGenerate={() => generate()} assets={assets.data ?? []} slug={selected}
           onRegenerate={(fb, a) => generate(fb, a.hook ?? hook, 1)}
           onVideo={(id) => { setVideoFromAsset(id); setTab('video') }}
@@ -126,7 +116,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
       )}
       {tab === 'script' && (
         <ScriptTab selected={selected} copyAssets={copyAssets} scriptAssets={scriptAssets}
-          running={running} onRunningChange={setRunning} />
+          running={busy} onRunningChange={setScriptBusy} />
       )}
       {tab === 'upload' && (
         <UploadTab selected={selected} uploadAssets={uploadAssets} scriptAssets={scriptAssets}
@@ -136,7 +126,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
         <VideoTab
           selected={selected} vp={vp} setVp={setVp} copyAssets={copyAssets}
           videoFromAsset={videoFromAsset} setVideoFromAsset={setVideoFromAsset}
-          running={running} onMakeVideo={makeVideo} bgmList={bgmList.data}
+          running={busy} run={videoRun} onMakeVideo={makeVideo} bgmList={bgmList.data}
           videoAssets={renderAssets} slug={selected}
           onRegenerate={(fb, a) => generate(fb, a.hook ?? hook, 1)}
         />
@@ -145,9 +135,9 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
       {tab === 'cut' && selected && <CutPlanEditor key={selected} slug={selected} />}
       {tab === 'templates' && <TemplatesTab />}
 
-      {logs.length > 0 && (
+      {activeRun.logs.length > 0 && (
         <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-48 overflow-y-auto space-y-1">
-          {logs.map((l, i) => <div key={i}>{l}</div>)}
+          {activeRun.logs.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
     </div>

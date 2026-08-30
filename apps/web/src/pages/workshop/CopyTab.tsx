@@ -1,5 +1,7 @@
 import type { Asset } from '../../api'
 import AssetCard from '../../components/AssetCard'
+import TaskProgress from '../../components/TaskProgress'
+import type { TaskRun } from '../../useTaskRun'
 
 export const HOOKS = [
   { value: 'pain', label: '行业痛点型' },
@@ -10,7 +12,7 @@ export const HOOKS = [
 
 /** 文案 tab：钩子+篇数生成面板 + 文案/封面素材列表（视频素材归「出视频」tab 展示） */
 export default function CopyTab({
-  selected, hook, setHook, n, setN, running, onGenerate, assets, slug, onRegenerate, onVideo,
+  selected, hook, setHook, n, setN, running, run, onGenerate, assets, slug, onRegenerate, onVideo,
 }: {
   selected: string
   hook: string
@@ -18,6 +20,7 @@ export default function CopyTab({
   n: number
   setN: (v: number) => void
   running: boolean
+  run: TaskRun
   onGenerate: () => void
   assets: Asset[]
   slug: string
@@ -45,8 +48,9 @@ export default function CopyTab({
         </div>
         <button className="btn w-full py-2 disabled:opacity-50"
           disabled={!selected || running} onClick={onGenerate}>
-          {running ? '生成中…' : '生成'}
+          {run.running ? '生成中…' : '生成'}
         </button>
+        <TaskProgress run={run} />
       </div>
       <div className="space-y-4">
         {list.length === 0 && <div className="text-faint text-sm">暂无素材，点左侧「生成」</div>}

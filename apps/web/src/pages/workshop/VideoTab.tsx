@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, type Asset, type BgmList, type CustomTemplate } from '../../api'
 import AssetCard from '../../components/AssetCard'
+import TaskProgress from '../../components/TaskProgress'
+import type { TaskRun } from '../../useTaskRun'
 
 export const VIDEO_TPLS = [
   { value: 'flash', label: 'flash · 文字快闪' },
@@ -30,7 +32,7 @@ export interface VideoParams { tpl: string; bgm: string; mood: string; bg: strin
 
 /** 出视频 tab：渲染参数面板（选文案来源+模板+BGM+情绪+背景+字幕）+ 竖屏成片网格 */
 export default function VideoTab({
-  selected, vp, setVp, copyAssets, videoFromAsset, setVideoFromAsset, running, onMakeVideo,
+  selected, vp, setVp, copyAssets, videoFromAsset, setVideoFromAsset, running, run, onMakeVideo,
   bgmList, videoAssets, slug, onRegenerate,
 }: {
   selected: string
@@ -40,6 +42,7 @@ export default function VideoTab({
   videoFromAsset: number | null
   setVideoFromAsset: (id: number) => void
   running: boolean
+  run: TaskRun
   onMakeVideo: (assetId: number) => void
   bgmList: BgmList | undefined
   videoAssets: Asset[]
@@ -120,8 +123,9 @@ export default function VideoTab({
         <button className="btn w-full py-2 disabled:opacity-50"
           disabled={!selected || running || chosenId == null}
           onClick={() => chosenId != null && onMakeVideo(chosenId)}>
-          {running ? '生成中…' : '生成视频'}
+          {run.running ? '生成中…' : '生成视频'}
         </button>
+        <TaskProgress run={run} />
       </div>
       <div className="grid grid-cols-2 gap-4 2xl:grid-cols-3">
         {videoAssets.length === 0 && <div className="text-faint text-sm">暂无成片，选好文案和参数后点「生成视频」</div>}

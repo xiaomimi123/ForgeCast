@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, subscribeTask, type Asset } from '../../api'
+import { api, type Asset } from '../../api'
+import TaskProgress from '../../components/TaskProgress'
+import { useTaskRun } from '../../useTaskRun'
 
 /** 单张拍摄脚本卡片：markdown 预览 / 编辑保存 / 审核 / 删除（编辑走通用 content 路由） */
 function ScriptCard({ asset }: { asset: Asset }) {
@@ -73,24 +75,20 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
   const [fromCopy, setFromCopy] = useState<number | ''>('')
   const [mode, setMode] = useState('screen')
   const chosen = fromCopy === '' ? copyAssets[0]?.id : fromCopy
-  async function generate() {
-    if (!selected || running) return
-    onRunningChange(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/script`, {
+  const scriptRun = useTaskRun()
+  useEffect(() => { onRunningChange(scriptRun.running) }, [scriptRun.running, onRunningChange])
+
+  function generate() {
+    if (!selected || chosen == null) return
+    scriptRun.run(
+      async () => (await api<{ taskId: string }>(`/api/projects/${selected}/script`, {
         method: 'POST', body: JSON.stringify({ assetId: chosen, mode }),
-      })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          onRunningChange(false)
-          qc.invalidateQueries({ queryKey: ['assets'] })
-          if (e.type === 'error') alert('生成失败：' + e.message)
-        }
-      })
-    } catch (err) {
-      onRunningChange(false)
-      alert('生成失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+      })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['assets'] })
+        if (!ok) alert('生成失败：' + (e?.message ?? '未知错误'))
+      },
+    )
   }
   return (
     <div className="grid grid-cols-[320px_1fr] gap-6">
@@ -117,8 +115,9 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
         <p className="text-xs text-faint">从口播稿扩展成逐镜分镜表（画面/台词/拍摄要点）+ 开拍准备清单，生成后可编辑。</p>
         <button className="btn w-full py-2 disabled:opacity-50"
           disabled={!selected || running || chosen == null} onClick={generate}>
-          {running ? '生成中…' : '生成拍摄脚本'}
+          {scriptRun.running ? '生成中…' : '生成拍摄脚本'}
         </button>
+        <TaskProgress run={scriptRun} />
       </div>
       <div className="space-y-4">
         {scriptAssets.length === 0 && <div className="text-sm text-faint">暂无拍摄脚本。选好文案点左侧生成。</div>}
