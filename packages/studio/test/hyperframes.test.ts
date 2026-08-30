@@ -693,3 +693,34 @@ describe('DECODE_RUNTIME 确定性', () => {
     expect(take5(42).every((x) => x >= 0 && x < 1)).toBe(true)
   })
 })
+
+describe('时间轴元素稳定 id', () => {
+  const cues = [{ start: 5, end: 9, text: '返工率 30%' }]
+  it('insight 的开场与结尾 clip 都带 id', () => {
+    const { html } = buildInsightSections({
+      cues, durationSec: 30, painTitle: '标题', cta: '行动', brandName: '品牌',
+    })
+    const topClips = [...html.matchAll(/<div class="clip"([^>]*)>/g)].map((m) => m[1])
+    expect(topClips.length).toBeGreaterThan(0)
+    // 控制器裁决：顶层 clip 正则也会命中卡片（既有 insCard{gi}_{idx} 是驼峰+下划线，
+    // 不是全小写连字符）——只断言 id 存在且非空，不约束字符集。
+    for (const attrs of topClips) expect(attrs).toMatch(/\sid="[^"]+"/)
+  })
+  it('id 稳定：同样输入两次生成得到完全相同的 id 集合', () => {
+    const mk = () => buildInsightSections({
+      cues, durationSec: 30, painTitle: '标题', cta: '行动', brandName: '品牌',
+    }).html
+    const ids = (h: string) => [...h.matchAll(/id="([^"]+)"/g)].map((m) => m[1])
+    expect(ids(mk())).toEqual(ids(mk()))
+  })
+  it('demo 顶层 clip（hook/pain/price/cta）都带 id', () => {
+    const { html } = buildDemoSections({
+      hookTitle: '钩子', painPoints: ['痛1'], priceAnchor: '¥99', cta: '扣1', brandName: 'demo',
+      shots: [{ rel: '01.png', orientation: 'portrait' as const }], durationSec: 30,
+    })
+    expect(html).toContain('id="demo-hook"')
+    expect(html).toContain('id="demo-pain"')
+    expect(html).toContain('id="demo-price"')
+    expect(html).toContain('id="demo-cta"')
+  })
+})

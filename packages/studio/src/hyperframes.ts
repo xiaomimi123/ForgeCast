@@ -448,11 +448,11 @@ export function buildDemoSections(opts: {
   const nCar = carClips.length
   const carHtml = carClips.map((c, k) => clip(st[2 + k], c.dur, 2, shotBody(c.shot), c.id)).join('\n')
   const html = [
-    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT tw">${escapeHtml(hookTitle)}</div></div>`),
-    clip(st[1], 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`),
+    clip(st[0], 3, 1, `<div class="fill pad center"><div class="hookT tw">${escapeHtml(hookTitle)}</div></div>`, 'demo-hook'),
+    clip(st[1], 3, 1, `<div class="fill pad painWrap">${painHtml}</div>`, 'demo-pain'),
     carHtml,
-    clip(st[2 + nCar], 3, 1, `<div class="fill pad center"><div class="price tw">${escapeHtml(priceAnchor)}</div></div>`),
-    clip(st[2 + nCar + 1], 3, 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(st[2 + nCar], 3, 1, `<div class="fill pad center"><div class="price tw">${escapeHtml(priceAnchor)}</div></div>`, 'demo-price'),
+    clip(st[2 + nCar + 1], 3, 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`, 'demo-cta'),
   ].join('\n')
 
   // 图片弹跳：每张切进来时（吸附后的 start，与画面切同拍）scale 1→1.06→1.0 弹一下。
@@ -675,9 +675,9 @@ export function buildInsightSections(opts: {
   })
 
   const html = [
-    clip(0, introEnd, 1, `<div class="fill pad center"><div class="painT tw">${escapeHtml(painTitle)}</div></div>`),
+    clip(0, introEnd, 1, `<div class="fill pad center"><div class="painT tw">${escapeHtml(painTitle)}</div></div>`, 'insight-intro'),
     cardClips.join('\n'),
-    clip(outroStart, Math.max(0.5, durationSec - outroStart), 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`),
+    clip(outroStart, Math.max(0.5, durationSec - outroStart), 1, `<div class="fill pad center"><div class="cta tw">${escapeHtml(cta)}</div><div class="brand">@${escapeHtml(brandName)}</div></div>`, 'insight-outro'),
   ].join('\n')
 
   return { html, accents: accentLines.join('\n') }
