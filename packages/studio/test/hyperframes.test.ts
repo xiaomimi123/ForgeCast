@@ -396,6 +396,38 @@ describe('buildInsightSections（数据卡片按旁白节奏累加）', () => {
   })
 })
 
+describe('buildInsightSections 轨道分配', () => {
+  const cues = [
+    { start: 10, end: 14, text: '工期要 2-4周，一单多烧人力' },
+    { start: 20, end: 24, text: '返工率高达 30%' },
+    { start: 26, end: 30, text: '每单多花 3 个工作日' },
+  ]
+  it('同组内多张卡片不共用 track，避免 overlapping_clips_same_track', () => {
+    const { html } = buildInsightSections({
+      cues, durationSec: 60, painTitle: '标题', cta: '行动', brandName: '品牌',
+    })
+    // 收集所有卡片 clip 的 [track, start, end]
+    const clips = [...html.matchAll(/id="insCard\d+_\d+"[^>]*data-start="([\d.]+)" data-duration="([\d.]+)" data-track-index="(\d+)"/g)]
+      .map((m) => ({ start: +m[1], end: +m[1] + +m[2], track: +m[3] }))
+    expect(clips.length).toBeGreaterThanOrEqual(2)
+    for (const a of clips) {
+      for (const b of clips) {
+        if (a === b) continue
+        if (a.track !== b.track) continue
+        // 同轨则必须不重叠
+        expect(a.end <= b.start || b.end <= a.start).toBe(true)
+      }
+    }
+  })
+  it('卡片轨道不与开场/结尾（track 1）和音轨（track 0）冲突', () => {
+    const { html } = buildInsightSections({
+      cues, durationSec: 60, painTitle: '标题', cta: '行动', brandName: '品牌',
+    })
+    const tracks = [...html.matchAll(/id="insCard\d+_\d+"[^>]*data-track-index="(\d+)"/g)].map((m) => +m[1])
+    expect(tracks.every((t) => t >= 2)).toBe(true)
+  })
+})
+
 describe('buildFlashSections（开场钩子→中段流动字幕→结尾CTA，按真实时长动态铺满）', () => {
   const base = { painTitle: '大标题', sellingPoint: '卖点一句话', cta: '扣1', brandName: 'demo' }
 

@@ -661,14 +661,15 @@ export function buildInsightSections(opts: {
   const cardClips: string[] = []
   const accentLines: string[] = []
   groups.forEach((group, gi) => {
-    const sceneStart = group[0].start
     const sceneEnd = Math.min(outroStart, groups[gi + 1]?.[0]?.start ?? outroStart)
     group.forEach((card, idx) => {
       const id = `insCard${gi}_${idx}`
       const color = INSIGHT_PALETTE[idx % INSIGHT_PALETTE.length]
       const inner = `<div class="card" style="--card-color:${color};top:${260 + idx * 220}px">`
         + `<div class="stat">${escapeHtml(card.stat)}</div><div class="label">${escapeHtml(card.label)}</div></div>`
-      cardClips.push(clip(card.start, Math.max(0.5, sceneEnd - card.start), 2, inner, id))
+      // 同组卡片是「累加共存」语义，必须各占一条轨道——同轨重叠会被 HyperFrames 判为渲染冲突。
+      // 组内最多 3 张（见上方分组逻辑），故占用 track 2/3/4，不与音轨(0)和开场结尾(1)冲突。
+      cardClips.push(clip(card.start, Math.max(0.5, sceneEnd - card.start), 2 + idx, inner, id))
       accentLines.push(`tl.from("#${id}", { opacity: 0, y: 24, duration: .45 }, ${card.start});`)
     })
   })
