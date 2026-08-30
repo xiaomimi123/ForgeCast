@@ -6,6 +6,7 @@ import { analyzeBeats, autoCutPlan, escapeHtml, fillTemplate, pickBgm, pickMoodB
 import { buildMixFilter, mixAudio } from '../src/hyperframes'
 import { buildChangelogSections, buildDemoSections, buildFlashSections, buildInsightSections, buildStorySections, buildTechBg, fillAccents, gridBeats, injectAudioCaptions, resolveTechBg } from '../src/hyperframes'
 import { HOOK_MOOD, resolveMood, chooseBgmPath } from '../src/hyperframes'
+import { DECODE_RUNTIME } from '../src/hyperframes'
 
 describe('fillTemplate', () => {
   it('替换具名 slot 并转义用户数据', () => {
@@ -638,5 +639,25 @@ describe('planCutTimes 方案→时间', () => {
   })
   it('shotCount<=0 返空', () => {
     expect(planCutTimes(plan, 0)).toEqual([])
+  })
+})
+
+describe('DECODE_RUNTIME 确定性', () => {
+  it('运行时脚本里不含 Math.random（HyperFrames 硬规则：渲染各帧须一致）', () => {
+    expect(DECODE_RUNTIME).not.toContain('Math.random')
+  })
+
+  it('内联的 mulberry32 同种子产出同序列、不同种子产出不同序列', () => {
+    // 把注入进合成产物的那份 mulberry32 原样抠出来跑，确保实现本身正确
+    const src = DECODE_RUNTIME.match(/function mulberry32[\s\S]*?\n\s*\}/)
+    expect(src, '未能从 DECODE_RUNTIME 中提取 mulberry32').toBeTruthy()
+    const mulberry32 = new Function(`${src![0]}; return mulberry32`)() as (seed: number) => () => number
+
+    /** 用给定种子取前 5 个数 */
+    const take5 = (seed: number) => { const r = mulberry32(seed); return [r(), r(), r(), r(), r()] }
+
+    expect(take5(42)).toEqual(take5(42))        // 同种子可复现
+    expect(take5(42)).not.toEqual(take5(43))    // 不同种子有差异
+    expect(take5(42).every((x) => x >= 0 && x < 1)).toBe(true)
   })
 })

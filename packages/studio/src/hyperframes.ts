@@ -212,9 +212,11 @@ export const FX_CSS = `
  */
 export const DECODE_RUNTIME = `(function () {
         var POOL = '日月火水木金土山川云电系统数据端口零一二三ABCDEF0123456789#@%&*<>/|=+アイウエオカキクケコサシスセソ';
-        function rc() { return POOL[(Math.random() * POOL.length) | 0]; }
+        function mulberry32(a) {
+          return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        }
         var K = 5, gstep = 0.045;
-        document.querySelectorAll('.tw').forEach(function (el) {
+        document.querySelectorAll('.tw').forEach(function (el, ei) {
           var clip = el.closest('.clip') || el;
           var start = parseFloat(clip.getAttribute('data-start') || '0');
           var chars = Array.from(el.textContent);
@@ -222,11 +224,12 @@ export const DECODE_RUNTIME = `(function () {
           var step = Math.min(0.055, 1.1 / Math.max(1, chars.length));
           chars.forEach(function (ch, i) {
             var t0 = start + i * step;
+            var rnd = mulberry32((ei + 1) * 73856093 ^ (i + 1) * 19349663);
             var c = document.createElement('span'); c.className = 'twc';
             if (ch === ' ') { c.innerHTML = '&nbsp;'; el.appendChild(c); tl.set(c, { opacity: 0 }, 0); tl.set(c, { opacity: 1 }, t0); return; }
             var fin = document.createElement('span'); fin.className = 'fin'; fin.textContent = ch; c.appendChild(fin);
             var ghosts = [];
-            for (var j = 0; j < K; j++) { var g = document.createElement('span'); g.className = 'gh'; g.textContent = rc(); c.appendChild(g); ghosts.push(g); }
+            for (var j = 0; j < K; j++) { var g = document.createElement('span'); g.className = 'gh'; g.textContent = POOL[(rnd() * POOL.length) | 0]; c.appendChild(g); ghosts.push(g); }
             el.appendChild(c);
             tl.set(c, { opacity: 0 }, 0); tl.set(c, { opacity: 1 }, t0);
             tl.set(fin, { opacity: 0 }, 0);
