@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, subscribeTask, type DemandCollectStatus, type DemandMatch, type DemandSignal } from '../api'
+import { api, type DemandCollectStatus, type DemandMatch, type DemandSignal } from '../api'
+import TaskProgress from '../components/TaskProgress'
+import { useTaskRun } from '../useTaskRun'
 
 const KIND_CHIPS = [
   { value: '', label: '全部' },
@@ -27,26 +29,19 @@ function evidenceLinks(evidence: string | null): string[] {
 
 /** 匹配结果单行：repo 元数据 + 模式徽章 + 建议 + 入候选池（任务队列，per-row busy） */
 function MatchRow({ m }: { m: DemandMatch }) {
-  const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
-  async function addToPool() {
-    if (adding || added) return
-    setAdding(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/candidates/add', {
+  const addRun = useTaskRun()
+  function addToPool() {
+    if (added) return
+    addRun.run(
+      async () => (await api<{ taskId: string }>('/api/candidates/add', {
         method: 'POST', body: JSON.stringify({ url: m.url }),
-      })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          setAdding(false)
-          if (e.type === 'error') alert('入池失败：' + e.message)
-          else setAdded(true)
-        }
-      })
-    } catch (err) {
-      setAdding(false)
-      alert('入池失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+      })).taskId,
+      (ok, e) => {
+        if (!ok) alert('入池失败：' + (e?.message ?? '未知错误'))
+        else setAdded(true)
+      },
+    )
   }
   return (
     <div className="space-y-1 border-t border-hairline pt-2">
@@ -61,9 +56,10 @@ function MatchRow({ m }: { m: DemandMatch }) {
       </div>
       {m.description && <div className="truncate text-xs text-faint">{m.description}</div>}
       <div className="text-sm">{m.biz_plan}</div>
-      <button className="btn-ink px-2 py-0.5 text-xs disabled:opacity-50" disabled={adding || added} onClick={addToPool}>
-        {added ? '已入候选池' : adding ? '入池中…' : '入候选池'}
+      <button className="btn-ink px-2 py-0.5 text-xs disabled:opacity-50" disabled={addRun.running || added} onClick={addToPool}>
+        {added ? '已入候选池' : addRun.running ? '入池中…' : '入候选池'}
       </button>
+      <TaskProgress run={addRun} />
     </div>
   )
 }
@@ -71,40 +67,33 @@ function MatchRow({ m }: { m: DemandMatch }) {
 /** 单张需求信号卡片：状态操作 + 找项目（任务队列+SSE）+ 匹配结果展开区 */
 function SignalCard({ s, onStatus }: { s: DemandSignal; onStatus: (id: number, status: string) => void }) {
   const qc = useQueryClient()
-  const [matching, setMatching] = useState(false)
+  const matchRun = useTaskRun()
   const [open, setOpen] = useState(s.status === 'matched')
   const matches = useQuery({
     queryKey: ['demand-matches', s.id],
     queryFn: () => api<DemandMatch[]>(`/api/demand/signals/${s.id}/matches`),
     enabled: s.status === 'matched',
   })
-  async function runMatch() {
-    if (matching) return
-    setMatching(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>(`/api/demand/signals/${s.id}/match`, { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          setMatching(false)
-          qc.invalidateQueries({ queryKey: ['demand'] })
-          qc.invalidateQueries({ queryKey: ['demand-matches', s.id] })
-          if (e.type === 'error') alert('匹配失败：' + e.message)
-          else setOpen(true)
-        }
-      })
-    } catch (err) {
-      setMatching(false)
-      alert('匹配失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+  function runMatch() {
+    matchRun.run(
+      async () => (await api<{ taskId: string }>(`/api/demand/signals/${s.id}/match`, { method: 'POST' })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['demand'] })
+        qc.invalidateQueries({ queryKey: ['demand-matches', s.id] })
+        if (!ok) alert('匹配失败：' + (e?.message ?? '未知错误'))
+        else setOpen(true)
+      },
+    )
   }
   return (
     <div className={`card-forge space-y-2 p-3 ${s.status === 'dismissed' ? 'opacity-50' : ''}`}>
       <div className="flex items-start justify-between gap-2">
         <div className={`font-bold ${s.status === 'starred' ? 'text-fire' : ''}`}>{s.title}</div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button className="btn-fire px-2 py-0.5 text-xs disabled:opacity-50" disabled={matching} onClick={runMatch}>
-            {matching ? '匹配中…' : s.status === 'matched' ? '重新匹配' : '找项目'}
+          <button className="btn-fire px-2 py-0.5 text-xs disabled:opacity-50" disabled={matchRun.running} onClick={runMatch}>
+            {matchRun.running ? '匹配中…' : s.status === 'matched' ? '重新匹配' : '找项目'}
           </button>
+          <TaskProgress run={matchRun} />
           {s.status !== 'starred' && s.status !== 'matched' && (
             <button className="btn-ink px-2 py-0.5 text-xs" onClick={() => onStatus(s.id, 'starred')}>看好</button>
           )}
@@ -139,7 +128,7 @@ function SignalCard({ s, onStatus }: { s: DemandSignal; onStatus: (id: number, s
 export default function DemandPage() {
   const qc = useQueryClient()
   const [kind, setKind] = useState('')
-  const [extracting, setExtracting] = useState(false)
+  const extractRun = useTaskRun()
   const signals = useQuery({
     queryKey: ['demand', kind],
     queryFn: () => api<DemandSignal[]>(`/api/demand/signals${kind ? `?kind=${kind}` : ''}`),
@@ -155,22 +144,14 @@ export default function DemandPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['demand-collect'] }),
   })
 
-  async function extract() {
-    if (extracting) return
-    setExtracting(true)
-    try {
-      const { taskId } = await api<{ taskId: string }>('/api/demand/extract', { method: 'POST' })
-      subscribeTask(taskId, (e) => {
-        if (e.type === 'done' || e.type === 'error') {
-          setExtracting(false)
-          qc.invalidateQueries({ queryKey: ['demand'] })
-          if (e.type === 'error') alert('提炼失败：' + e.message)
-        }
-      })
-    } catch (err) {
-      setExtracting(false)
-      alert('提炼失败：' + (err instanceof Error ? err.message : String(err)))
-    }
+  function extract() {
+    extractRun.run(
+      async () => (await api<{ taskId: string }>('/api/demand/extract', { method: 'POST' })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['demand'] })
+        if (!ok) alert('提炼失败：' + (e?.message ?? '未知错误'))
+      },
+    )
   }
 
   const pendingCount = (signals.data ?? []).filter((s) => !s.kind).length
@@ -191,9 +172,10 @@ export default function DemandPage() {
                 : '从未采集'}
           </span>
           <button className="btn-ink px-3 py-1 text-sm" onClick={() => requestCollect.mutate()}>请求采集</button>
-          <button className="btn-fire px-3 py-1 text-sm disabled:opacity-50" disabled={extracting || pendingCount === 0} onClick={extract}>
-            {extracting ? '提炼中…' : `提炼分类${pendingCount ? `（${pendingCount} 条待分）` : ''}`}
+          <button className="btn-fire px-3 py-1 text-sm disabled:opacity-50" disabled={extractRun.running || pendingCount === 0} onClick={extract}>
+            {extractRun.running ? '提炼中…' : `提炼分类${pendingCount ? `（${pendingCount} 条待分）` : ''}`}
           </button>
+          <TaskProgress run={extractRun} />
         </div>
       </div>
       {signals.data?.length === 0 && (
