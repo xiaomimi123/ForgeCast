@@ -39,7 +39,10 @@ export function useTaskRun(): TaskRun {
   // 等 subscribeTask 真的建好连接，得知自己已卸载就立刻关掉，不能存进 closeRef（没人会再来关它）
   const unmountedRef = useRef(false)
 
-  useEffect(() => () => { unmountedRef.current = true; closeRef.current?.() }, [])
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => { unmountedRef.current = true; closeRef.current?.() }
+  }, [])
 
   useEffect(() => {
     if (!running) return
