@@ -1,0 +1,11 @@
+/* 六份样式的聚合入口。src/index.ts 逐个副作用导入这几份（Remotion 打包走那条路）；
+   这份聚合文件是给**需要把整包样式塞进一个 CSS 层**的宿主用的——控制台（apps/web）用
+   `@import ... layer(...)` 引它，好让 base.css 里那两条给 1080×1920 渲染页写的全局规则
+   （`* { margin:0;padding:0 }` 与 `html,body{overflow:hidden;font-family}`）落进低优先级层，
+   不再压过 Tailwind 的工具类。顺序与 index.ts 一致。 */
+@import './base.css';
+@import './flash.css';
+@import './story.css';
+@import './demo.css';
+@import './insight.css';
+@import './changelog.css';

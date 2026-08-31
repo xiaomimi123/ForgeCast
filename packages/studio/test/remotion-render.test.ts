@@ -121,6 +121,17 @@ describe('旁白 src 归一化（spec 存 workspace 相对，publicDir 是 hf �
     expect(narrationSrcForPublicDir('assets/narration.wav', dir)).toBe('assets/narration.wav')
   })
 
+  // 这条启发式唯一的判据就是「长的优先」：多个后缀同时存在时必须取**更深**那个。
+  // 反过来（从短后缀开始试）在其余用例下全绿，却会把音轨指到同名的浅层文件——
+  // 又是一条「渲得出来但声音不对且零报错」，故单独钉死。
+  it('多个后缀都存在时取更深的那个（最长后缀优先，不是最短）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nar-'))
+    mkdirSync(join(dir, 'v1', 'assets'), { recursive: true })
+    writeFileSync(join(dir, 'narration.wav'), 'RIFF-浅')
+    writeFileSync(join(dir, 'v1', 'assets', 'narration.wav'), 'RIFF-深')
+    expect(narrationSrcForPublicDir('slug/hf/v1/assets/narration.wav', dir)).toBe('v1/assets/narration.wav')
+  })
+
   it('文件不在 publicDir 下 → null（不挂一条必然 404 的音轨）', () => {
     const dir = mkdtempSync(join(tmpdir(), 'nar-'))
     expect(narrationSrcForPublicDir('slug/hf/v1/assets/narration.wav', dir)).toBeNull()

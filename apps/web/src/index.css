@@ -1,4 +1,17 @@
+/* @layer 声明必须在 @import 之前（CSS 规范允许 @layer 语句先行），用来把层序钉死：
+   forgecast-compositions 在最前 → 合成样式包整体让位给 Tailwind 的 base/components/utilities。
+   不这样做的话，合成包里那两条给渲染页写的全局规则是**无层**的，而 Tailwind v4 的工具类全在
+   @layer utilities 里——无层规则恒胜任何层，`* { margin:0;padding:0 }` 会把全站的 p-3/mb-2
+   等间距工具类整片打掉（实测：预览页的卡片内边距全没了）。 */
+@layer forgecast-compositions;
 @import "tailwindcss";
+@import "@forgecast/compositions/src/styles/all.css" layer(forgecast-compositions);
+
+/* 分层只解决了「工具类被压」这一半：`html, body { overflow: hidden; font-family: "NotoSC" }`
+   在 Tailwind 里没有对应工具类去盖，body 仍会拿到渲染页那套（整页不能滚 + 全站换字体）。
+   这两条在这里显式收回——无层规则胜任何层，与上面的层序不冲突。 */
+html, body { overflow: visible; }
+body { font-family: var(--default-font-family, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif); }
 
 /* 「生产控制台」主题 token（spec 2026-08-28-production-console-shell-design.md §1）
    沿用旧变量名（--color-fire 等），只换取值——全仓已在用的 text-fire/bg-fire-soft/border-danger

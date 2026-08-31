@@ -8,6 +8,8 @@
     "test": "echo 'web: 人工验收，无单测'"
   },
   "dependencies": {
+    "@forgecast/compositions": "workspace:*",
+    "@remotion/player": "4.0.519",
     "@tanstack/react-query": "^5.60.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",

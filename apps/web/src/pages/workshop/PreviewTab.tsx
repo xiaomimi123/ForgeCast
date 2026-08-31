@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { Player } from '@remotion/player'
+// 深导入而非走包入口 `@forgecast/compositions`：入口带六份 CSS 的**副作用导入**，那样进来的样式
+// 是「无层」的，会压过 Tailwind v4 放在 @layer utilities 里的所有工具类（base.css 里
+// `* { margin:0;padding:0 }` 是给 1080×1920 渲染页写的，泄漏进控制台会把全站间距打平）。
+// 样式改由 index.css 用 `@import ... layer(forgecast-compositions)` 引入，见那里的注释。
+import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
+import { FPS } from '@forgecast/compositions/src/time'
+import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
+import { useEffect, useState } from 'react'
 import type { Asset } from '../../api'
 
 /** 从 spec_path（`<slug>/specs/<videoId>.json`）里取出 videoId：即去掉目录前缀和 .json 后缀的文件名。 */
@@ -7,69 +15,61 @@ function videoIdFromSpecPath(specPath: string): string {
   return base.replace(/\.json$/, '')
 }
 
-/** 合成产物页内预览：iframe 加载该项目最近一条视频素材的 hf/<videoId>/index.html，
- *  父页面直接驱动其 window.__timelines 上的 GSAP 时间线。只读预览（播放/暂停/拖动），不做编辑。 */
+/**
+ * 把 spec 里的相对资源路径改成浏览器能取到的绝对 URL。
+ *
+ * 渲染时 `bundle({ publicDir: hfDir })` 让 `assets/<rel>` 这类**裸相对**路径落到 hf 项目目录；
+ * 预览时页面 URL 是 `/projects/<slug>` 之类，同样的相对路径会解析到前端路由下 → 图片/视频全 404，
+ * 而画面照样渲得出来（只是缺图），正是本仓库最忌的「零报错坏结果」。所以这里显式改基准：
+ * - 图层里的图片/视频 src 是 **hf 目录相对** → `/files/<slug>/hf/<videoId>/<src>`
+ * - `audio.narration.src` 是 **workspace 相对**（见 tts.ts）→ `/files/<src>`
+ * 只改 URL 基准，不动其它任何字段（spec 不可变，逐层浅拷贝）。
+ */
+export function rebaseSpecForPreview(spec: VideoSpec, slug: string, videoId: string): VideoSpec {
+  const hfBase = `/files/${slug}/hf/${videoId}/`
+  const abs = (src: string): string => (/^([a-z]+:)?\/\//i.test(src) || src.startsWith('/') ? src : hfBase + src)
+  const narration = spec.audio.narration
+  return {
+    ...spec,
+    layers: spec.layers.map((l) => (
+      (l.content.kind === 'image' || l.content.kind === 'video')
+        ? { ...l, content: { ...l.content, src: abs(l.content.src) } }
+        : l
+    )),
+    audio: {
+      ...spec.audio,
+      narration: narration
+        ? { ...narration, src: narration.src.startsWith('/') ? narration.src : `/files/${narration.src}` }
+        : null,
+    },
+  }
+}
+
+/** 合成产物页内预览：用 @remotion/player 直接播该项目最近一条视频素材的 VideoSpec。
+ *  与成片走的是同一套 React 组件（`SpecComposition`）和同一个 fps，只读预览，不做编辑。 */
 export default function PreviewTab({ slug, assets }: { slug: string; assets: Asset[] }) {
-  const frameRef = useRef<HTMLIFrameElement>(null)
-  // 目录改造后每次生成的产物按 videoId 分子目录，不再有唯一的 hf/index.html。
+  // 目录改造后每次生成的产物按 videoId 分子目录。
   // 取该项目最近一条 type==='video' 且 spec_path 非空的素材，解出 videoId：
   // GET /api/projects/:slug/assets（packages/server/src/app.ts:231）按 id DESC 返回，
   // 即 assets[0] 最新——find() 从头找到的第一条已经是最新，不需要也不能 reverse()。
   const latestVideo = assets.find((a) => a.type === 'video' && a.spec_path)
-  const videoId = latestVideo?.spec_path ? videoIdFromSpecPath(latestVideo.spec_path) : null
-  const [dur, setDur] = useState(0)
-  const [t, setT] = useState(0)
-  const [playing, setPlaying] = useState(false)
+  const specPath = latestVideo?.spec_path ?? null
+  const [spec, setSpec] = useState<VideoSpec | null>(null)
   const [err, setErr] = useState('')
-  // 合成产物的宽高比：iframe 的视口由外层 CSS 盒子决定，不会跟着内部文档的声明尺寸自适应缩放——
-  // 固定 aspect-video(16:9) 会把竖版(9:16，产品默认比例)合成产物按 16:9 视口裁成左上角一小块。
-  // 从 #root 的 data-width/data-height 读真实比例；读不到时默认竖版 9:16（不是 16:9）。
-  const [ratio, setRatio] = useState(9 / 16)
-  const rafRef = useRef<number | null>(null)
 
-  /** 取 iframe 内那条暂停的 GSAP 主时间线；拿不到返回 null（合成产物还没生成/结构不符） */
-  function timeline(): any | null {
-    try {
-      const w = frameRef.current?.contentWindow as any
-      const tls = w?.__timelines
-      if (!tls) return null
-      const first = Object.values(tls)[0] as any
-      return first && typeof first.seek === 'function' ? first : null
-    } catch { return null }
-  }
-
-  function onLoad() {
-    try {
-      const doc = frameRef.current?.contentWindow?.document
-      const root = doc?.getElementById('root')
-      const w = Number(root?.getAttribute('data-width'))
-      const h = Number(root?.getAttribute('data-height'))
-      if (w > 0 && h > 0) setRatio(w / h)
-      else setRatio(9 / 16)
-    } catch { setRatio(9 / 16) }
-    const tl = timeline()
-    if (!tl) { setErr('没读到合成时间线——该项目可能还没生成过视频'); return }
-    setErr(''); tl.pause(); setDur(tl.duration()); setT(0); tl.seek(0)
-  }
-
-  // 播放：用 rAF 推进 seek，不依赖任何第三方播放器
   useEffect(() => {
-    if (!playing) return
-    let last = performance.now()
-    const step = (now: number) => {
-      const tl = timeline()
-      if (!tl) { setPlaying(false); return }
-      const next = tl.time() + (now - last) / 1000
-      last = now
-      if (next >= tl.duration()) { tl.seek(tl.duration()); setT(tl.duration()); setPlaying(false); return }
-      tl.seek(next); setT(next)
-      rafRef.current = requestAnimationFrame(step)
-    }
-    rafRef.current = requestAnimationFrame(step)
-    return () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current) }
-  }, [playing])
-
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+    setSpec(null)
+    // spec_path 为 NULL 的历史素材（改造前生成的）没有素材包：走空状态，不请求也不崩。
+    if (!specPath) { setErr('没读到合成时间线——该项目可能还没生成过视频'); return }
+    setErr('')
+    let alive = true
+    const videoId = videoIdFromSpecPath(specPath)
+    fetch(`/files/${specPath}`)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then((json: VideoSpec) => { if (alive) setSpec(rebaseSpecForPreview(json, slug, videoId)) })
+      .catch((e) => { if (alive) setErr(`素材包读取失败：${e instanceof Error ? e.message : String(e)}`) })
+    return () => { alive = false }
+  }, [specPath, slug])
 
   return (
     <div className="space-y-3">
@@ -77,27 +77,27 @@ export default function PreviewTab({ slug, assets }: { slug: string; assets: Ass
         <div className="mb-2 text-xs text-faint">
           预览的是该项目最近一条生成的视频素材，不是选中的某条历史视频。
         </div>
-        {videoId ? (
-          <iframe
-            ref={frameRef} onLoad={onLoad} title="composition preview"
-            src={`/files/${slug}/hf/${videoId}/index.html`}
-            style={{ aspectRatio: ratio }}
-            className="w-full rounded border border-hairline bg-black"
-          />
+        {spec ? (
+          // 外层按 spec 的宽高比把高度封在 70vh 内：Player 自己保持比例，只给宽度约束。
+          // 竖版 9:16 直接铺满卡片宽度会高出两个屏幕，得往下滚才能看见播放条。
+          <div style={{ maxWidth: `calc(70vh * ${spec.canvas.width} / ${spec.canvas.height})`, margin: '0 auto' }}>
+            <Player
+              component={SpecComposition}
+              inputProps={{ spec }}
+              durationInFrames={Math.max(1, Math.round(spec.durationSec * FPS))}
+              fps={FPS}
+              // 宽高比由 spec.canvas 决定：产品默认竖版 9:16，写死 16:9 会把竖版裁成左上角一小块，
+              // 而「有画面/能播/拖动跟手」在被裁切的产物上照样全过——这个坑踩过。
+              compositionWidth={spec.canvas.width}
+              compositionHeight={spec.canvas.height}
+              style={{ width: '100%' }}
+              controls
+            />
+          </div>
         ) : (
-          <div className="text-sm text-danger">没读到合成时间线——该项目可能还没生成过视频</div>
+          !err && <div className="text-sm text-sub">载入素材包…</div>
         )}
         {err && <div className="mt-2 text-sm text-danger">{err}</div>}
-        <div className="mt-3 flex items-center gap-3">
-          <button className="btn px-3 py-1 text-sm" disabled={!dur}
-            onClick={() => { const tl = timeline(); if (tl) { setPlaying((p) => !p) } }}>
-            {playing ? '暂停' : '播放'}
-          </button>
-          <input type="range" min={0} max={dur || 0} step={0.05} value={t} disabled={!dur}
-            className="flex-1"
-            onChange={(e) => { const v = Number(e.target.value); const tl = timeline(); if (tl) { tl.seek(v); setT(v) } }} />
-          <span className="font-mono text-xs text-sub">{fmt(t)} / {fmt(dur)}</span>
-        </div>
       </div>
     </div>
   )

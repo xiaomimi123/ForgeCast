@@ -1,6 +1,9 @@
 # HyperFrames 视频渲染 · 部署与环境
 
-视频引擎已从 Remotion 全面替换为 [HyperFrames](https://github.com/heygen-com/hyperframes)（HTML→headless Chrome + ffmpeg→MP4，本地渲染，Apache-2.0）。配 Kokoro 离线中文配音。本文记录环境依赖与踩坑。
+> **现状（2026-08-31，子项目② Remotion 渲染后端）**：五个内置模板（flash/story/demo/insight/changelog）的渲染已改走 **Remotion**（合成组件在 `packages/compositions`）。HyperFrames 仍然承担**自定义模板**渲染与 **Kokoro/Melo/Cosy TTS** 链路，本文其余部分（TTS、字体、espeak、ffmpeg）依然适用。
+> **本文「Docker renderer 镜像」一节的验证状态已失效**，见该节开头的醒目提示。
+
+视频引擎最初为 Remotion，中途整体替换为 [HyperFrames](https://github.com/heygen-com/hyperframes)（HTML→headless Chrome + ffmpeg→MP4，本地渲染，Apache-2.0），现在五个内置模板又回到 Remotion。配 Kokoro 离线中文配音。本文记录环境依赖与踩坑。
 
 ## 运行时依赖
 
@@ -75,7 +78,17 @@ export FORGECAST_TTS_MODE=melo FORGECAST_MELO_PYTHON=~/.forgecast-venvs/melo/bin
 
 ## Docker（renderer 镜像）
 
-`Dockerfile.renderer` 已把上述依赖全部打进 `node:22-bookworm-slim`：ffmpeg / fonts-noto-cjk / espeak-ng / Bun / Kokoro venv / Chromium（Debian 包）。espeak 数据路径按架构（arm64/amd64）自动探测软链到 `/opt/espeak-data`。**已真实构建 + 容器内真渲验证过**（2026-08-23，Apple Silicon）。
+> ⚠️ **状态：Remotion 改造后尚未验证，请勿假定这个镜像还能渲出五模板视频。**
+> 下面「已真实构建 + 容器内真渲验证过」指的是 **HyperFrames 时期（2026-08-23）**的镜像。子项目② 把五模板换成 Remotion 之后，**没有重新构建过该镜像、也没有在容器内跑过一次真渲**（本期不要求）。已知的不对齐点：
+>
+> 1. **镜像里预装的 Chromium 与 `HYPERFRAMES_BROWSER_PATH` 对 Remotion 不生效。** Remotion 4.x **不探测系统浏览器**，只认 `renderMedia({ browserExecutable })` 或它自己下载的 chrome-headless-shell；`packages/studio/src/remotion-render.ts` 当前**没有传 `browserExecutable`**，所以容器首次渲染会在**运行时联网下载** chrome-headless-shell——这与本镜像「构建期烤进所有依赖、运行时不联网」的原则相反。
+> 2. **chrome-headless-shell 没有 Linux ARM64 官方构建**（见下方「已知构建/渲染坑」第一条，HyperFrames 时期就是被这条逼着改用 Debian chromium 的）。Apple Silicon 上容器架构是 arm64，这条下载大概率直接失败。
+> 3. **阿里云 CN 机器上这类运行时下载是记录在案会挂住的**（见下方 §「CN 网络」与 Kokoro 语音包那条坑）。
+>
+> 可选出路（**建议，本期未实现、未验证**）：① 在 `Dockerfile.renderer` 构建期跑 `npx remotion browser ensure` 把浏览器烤进镜像层；② 给 `renderMedia` 显式传 `browserExecutable`（指向镜像里已有的 `/usr/bin/chromium`，复用 `HYPERFRAMES_BROWSER_PATH`）。②在 arm64 上更可能成立，因为它不依赖 chrome-headless-shell 的官方构建。
+> 自定义模板走的仍是 HyperFrames 路径，理论上不受影响，但同样没有在改造后复验过。
+
+`Dockerfile.renderer` 已把上述依赖全部打进 `node:22-bookworm-slim`：ffmpeg / fonts-noto-cjk / espeak-ng / Bun / Kokoro venv / Chromium（Debian 包）。espeak 数据路径按架构（arm64/amd64）自动探测软链到 `/opt/espeak-data`。**已真实构建 + 容器内真渲验证过（HyperFrames 时期，2026-08-23，Apple Silicon；Remotion 改造后未复验）**。
 
 ```bash
 # 中文路径需 BUILDKIT=0
