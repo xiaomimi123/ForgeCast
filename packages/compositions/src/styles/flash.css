@@ -1,0 +1,29 @@
+/* 机械搬运自 templates/hf/flash.html 与 flash-landscape.html 的 <style>。
+   数值一律照抄；唯一的改动是把选择器统一挂到 .tpl-flash 作用域下——五套模板 CSS 在
+   Remotion 里是同一个全局包，不作用域化则 html/body 背景色等规则会互相覆盖。
+   横屏差异（原 flash-landscape.html）放在同一文件的 @media (min-aspect-ratio: 1/1) 里。 */
+
+.tpl-flash { background: #0f0f1a; font-family: "NotoSC", sans-serif; }
+.tpl-flash .fill { position: absolute; inset: 0; }
+.tpl-flash .pad { padding: 90px; }
+.tpl-flash .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tpl-flash .painT { font-size: 100px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-flash .sell { font-size: 64px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+.tpl-flash .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+.tpl-flash .brand { font-size: 40px; color: #8888aa; }
+.tpl-flash .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+/* 中段流动字幕：跟着旁白 cue 逐条切换，比底部字幕条更大更醒目，是画面主内容而非辅助字幕 */
+.tpl-flash .flowCap { font-size: 62px; font-weight: 700; color: #fff; line-height: 1.45; max-width: 900px; }
+/* 卖点高亮卡片：中段插一次视觉断点，跟流动字幕区分开来，暖黄描边呼应品牌色 */
+.tpl-flash .highlightCard { padding: 40px 56px; border: 3px solid #ffd54f; border-radius: 24px; background: rgba(255,213,79,.10); }
+
+@media (min-aspect-ratio: 1/1) {
+  .tpl-flash .pad { padding: 70px 160px; }
+  .tpl-flash .painT { font-size: 84px; font-weight: 900; line-height: 1.28; color: #fff; }
+  .tpl-flash .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+  .tpl-flash .cta { font-size: 62px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+  .tpl-flash .brand { font-size: 34px; color: #8888aa; }
+  .tpl-flash .cap { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+  .tpl-flash .flowCap { font-size: 50px; font-weight: 700; color: #fff; line-height: 1.45; max-width: 1300px; }
+  .tpl-flash .highlightCard { padding: 30px 48px; border: 3px solid #ffd54f; border-radius: 22px; background: rgba(255,213,79,.10); }
+}

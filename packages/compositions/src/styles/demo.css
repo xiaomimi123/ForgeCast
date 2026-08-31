@@ -1,0 +1,37 @@
+/* 机械搬运自 templates/hf/demo.html 与 demo-landscape.html 的 <style>。作用域化理由见 flash.css。
+   原模板里 <!--HF_FXCSS--> 插在 .brand 与 .phoneWrap 之间，这部分已进 base.css，此处保留其余顺序。 */
+
+.tpl-demo { background: #0d1117; font-family: "NotoSC", sans-serif; }
+.tpl-demo .fill { position: absolute; inset: 0; }
+.tpl-demo .pad { padding: 90px; }
+.tpl-demo .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tpl-demo .hookT { font-size: 96px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-demo .pain { font-size: 60px; font-weight: 700; color: #fff; margin: 22px 0; opacity: .95; }
+.tpl-demo .painWrap { display: flex; flex-direction: column; justify-content: center; }
+.tpl-demo .price { font-size: 76px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+.tpl-demo .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+.tpl-demo .brand { font-size: 40px; color: #8888aa; }
+/* 手机外框：竖图铺满机身（外框透明，透出科技背景） */
+.tpl-demo .phoneWrap { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; background: transparent; }
+.tpl-demo .phone { width: 620px; height: 1340px; border: 14px solid #21262d; border-radius: 64px; overflow: hidden; position: relative; background: #000; }
+.tpl-demo .phone::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 180px; height: 36px; background: #21262d; border-radius: 0 0 22px 22px; z-index: 2; }
+.tpl-demo .phone img { width: 100%; height: 100%; object-fit: cover; }
+/* 横图：居中缩放 + 同图虚化背景 */
+.tpl-demo .wideWrap { position: absolute; inset: 0; overflow: hidden; }
+.tpl-demo .wideBg { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(40px) brightness(.45); }
+.tpl-demo .wideFg { position: absolute; inset: 0; display: flex; align-items: center; }
+.tpl-demo .wideFg img { width: 100%; }
+.tpl-demo .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+
+@media (min-aspect-ratio: 1/1) {
+  .tpl-demo .pad { padding: 60px 220px; }
+  .tpl-demo .hookT { font-size: 76px; font-weight: 900; line-height: 1.28; color: #fff; }
+  .tpl-demo .pain { font-size: 46px; font-weight: 700; color: #fff; margin: 16px 0; opacity: .95; }
+  .tpl-demo .price { font-size: 58px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+  .tpl-demo .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+  .tpl-demo .brand { font-size: 32px; color: #8888aa; }
+  /* 手机外框：横屏画布高度只有 1080px，机身按比例缩小，居中偏靠一侧留呼吸感 */
+  .tpl-demo .phone { width: 380px; height: 822px; border: 10px solid #21262d; border-radius: 40px; overflow: hidden; position: relative; background: #000; }
+  .tpl-demo .phone::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 110px; height: 22px; background: #21262d; border-radius: 0 0 14px 14px; z-index: 2; }
+  .tpl-demo .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+}

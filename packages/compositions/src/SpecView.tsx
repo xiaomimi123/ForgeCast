@@ -1,4 +1,5 @@
 import React from 'react'
+import { Background, Camera } from './Background'
 import { LayerView } from './LayerView'
 import { twCountOf } from './Text'
 import type { VideoSpec } from './videospec-types'
@@ -13,8 +14,14 @@ import type { VideoSpec } from './videospec-types'
  *
  * 注意：twBase 必须对 spec.layers 里**每一个**文本/字幕图层累加，不论它此刻是否可见——
  * 否则同一图层的鬼影字符会随着其他图层的出现/消失而改变（可见性与序号分配互相污染）。
+ *
+ * `bgVariant` 由调用方（Task 9 的渲染入口）用 studio 侧的 resolveTechBg 解析一次后经 inputProps
+ * 传入——**组件内绝不随机**，否则每帧结果不同、渲染必然闪烁。story 传 undefined（聊天场不加背景）。
+ * 模板专属 CSS 在同一个全局样式包里，靠 .tpl-<template> 作用域隔离（见 styles/*.css）。
  */
-export function SpecView({ spec, timeSec }: { spec: VideoSpec; timeSec: number }): React.ReactElement {
+export function SpecView(
+  { spec, timeSec, bgVariant }: { spec: VideoSpec; timeSec: number; bgVariant?: string },
+): React.ReactElement {
   let twBase = 0
   const nodes: React.ReactElement[] = []
   for (const layer of spec.layers) {
@@ -26,5 +33,10 @@ export function SpecView({ spec, timeSec }: { spec: VideoSpec; timeSec: number }
     if (!visible) continue
     nodes.push(<LayerView key={layer.id} layer={layer} timeSec={timeSec} elemIndexBase={base} />)
   }
-  return <div className="specRoot" style={{ position: 'absolute', inset: 0 }}>{nodes}</div>
+  return (
+    <div className={`specRoot tpl-${spec.template}`} style={{ position: 'absolute', inset: 0 }}>
+      <Background variant={bgVariant} timeSec={timeSec} durationSec={spec.durationSec} />
+      <Camera timeSec={timeSec} durationSec={spec.durationSec}>{nodes}</Camera>
+    </div>
+  )
 }

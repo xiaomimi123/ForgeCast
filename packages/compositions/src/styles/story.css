@@ -1,0 +1,28 @@
+/* 机械搬运自 templates/hf/story.html 与 story-landscape.html 的 <style>。作用域化理由见 flash.css。 */
+
+.tpl-story { background: #e9e4dc; font-family: "NotoSC", sans-serif; }
+.tpl-story .fill { position: absolute; inset: 0; }
+.tpl-story .pad { padding: 90px; }
+.tpl-story .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+/* 聊天场景 */
+.tpl-story .chat { position: absolute; inset: 0; background: #e9e4dc; padding: 120px 70px; display: flex; flex-direction: column; gap: 40px; }
+.tpl-story .bubble { max-width: 720px; font-size: 52px; line-height: 1.4; padding: 34px 44px; border-radius: 32px; }
+.tpl-story .them { align-self: flex-start; background: #fff; color: #1a1a1a; border-top-left-radius: 8px; }
+.tpl-story .me { align-self: flex-end; background: #95ec69; color: #0a2a0a; border-top-right-radius: 8px; }
+/* 卖点 / CTA（深色场） */
+.tpl-story .sellFill { background: linear-gradient(160deg,#1a1a2e,#16213e); }
+.tpl-story .sell { font-size: 76px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+.tpl-story .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+.tpl-story .brand { font-size: 40px; color: #8888aa; }
+.tpl-story .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+
+@media (min-aspect-ratio: 1/1) {
+  .tpl-story .pad { padding: 60px 160px; }
+  /* 聊天场景：横屏高度紧，气泡收窄一些 */
+  .tpl-story .chat { position: absolute; inset: 0; background: #e9e4dc; padding: 60px 220px; display: flex; flex-direction: column; gap: 24px; justify-content: center; }
+  .tpl-story .bubble { max-width: 900px; font-size: 40px; line-height: 1.4; padding: 24px 34px; border-radius: 26px; }
+  .tpl-story .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+  .tpl-story .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+  .tpl-story .brand { font-size: 32px; color: #8888aa; }
+  .tpl-story .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+}

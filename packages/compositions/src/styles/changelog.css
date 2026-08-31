@@ -1,0 +1,22 @@
+/* 机械搬运自 templates/hf/changelog.html 与 changelog-landscape.html 的 <style>。作用域化理由见 flash.css。 */
+
+.tpl-changelog { background: #0d1117; font-family: "NotoSC", sans-serif; }
+.tpl-changelog .fill { position: absolute; inset: 0; }
+.tpl-changelog .pad { padding: 90px; }
+.tpl-changelog .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tpl-changelog .label { display: inline-block; font-size: 34px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 10px 26px; border-radius: 10px; }
+.tpl-changelog .title { font-size: 82px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 44px; }
+.tpl-changelog .sub { font-size: 40px; color: #8b949e; margin-top: 28px; }
+.tpl-changelog .brand { font-size: 96px; font-weight: 900; color: #f0f6fc; text-align: center; }
+.tpl-changelog .tag { font-size: 44px; color: #ffd54f; margin-top: 30px; font-weight: 700; text-align: center; }
+.tpl-changelog .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; }
+
+@media (min-aspect-ratio: 1/1) {
+  .tpl-changelog .pad { padding: 60px 220px; }
+  .tpl-changelog .label { display: inline-block; font-size: 28px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 8px 22px; border-radius: 10px; }
+  .tpl-changelog .title { font-size: 64px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 32px; }
+  .tpl-changelog .sub { font-size: 32px; color: #8b949e; margin-top: 20px; }
+  .tpl-changelog .brand { font-size: 72px; font-weight: 900; color: #f0f6fc; text-align: center; }
+  .tpl-changelog .tag { font-size: 36px; color: #ffd54f; margin-top: 24px; font-weight: 700; text-align: center; }
+  .tpl-changelog .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; }
+}

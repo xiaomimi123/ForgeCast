@@ -1,0 +1,46 @@
+/* 机械搬运自 templates/hf/insight.html 与 insight-landscape.html 的 <style>。作用域化理由见 flash.css。 */
+
+.tpl-insight { background: #0a0a0f; font-family: "NotoSC", sans-serif; }
+.tpl-insight .fill { position: absolute; inset: 0; }
+.tpl-insight .pad { padding: 90px; }
+.tpl-insight .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tpl-insight .painT { font-size: 100px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-insight .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+.tpl-insight .brand { font-size: 40px; color: #8888aa; }
+/* 数据卡片：全部居中、宽度都 ≥55% 画布宽（900/820/760 / 1080 = 83%/76%/70%），
+   只堆在画布下半区（top ≥ 1000，画布高 1920，垂直中线 960 以下）——上半区完全留白，
+   构成"至少一个空象限"且不是缩在一角（左右都占满，只是上边空）。
+   三张卡的堆叠区在 1000~1513px 结束，给 .cap 字幕条（贴 bottom:150px，最多两行时
+   顶部约在 1615px）留出 ≥100px 净空——实测两行字幕会和卡片撞在一起，故预留够余量。
+   fix round 1：默认就是主视觉尺寸/透明度——谁是主视觉由 buildInsightSections 按
+   "此刻谁最新/唯一"算，不再是固定 idx=0；data-idx 只决定三个物理堆叠槽位（避免同屏时
+   互相压住），不再决定字号大小。降级（曾经是主视觉、被新卡接棒）靠原生 scale/opacity
+   在精确时刻切换（Remotion 下即 effects 的 demote/exit）——不能靠 CSS 属性选择器/
+   内联自定义变量做。 */
+/* 注：不用 left:50%+transform:translateX 居中——动画会接管并冲掉这个居中 transform，
+   改用固定 left（画布 1080px 减卡宽再除二），每个 idx 各自居中 */
+.tpl-insight .card { position: absolute; border: 2px solid var(--card-color, #ffd54f); border-radius: 18px; background: rgba(15,15,15,.9); padding: 18px 26px; transform-origin: top center; }
+.tpl-insight .card .stat { font-size: 52px; font-weight: 900; color: var(--card-color, #ffd54f); }
+.tpl-insight .card .label { font-size: 24px; color: #f0f0f4; margin-top: 6px; }
+/* data-idx 只管三个槽位互不重叠的物理位置，字号/配色不再按 idx 分档 */
+.tpl-insight .card[data-idx="0"] { top: 1000px; left: 90px; width: 900px; }
+.tpl-insight .card[data-idx="1"] { top: 1190px; left: 130px; width: 820px; }
+.tpl-insight .card[data-idx="2"] { top: 1380px; left: 160px; width: 760px; }
+.tpl-insight .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+
+@media (min-aspect-ratio: 1/1) {
+  .tpl-insight .pad { padding: 60px 220px; }
+  .tpl-insight .painT { font-size: 68px; font-weight: 900; line-height: 1.28; color: #fff; }
+  .tpl-insight .cta { font-size: 56px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+  .tpl-insight .brand { font-size: 32px; color: #8888aa; }
+  /* 数据卡片：横屏画布 1920x1080，垂直中线 540。卡片全部居中、宽度都 ≥55%
+     （1400/1200/1080 / 1920 = 73%/62.5%/56.25%），只堆在下半区（top ≥ 540）——
+     上半区（TL/TR）完全留白，构成"至少一个空象限"且左右不空（宽度撑满）。 */
+  .tpl-insight .card { position: absolute; border: 2px solid var(--card-color, #ffd54f); border-radius: 16px; background: rgba(15,15,15,.9); padding: 12px 20px; transform-origin: top center; }
+  .tpl-insight .card .stat { font-size: 32px; font-weight: 900; color: var(--card-color, #ffd54f); }
+  .tpl-insight .card .label { font-size: 18px; color: #f0f0f4; margin-top: 4px; }
+  .tpl-insight .card[data-idx="0"] { top: 540px; left: 260px; width: 1400px; }
+  .tpl-insight .card[data-idx="1"] { top: 660px; left: 360px; width: 1200px; }
+  .tpl-insight .card[data-idx="2"] { top: 780px; left: 420px; width: 1080px; }
+  .tpl-insight .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+}
