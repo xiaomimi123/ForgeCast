@@ -10,3 +10,8 @@ export * from './retro'
 export * from './srt'
 export * from './benchmark'
 export * from './custom-template'
+// VideoSpec 中间层类型：renderer-agnostic，供 @forgecast/compositions 做 type-only 再导出
+// （packages/compositions/src/videospec-types.ts）。此前只在 studio 内部各文件间用 import type
+// 互相引用，从未进过包的公共表面——@forgecast/studio 的 `import type { VideoSpec } from '@forgecast/studio'`
+// 在此之前无法解析。
+export type { VideoSpec, Semantic, Section, Layer, LayerContent, LayerStyle, Effect, AudioSpec } from './videospec'
