@@ -16,13 +16,16 @@
 .tpl-story .brand { font-size: 40px; color: #8888aa; }
 .tpl-story .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
 
-@media (min-aspect-ratio: 1/1) {
-  .tpl-story .pad { padding: 60px 160px; }
-  /* 聊天场景：横屏高度紧，气泡收窄一些 */
-  .tpl-story .chat { position: absolute; inset: 0; background: #e9e4dc; padding: 60px 220px; display: flex; flex-direction: column; gap: 24px; justify-content: center; }
-  .tpl-story .bubble { max-width: 900px; font-size: 40px; line-height: 1.4; padding: 24px 34px; border-radius: 26px; }
-  .tpl-story .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
-  .tpl-story .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
-  .tpl-story .brand { font-size: 32px; color: #8888aa; }
-  .tpl-story .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
-}
+/* -- 横屏（原 *-landscape.html）差异。原先用媒体查询 (min-aspect-ratio: 1/1)，已改为
+   .landscape 类：媒体查询在 Remotion Studio 预览下按浏览器窗口求值（预览是同文档内
+   transform:scale 的 div，不是 iframe），宽屏显示器上看竖版 spec 会误命中横版规则；
+   改由 SpecView 按 spec.canvas.width >= height 挂类，预览与 renderMedia 行为一致。
+   规则内容纯机械搬运，一个数值都没动。 -- */
+.tpl-story.landscape .pad { padding: 60px 160px; }
+/* 聊天场景：横屏高度紧，气泡收窄一些 */
+.tpl-story.landscape .chat { position: absolute; inset: 0; background: #e9e4dc; padding: 60px 220px; display: flex; flex-direction: column; gap: 24px; justify-content: center; }
+.tpl-story.landscape .bubble { max-width: 900px; font-size: 40px; line-height: 1.4; padding: 24px 34px; border-radius: 26px; }
+.tpl-story.landscape .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+.tpl-story.landscape .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+.tpl-story.landscape .brand { font-size: 32px; color: #8888aa; }
+.tpl-story.landscape .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }

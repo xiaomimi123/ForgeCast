@@ -5,21 +5,30 @@ const clamp01 = (v: number): number => Math.min(1, Math.max(0, v))
 /** GSAP sine.inOut 对应曲线 */
 const sineInOut = (p: number): number => -(Math.cos(Math.PI * p) - 1) / 2
 
+/** 相机时长相对片长的倍率。**刻意大于 1**：曲线若在片尾收住，最后约 0.9 秒会慢到停死并被判静止帧。 */
+export const CAMERA_OVERRUN = 1.15
+
+/** 相机曲线在时刻 t 的进度（0→1）。抽出来是为了让测试能直接钉住 ×1.15 这个常数：
+ *  片尾 t=durationSec 时进度只到 sineInOut(1/1.15)≈0.9586，而不是 1。 */
+export function cameraProgress(timeSec: number, durationSec: number): number {
+  const span = durationSec * CAMERA_OVERRUN
+  return sineInOut(clamp01(span > 0 ? timeSec / span : 0))
+}
+
 /**
  * 全程相机层。参数原样迁自 hyperframes.ts buildCameraKeyframes：
- * scale 1→1.06、x 0→-14、y 0→-8，时长 durationSec*1.15，缓动 sine.inOut。
- * ×1.15 是刻意的：曲线若在片尾收住，最后约 0.9 秒会慢到停死并被判静止帧。
+ * scale 1→1.06、x 0→-14、y 0→-8，时长 durationSec*CAMERA_OVERRUN，缓动 sine.inOut。
+ *
+ * transform 函数顺序写成 translate→scale，与 GSAP 的输出序（translate→rotate→skew→scale）一致；
+ * 反过来写会让位移被 scale 乘一遍，与原版差出亚像素。
+ * position/inset/transform-origin 由 base.css 的 #cam 规则给（搬自 FX_CSS），这里只出每帧变的 transform。
  */
 export function Camera(
   { timeSec, durationSec, children }: { timeSec: number; durationSec: number; children: React.ReactNode },
 ): React.ReactElement {
-  const span = durationSec * 1.15
-  const p = sineInOut(clamp01(span > 0 ? timeSec / span : 0))
-  const style: React.CSSProperties = {
-    position: 'absolute', inset: 0, transformOrigin: '50% 50%',
-    transform: `scale(${lerp(1, 1.06, p)}) translate(${lerp(0, -14, p)}px, ${lerp(0, -8, p)}px)`,
-  }
-  return <div id="cam" style={style}>{children}</div>
+  const p = cameraProgress(timeSec, durationSec)
+  const transform = `translate(${lerp(0, -14, p)}px, ${lerp(0, -8, p)}px) scale(${lerp(1, 1.06, p)})`
+  return <div id="cam" style={{ transform }}>{children}</div>
 }
 
 /** 暗角层，五个变体都有（迁自 buildTechBg 的 vig 常量）。 */

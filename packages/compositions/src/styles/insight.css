@@ -28,19 +28,22 @@
 .tpl-insight .card[data-idx="2"] { top: 1380px; left: 160px; width: 760px; }
 .tpl-insight .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
 
-@media (min-aspect-ratio: 1/1) {
-  .tpl-insight .pad { padding: 60px 220px; }
-  .tpl-insight .painT { font-size: 68px; font-weight: 900; line-height: 1.28; color: #fff; }
-  .tpl-insight .cta { font-size: 56px; font-weight: 800; color: #fff; margin-bottom: 28px; }
-  .tpl-insight .brand { font-size: 32px; color: #8888aa; }
-  /* 数据卡片：横屏画布 1920x1080，垂直中线 540。卡片全部居中、宽度都 ≥55%
-     （1400/1200/1080 / 1920 = 73%/62.5%/56.25%），只堆在下半区（top ≥ 540）——
-     上半区（TL/TR）完全留白，构成"至少一个空象限"且左右不空（宽度撑满）。 */
-  .tpl-insight .card { position: absolute; border: 2px solid var(--card-color, #ffd54f); border-radius: 16px; background: rgba(15,15,15,.9); padding: 12px 20px; transform-origin: top center; }
-  .tpl-insight .card .stat { font-size: 32px; font-weight: 900; color: var(--card-color, #ffd54f); }
-  .tpl-insight .card .label { font-size: 18px; color: #f0f0f4; margin-top: 4px; }
-  .tpl-insight .card[data-idx="0"] { top: 540px; left: 260px; width: 1400px; }
-  .tpl-insight .card[data-idx="1"] { top: 660px; left: 360px; width: 1200px; }
-  .tpl-insight .card[data-idx="2"] { top: 780px; left: 420px; width: 1080px; }
-  .tpl-insight .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
-}
+/* -- 横屏（原 *-landscape.html）差异。原先用媒体查询 (min-aspect-ratio: 1/1)，已改为
+   .landscape 类：媒体查询在 Remotion Studio 预览下按浏览器窗口求值（预览是同文档内
+   transform:scale 的 div，不是 iframe），宽屏显示器上看竖版 spec 会误命中横版规则；
+   改由 SpecView 按 spec.canvas.width >= height 挂类，预览与 renderMedia 行为一致。
+   规则内容纯机械搬运，一个数值都没动。 -- */
+.tpl-insight.landscape .pad { padding: 60px 220px; }
+.tpl-insight.landscape .painT { font-size: 68px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-insight.landscape .cta { font-size: 56px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+.tpl-insight.landscape .brand { font-size: 32px; color: #8888aa; }
+/* 数据卡片：横屏画布 1920x1080，垂直中线 540。卡片全部居中、宽度都 ≥55%
+   （1400/1200/1080 / 1920 = 73%/62.5%/56.25%），只堆在下半区（top ≥ 540）——
+   上半区（TL/TR）完全留白，构成"至少一个空象限"且左右不空（宽度撑满）。 */
+.tpl-insight.landscape .card { position: absolute; border: 2px solid var(--card-color, #ffd54f); border-radius: 16px; background: rgba(15,15,15,.9); padding: 12px 20px; transform-origin: top center; }
+.tpl-insight.landscape .card .stat { font-size: 32px; font-weight: 900; color: var(--card-color, #ffd54f); }
+.tpl-insight.landscape .card .label { font-size: 18px; color: #f0f0f4; margin-top: 4px; }
+.tpl-insight.landscape .card[data-idx="0"] { top: 540px; left: 260px; width: 1400px; }
+.tpl-insight.landscape .card[data-idx="1"] { top: 660px; left: 360px; width: 1200px; }
+.tpl-insight.landscape .card[data-idx="2"] { top: 780px; left: 420px; width: 1080px; }
+.tpl-insight.landscape .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }

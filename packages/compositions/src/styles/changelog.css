@@ -11,12 +11,15 @@
 .tpl-changelog .tag { font-size: 44px; color: #ffd54f; margin-top: 30px; font-weight: 700; text-align: center; }
 .tpl-changelog .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; }
 
-@media (min-aspect-ratio: 1/1) {
-  .tpl-changelog .pad { padding: 60px 220px; }
-  .tpl-changelog .label { display: inline-block; font-size: 28px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 8px 22px; border-radius: 10px; }
-  .tpl-changelog .title { font-size: 64px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 32px; }
-  .tpl-changelog .sub { font-size: 32px; color: #8b949e; margin-top: 20px; }
-  .tpl-changelog .brand { font-size: 72px; font-weight: 900; color: #f0f6fc; text-align: center; }
-  .tpl-changelog .tag { font-size: 36px; color: #ffd54f; margin-top: 24px; font-weight: 700; text-align: center; }
-  .tpl-changelog .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; }
-}
+/* -- 横屏（原 *-landscape.html）差异。原先用媒体查询 (min-aspect-ratio: 1/1)，已改为
+   .landscape 类：媒体查询在 Remotion Studio 预览下按浏览器窗口求值（预览是同文档内
+   transform:scale 的 div，不是 iframe），宽屏显示器上看竖版 spec 会误命中横版规则；
+   改由 SpecView 按 spec.canvas.width >= height 挂类，预览与 renderMedia 行为一致。
+   规则内容纯机械搬运，一个数值都没动。 -- */
+.tpl-changelog.landscape .pad { padding: 60px 220px; }
+.tpl-changelog.landscape .label { display: inline-block; font-size: 28px; font-weight: 700; letter-spacing: 4px; color: #0d1117; background: #ffd54f; padding: 8px 22px; border-radius: 10px; }
+.tpl-changelog.landscape .title { font-size: 64px; font-weight: 900; line-height: 1.28; color: #f0f6fc; margin-top: 32px; }
+.tpl-changelog.landscape .sub { font-size: 32px; color: #8b949e; margin-top: 20px; }
+.tpl-changelog.landscape .brand { font-size: 72px; font-weight: 900; color: #f0f6fc; text-align: center; }
+.tpl-changelog.landscape .tag { font-size: 36px; color: #ffd54f; margin-top: 24px; font-weight: 700; text-align: center; }
+.tpl-changelog.landscape .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; }

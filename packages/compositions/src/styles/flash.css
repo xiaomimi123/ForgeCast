@@ -1,7 +1,7 @@
 /* 机械搬运自 templates/hf/flash.html 与 flash-landscape.html 的 <style>。
    数值一律照抄；唯一的改动是把选择器统一挂到 .tpl-flash 作用域下——五套模板 CSS 在
    Remotion 里是同一个全局包，不作用域化则 html/body 背景色等规则会互相覆盖。
-   横屏差异（原 flash-landscape.html）放在同一文件的 @media (min-aspect-ratio: 1/1) 里。 */
+   横屏差异（原 flash-landscape.html）放在同一文件的 .landscape 段里（理由见下方注释）。 */
 
 .tpl-flash { background: #0f0f1a; font-family: "NotoSC", sans-serif; }
 .tpl-flash .fill { position: absolute; inset: 0; }
@@ -17,13 +17,16 @@
 /* 卖点高亮卡片：中段插一次视觉断点，跟流动字幕区分开来，暖黄描边呼应品牌色 */
 .tpl-flash .highlightCard { padding: 40px 56px; border: 3px solid #ffd54f; border-radius: 24px; background: rgba(255,213,79,.10); }
 
-@media (min-aspect-ratio: 1/1) {
-  .tpl-flash .pad { padding: 70px 160px; }
-  .tpl-flash .painT { font-size: 84px; font-weight: 900; line-height: 1.28; color: #fff; }
-  .tpl-flash .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
-  .tpl-flash .cta { font-size: 62px; font-weight: 800; color: #fff; margin-bottom: 28px; }
-  .tpl-flash .brand { font-size: 34px; color: #8888aa; }
-  .tpl-flash .cap { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
-  .tpl-flash .flowCap { font-size: 50px; font-weight: 700; color: #fff; line-height: 1.45; max-width: 1300px; }
-  .tpl-flash .highlightCard { padding: 30px 48px; border: 3px solid #ffd54f; border-radius: 22px; background: rgba(255,213,79,.10); }
-}
+/* -- 横屏（原 *-landscape.html）差异。原先用媒体查询 (min-aspect-ratio: 1/1)，已改为
+   .landscape 类：媒体查询在 Remotion Studio 预览下按浏览器窗口求值（预览是同文档内
+   transform:scale 的 div，不是 iframe），宽屏显示器上看竖版 spec 会误命中横版规则；
+   改由 SpecView 按 spec.canvas.width >= height 挂类，预览与 renderMedia 行为一致。
+   规则内容纯机械搬运，一个数值都没动。 -- */
+.tpl-flash.landscape .pad { padding: 70px 160px; }
+.tpl-flash.landscape .painT { font-size: 84px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-flash.landscape .sell { font-size: 54px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+.tpl-flash.landscape .cta { font-size: 62px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+.tpl-flash.landscape .brand { font-size: 34px; color: #8888aa; }
+.tpl-flash.landscape .cap { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
+.tpl-flash.landscape .flowCap { font-size: 50px; font-weight: 700; color: #fff; line-height: 1.45; max-width: 1300px; }
+.tpl-flash.landscape .highlightCard { padding: 30px 48px; border: 3px solid #ffd54f; border-radius: 22px; background: rgba(255,213,79,.10); }

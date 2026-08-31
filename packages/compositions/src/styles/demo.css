@@ -23,15 +23,18 @@
 .tpl-demo .wideFg img { width: 100%; }
 .tpl-demo .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
 
-@media (min-aspect-ratio: 1/1) {
-  .tpl-demo .pad { padding: 60px 220px; }
-  .tpl-demo .hookT { font-size: 76px; font-weight: 900; line-height: 1.28; color: #fff; }
-  .tpl-demo .pain { font-size: 46px; font-weight: 700; color: #fff; margin: 16px 0; opacity: .95; }
-  .tpl-demo .price { font-size: 58px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
-  .tpl-demo .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
-  .tpl-demo .brand { font-size: 32px; color: #8888aa; }
-  /* 手机外框：横屏画布高度只有 1080px，机身按比例缩小，居中偏靠一侧留呼吸感 */
-  .tpl-demo .phone { width: 380px; height: 822px; border: 10px solid #21262d; border-radius: 40px; overflow: hidden; position: relative; background: #000; }
-  .tpl-demo .phone::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 110px; height: 22px; background: #21262d; border-radius: 0 0 14px 14px; z-index: 2; }
-  .tpl-demo .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
-}
+/* -- 横屏（原 *-landscape.html）差异。原先用媒体查询 (min-aspect-ratio: 1/1)，已改为
+   .landscape 类：媒体查询在 Remotion Studio 预览下按浏览器窗口求值（预览是同文档内
+   transform:scale 的 div，不是 iframe），宽屏显示器上看竖版 spec 会误命中横版规则；
+   改由 SpecView 按 spec.canvas.width >= height 挂类，预览与 renderMedia 行为一致。
+   规则内容纯机械搬运，一个数值都没动。 -- */
+.tpl-demo.landscape .pad { padding: 60px 220px; }
+.tpl-demo.landscape .hookT { font-size: 76px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-demo.landscape .pain { font-size: 46px; font-weight: 700; color: #fff; margin: 16px 0; opacity: .95; }
+.tpl-demo.landscape .price { font-size: 58px; font-weight: 800; color: #ffd54f; line-height: 1.4; }
+.tpl-demo.landscape .cta { font-size: 58px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+.tpl-demo.landscape .brand { font-size: 32px; color: #8888aa; }
+/* 手机外框：横屏画布高度只有 1080px，机身按比例缩小，居中偏靠一侧留呼吸感 */
+.tpl-demo.landscape .phone { width: 380px; height: 822px; border: 10px solid #21262d; border-radius: 40px; overflow: hidden; position: relative; background: #000; }
+.tpl-demo.landscape .phone::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 110px; height: 22px; background: #21262d; border-radius: 0 0 14px 14px; z-index: 2; }
+.tpl-demo.landscape .cap { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }
