@@ -193,5 +193,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
   ensureColumn(db, 'candidates', 'source', "TEXT DEFAULT 'scout'")
   // 迁移：换皮四关验收结果（JSON blob，同 candidates.score_detail 先例），供拆解页待验收/已完成区块读取
   ensureColumn(db, 'projects', 'rebrand_exec_result', 'TEXT')
+  // 迁移：视频素材包路径（VideoSpec JSON，workspace 相对路径），供剪辑台定位可编辑的视频
+  ensureColumn(db, 'assets', 'spec_path', 'TEXT')
   return db
 }

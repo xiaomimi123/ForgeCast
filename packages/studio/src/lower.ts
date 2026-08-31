@@ -94,7 +94,7 @@ function captionLayers(cues: Cue[]): Layer[] {
       id: `cap${i}`, kind: 'caption', from: null, overridden: false,
       start: +c.start.toFixed(4), duration: +dur.toFixed(4), track: 9,
       content: { kind: 'caption', text: c.text } as LayerContent,
-      style: {},
+      style: { cssClass: 'cap' },
       effects: [],
     }
   })
@@ -148,8 +148,14 @@ function lowerFlash(sections: Section[], opts: LowerOpts): Layer[] {
 
   layers.push(textLayer('flashHighlight', fromId(sections, 'body'), highlightStart, highlightDur, 3, sellingPoint, 'highlightCard',
     [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.35, params: { scale: 0.9 } }]))
-  layers.push(textLayer('flashCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, cta, 'cta',
-    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]))
+  // flashCta 原版同时渲 cta（.tw）与品牌名（无 tw，hyperframes.ts:589）两行——见 lowerChangelog
+  // 顶部同类注释：brandName 不能靠渲染层读 opts 去补，必须在这里就烧进 layer 文本。
+  // 缺失/空则退化成只有 cta 一行（不凑一行空品牌名）。
+  const flashCtaText = opts.brandName ? `${cta}\n@${opts.brandName}` : cta
+  const flashCtaEffects: Effect[] = opts.brandName
+    ? [DECODE_LINE(0), { type: 'fadeIn', at: 0, duration: 0.4 }]
+    : [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]
+  layers.push(textLayer('flashCta', fromId(sections, 'cta'), midEnd, ctaDur, 1, flashCtaText, 'cta', flashCtaEffects))
   return layers
 }
 
@@ -256,10 +262,16 @@ function lowerStory(sections: Section[], opts: LowerOpts): Layer[] {
 
   // storySell/storyCta 各带一条入场淡入（原样保留数值：y:20/duration:.4，hyperframes.ts:523-524）。
   const entranceFadeIn: Effect = { type: 'fadeIn', at: 0, duration: 0.4 }
+  // storyCta 原版同时渲 cta（.tw）与品牌名（无 tw，hyperframes.ts:527）两行——同 lowerFlash 顶部
+  // 同类注释：brandName 必须在这里烧进 layer 文本，缺失/空则退化成只有 cta 一行。
+  const storyCtaText = opts.brandName ? `${cta}\n@${opts.brandName}` : cta
+  const storyCtaEffects: Effect[] = opts.brandName
+    ? [DECODE_LINE(0), entranceFadeIn]
+    : [...DECODE_ALL, entranceFadeIn]
   return [
     textLayer('storyChat', fromId(sections, 'body-1'), st[0], chatDur, 1, chatText, 'chat', bubbleReveal),
     textLayer('storySell', fromId(sections, 'body'), st[1], 3, 1, sellingPoint, 'sell', [...DECODE_ALL, entranceFadeIn]),
-    textLayer('storyCta', fromId(sections, 'cta'), st[2], 3, 1, cta, 'cta', [...DECODE_ALL, entranceFadeIn]),
+    textLayer('storyCta', fromId(sections, 'cta'), st[2], 3, 1, storyCtaText, 'cta', storyCtaEffects),
   ]
 }
 

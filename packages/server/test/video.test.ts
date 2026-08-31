@@ -26,6 +26,14 @@ beforeEach(() => {
   app = createApp(ctx, queue)
 })
 
+/** hf 目录改按 videoId 分目录（`workspace/<slug>/hf/<videoId>/`），见 @forgecast/studio Task 5——
+ *  测试里一次只生成一条视频，取该目录下唯一的子目录即可。 */
+function hfIndexHtml(workspace: string, slug: string): string {
+  const hfRoot = path.join(workspace, slug, 'hf')
+  const [videoId] = fs.readdirSync(hfRoot)
+  return fs.readFileSync(path.join(hfRoot, videoId, 'index.html'), 'utf8')
+}
+
 async function runTask(taskId: string) {
   for (let i = 0; i < 100; i++) {
     await wait(20)
@@ -50,7 +58,7 @@ describe('video API (stub)', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ratio: 'landscape' }),
     })).json() as any
     await runTask(taskId)
-    const html = fs.readFileSync(path.join(ctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(ctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1920"')
     expect(html).toContain('data-height="1080"')
   })
@@ -59,7 +67,7 @@ describe('video API (stub)', () => {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ratio: 'square' }),
     })).json() as any
     await runTask(taskId)
-    const html = fs.readFileSync(path.join(ctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(ctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1080"')
     expect(html).toContain('data-height="1920"')
   })

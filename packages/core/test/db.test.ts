@@ -82,4 +82,11 @@ describe('openDb', () => {
     expect(JSON.parse(inserted.segments_json).durationSec).toBe(12)
     expect(inserted.created_at).toBeTruthy()
   })
+  it('assets.spec_path 列存在，默认 NULL', () => {
+    const db = openDb(tmpDbPath())
+    db.prepare("INSERT INTO projects (slug) VALUES ('a')").run()
+    db.prepare("INSERT INTO assets (project_id, type, file_path) VALUES (1,'video','a/v.mp4')").run()
+    const row = db.prepare('SELECT spec_path FROM assets WHERE id = 1').get() as any
+    expect(row.spec_path).toBeNull()
+  })
 })

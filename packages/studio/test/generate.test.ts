@@ -7,6 +7,17 @@ import * as hyperframes from '../src/hyperframes'
 import { generateVideo } from '../src/generate'
 import { mockCustomTemplateHtml } from '../src/fixtures/custom-template-fixture'
 
+/** hf 目录改按 videoId 分目录（`workspace/<slug>/hf/<videoId>/`）——测试里大多数场景一次只生成
+ *  一条视频，取该目录下唯一的子目录即可；需要区分多条视频时另行按 assetId 查 spec_path 反推。 */
+function hfDirOf(workspace: string, slug: string): string {
+  const hfRoot = path.join(workspace, slug, 'hf')
+  const [videoId] = fs.readdirSync(hfRoot)
+  return path.join(hfRoot, videoId)
+}
+function hfIndexHtml(workspace: string, slug: string): string {
+  return fs.readFileSync(path.join(hfDirOf(workspace, slug), 'index.html'), 'utf8')
+}
+
 let ctx: CoreCtx
 let root: string
 beforeEach(() => {
@@ -28,14 +39,17 @@ describe('generateVideo (stub)', () => {
     expect(out.filePath).toMatch(/demo\/videos\/flash-.*\.mp4$/)
     const abs = path.join(fctx.config.paths.workspace, out.filePath)
     expect(fs.existsSync(abs)).toBe(true)
-    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(fctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-composition-id="main"')
     expect(html).toContain('快客通') // brandName 填入
     // 强拍标记必须被替换掉（无曲库时替换为空串，不残留）
     expect(html).not.toContain('<!--HF_ACCENTS-->')
     // flash 全套 fx：科技背景注入 + 文字带解码标记 + fx 标记消费干净
     expect(html).toContain('id="techbg"')
-    expect(html).toMatch(/class="[^"]*painT tw[^"]*"/)
+    // 新管线：cssClass（painT）挂在外层 clip 容器上，解码标记（tw）挂在内层可寻址子行上——
+    // 两者不再合并在同一个 class 属性里（见 render-html.ts renderLayer/renderTextContent）。
+    expect(html).toMatch(/class="[^"]*painT[^"]*"/)
+    expect(html).toContain('id="flashHook-l0" class="tw"')
     // 分段按 buildFlashSections 动态铺满：CTA 必须跟着实际 duration 走，不再写死在 8-12s
     expect(html).toContain('id="flashCta"')
     expect(html).not.toMatch(/id="flashCta"[^>]*data-start="8"/)
@@ -49,7 +63,7 @@ describe('generateVideo (stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(fctx, { slug: 'demo', tpl: 'flash', ratio: 'landscape' })
-    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(fctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1920"')
     expect(html).toContain('data-height="1080"')
   })
@@ -57,7 +71,7 @@ describe('generateVideo (stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
-    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(fctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1080"')
     expect(html).toContain('data-height="1920"')
   })
@@ -66,20 +80,23 @@ describe('generateVideo (stub)', () => {
     const sctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const out = await generateVideo(sctx, { slug: 'demo', tpl: 'story', onProgress: () => {} })
     expect(out.filePath).toContain('story-')
-    const html = fs.readFileSync(path.join(sctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
-    expect(html).toContain('class="bubble') // 气泡
+    const html = hfIndexHtml(sctx.config.paths.workspace, 'demo')
+    // 气泡：新管线把多轮对话揉进 storyChat 一个 layer（lower.ts 顶部注释），逐条渲成
+    // "对方：xxx"/"我：xxx" 文本行（id="storyChat-lN"），不再是各自独立的 .bubble 元素。
+    expect(html).toContain('id="storyChat-l0"')
+    expect(html).toMatch(/对方|我：/)
     expect(html).toContain('<audio id="narration"')
     expect(html).not.toContain('<!--HF_SECTIONS-->')
     // story 特判：不加科技背景（保聊天真截图感），只结尾卖点/CTA 解码
     expect(html).not.toContain('id="techbg"')
-    expect(html).toContain('class="sell tw"')
+    expect(html).toContain('id="storySell-l0" class="tw"')
     expect(html).not.toContain('<!--HF_DECODE-->') // 解码运行时已注入
   })
   it('tpl=story + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const sctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(sctx, { slug: 'demo', tpl: 'story', ratio: 'landscape' })
-    const html = fs.readFileSync(path.join(sctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(sctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1920"')
     expect(html).toContain('data-height="1080"')
   })
@@ -98,7 +115,7 @@ describe('generateVideo (stub)', () => {
     const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash', onProgress: () => {} })
     expect(out.filePath).toContain('flash-')
     // hf 项目仍产出，无 BGM 分支不抛错
-    expect(fs.existsSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'))).toBe(true)
+    expect(fs.existsSync(path.join(hfDirOf(fctx.config.paths.workspace, 'demo'), 'index.html'))).toBe(true)
   })
   it('stub 模式即便配了 beatPython 且曲库有曲，也不跑节拍分析（不 spawn librosa）', async () => {
     // 曲库放一首"曲子"、配上 beatPython——开发机常见组合（导出了 FORGECAST_MELO_PYTHON）
@@ -127,7 +144,7 @@ describe('generateVideo (stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bg: 'none' })
-    const html = fs.readFileSync(path.join(fctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(fctx.config.paths.workspace, 'demo')
     expect(html).not.toContain('id="techbg"')
   })
   it('override 参数不 mutate ctx.config.video（单例安全，不污染后续调用）', async () => {
@@ -144,16 +161,16 @@ describe('generateVideo (stub)', () => {
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const r = await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog', captions: true, onProgress: () => {} })
     expect(r.filePath).toContain('changelog-')
-    const hfIndex = path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html')
+    const hfIndex = path.join(hfDirOf(hfCtx.config.paths.workspace, 'demo'), 'index.html')
     expect(fs.existsSync(hfIndex)).toBe(true)
     const html = fs.readFileSync(hfIndex, 'utf8')
     expect(html).toContain('data-composition-id="main"')
     // 音轨与字幕必须真注入产物（防 fillTemplate 把注释标记以外的 {{}} 吃掉的回归）
     expect(html).toContain('<audio id="narration"')
-    expect(html).toContain('class="cap clip"') // 字幕默认烧进片（不做逐字解码，保持整齐）
+    expect(html).toContain('class="clip cap"') // 字幕默认烧进片（不做逐字解码，保持整齐）
     // changelog 全套 fx：科技背景 + 标题解码 + fx 标记消费干净
     expect(html).toContain('id="techbg"')
-    expect(html).toContain('class="title tw"')
+    expect(html).toContain('id="clTitle-l1" class="tw"') // title 行（clTitle 三行拼一层，见 lower.ts DECODE_LINE）
     expect(html).not.toContain('<!--HF_BG-->'); expect(html).not.toContain('<!--HF_DECODE-->')
     // 注释标记应已被替换掉，不残留
     expect(html).not.toContain('<!--HF_AUDIO-->')
@@ -164,7 +181,7 @@ describe('generateVideo (stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog' })
-    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(hfCtx.config.paths.workspace, 'demo')
     expect(html).toContain('id="clCta"')
     expect(html).not.toMatch(/id="clCta"[^>]*data-start="6"/)
   })
@@ -172,7 +189,7 @@ describe('generateVideo (stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(hfCtx, { slug: 'demo', tpl: 'changelog', ratio: 'landscape' })
-    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(hfCtx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1920"')
     expect(html).toContain('data-height="1080"')
   })
@@ -182,13 +199,13 @@ describe('generateVideo (stub)', () => {
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const r = await generateVideo(hfCtx, { slug: 'demo', tpl: 'insight', captions: true, onProgress: () => {} })
     expect(r.filePath).toContain('insight-')
-    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(hfCtx.config.paths.workspace, 'demo')
     expect(html).toContain('data-composition-id="main"')
     expect(html).toContain('<audio id="narration"')
-    expect(html).toContain('class="cap clip"')
-    expect(html).toContain('class="painT tw"') // 开场大字标题
-    expect(html).toContain('class="cta tw"') // 结尾 CTA
-    expect(html).not.toContain('class="card"') // 无数字句 → 零命中兜底，不留空卡片区
+    expect(html).toContain('class="clip cap"')
+    expect(html).toContain('id="insight-intro-l0" class="tw"') // 开场大字标题
+    expect(html).toContain('id="insight-outro-l0" class="tw"') // 结尾 CTA
+    expect(html).not.toContain('class="clip card"') // 无数字句 → 零命中兜底，不留空卡片区
     expect(html).not.toContain('<!--HF_SECTIONS-->')
     expect(html).not.toContain('<!--HF_ACCENTS-->')
   })
@@ -196,7 +213,7 @@ describe('generateVideo (stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(hfCtx, { slug: 'demo', tpl: 'insight', ratio: 'landscape' })
-    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(hfCtx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1920"')
     expect(html).toContain('data-height="1080"')
   })
@@ -212,8 +229,8 @@ describe('generateVideo (stub)', () => {
     const hfCtx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const r = await generateVideo(hfCtx, { slug: 'stats', tpl: 'insight', captions: true, onProgress: () => {} })
     expect(r.filePath).toContain('insight-')
-    const html = fs.readFileSync(path.join(hfCtx.config.paths.workspace, 'stats', 'hf', 'index.html'), 'utf8')
-    expect(html).toContain('class="card"')
+    const html = hfIndexHtml(hfCtx.config.paths.workspace, 'stats')
+    expect(html).toContain('class="clip card"')
     expect(html).toMatch(/50%|80%/)
   })
 })
@@ -240,7 +257,7 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const r = await generateVideo(dctx, { slug: 'demo', tpl: 'demo', onProgress: () => {} })
     expect(r.filePath).toContain('demo-')
-    const html = fs.readFileSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(dctx.config.paths.workspace, 'demo')
     expect(html).toContain('class="phone"')       // 竖图手机外框
     expect(html).toContain('class="wideBg"')       // 横图虚化背景
     expect(html).toContain('<audio id="narration"')
@@ -250,7 +267,7 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     expect(html).not.toContain('<!--HF_BG-->')       // 背景标记消费干净
     expect(html).not.toContain('<!--HF_BGANIM-->')
     // 截图拷进 assets
-    expect(fs.existsSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'assets', '01.png'))).toBe(true)
+    expect(fs.existsSync(path.join(hfDirOf(dctx.config.paths.workspace, 'demo'), 'assets', '01.png'))).toBe(true)
   })
   it('tpl=demo + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
     const shotsDir = path.join(root, 'workspace/demo/shots')
@@ -259,7 +276,7 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await generateVideo(dctx, { slug: 'demo', tpl: 'demo', ratio: 'landscape' })
-    const html = fs.readFileSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(dctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1920"')
     expect(html).toContain('data-height="1080"')
   })
@@ -279,10 +296,10 @@ describe('generateVideo demo (HyperFrames stub)', () => {
     const dctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     const r = await generateVideo(dctx, { slug: 'demo', tpl: 'demo', onProgress: () => {} })
     expect(r.filePath).toContain('demo-')
-    const html = fs.readFileSync(path.join(dctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(dctx.config.paths.workspace, 'demo')
     // 方案 cuts：16 拍 ×0.5 = 8s、20 拍 = 10s
-    expect(html).toMatch(/id="car0" data-start="8/)
-    expect(html).toMatch(/id="car1" data-start="10/)
+    expect(html).toMatch(/id="car0"[^>]*data-start="8/)
+    expect(html).toMatch(/id="car1"[^>]*data-start="10/)
   })
   it('cutplan.json 曲子不存在 → 降级自动（不崩）', async () => {
     const shotsDir = path.join(root, 'workspace/demo/shots'); fs.mkdirSync(shotsDir, { recursive: true })
@@ -312,7 +329,7 @@ describe('generateVideo 自定义模板（stub）', () => {
 
     const out = await generateVideo(cctx, { slug: 'demo', tpl: `custom-${id}` })
     expect(out.filePath).toMatch(new RegExp(`demo/videos/custom-${id}-.*\\.mp4$`))
-    const html = fs.readFileSync(path.join(cctx.config.paths.workspace, 'demo', 'hf', 'index.html'), 'utf8')
+    const html = hfIndexHtml(cctx.config.paths.workspace, 'demo')
     expect(html).toContain('data-width="1080"')
     expect(html).not.toMatch(/\{\{seg\d_(start|dur|text)\}\}/)
     expect(html).toContain('data-start="0"')
@@ -324,5 +341,46 @@ describe('generateVideo 自定义模板（stub）', () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await expect(generateVideo(cctx, { slug: 'demo', tpl: 'custom-9999' })).rejects.toThrow('自定义模板不存在')
+  })
+})
+
+describe('generateVideo VideoSpec 落盘 + hf 分目录（Task 5 管线接入）', () => {
+  it('生成后落 VideoSpec 文件，且 assets.spec_path 指向它', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const row: any = ctx.db.prepare('SELECT spec_path FROM assets WHERE id = ?').get(r.assetId)
+    expect(row.spec_path).toBeTruthy()
+    const abs = path.join(fctx.config.paths.workspace, row.spec_path)
+    expect(fs.existsSync(abs)).toBe(true)
+    const spec = JSON.parse(fs.readFileSync(abs, 'utf8'))
+    expect(spec.version).toBe(1)
+    expect(spec.layers.length).toBeGreaterThan(0)
+    expect(spec.canvas).toEqual({ width: 1080, height: 1920 })
+  })
+
+  it('hf 目录按 videoId 分开，不再互相覆盖', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const a = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const b = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const specOf = (id: number) => (ctx.db.prepare('SELECT spec_path FROM assets WHERE id=?').get(id) as any).spec_path
+    expect(specOf(a.assetId)).not.toBe(specOf(b.assetId))
+    // 两条视频的 hf 目录都还在
+    const dirs = fs.readdirSync(path.join(fctx.config.paths.workspace, 'demo', 'hf'))
+    expect(dirs.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('TTS 降级时 warnings 落库（回归：原先硬编码 "[]"，信号只进内存日志）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    // 触发方式：把 tts.mode 设成 live 但不给 key —— synthesizeVoice 的 degrade() 分支会命中，
+    // 返回 degraded 原因并写静音占位 wav。
+    const r = await generateVideo({ ...fctx, config: { ...fctx.config, tts: { ...fctx.config.tts, mode: 'live', apiKey: '' } } } as any, { slug: 'demo', tpl: 'flash' })
+    const row: any = ctx.db.prepare('SELECT warnings FROM assets WHERE id = ?').get(r.assetId)
+    const w = JSON.parse(row.warnings)
+    expect(Array.isArray(w)).toBe(true)
+    expect(w.length).toBeGreaterThan(0)
+    expect(w.join(' ')).toMatch(/TTS|降级/)
   })
 })
