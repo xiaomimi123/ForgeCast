@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
 import { charStateAt } from '../src/decode'
 import { secToFrames, FPS } from '../src/time'
 import type { Layer, VideoSpec } from '../src/videospec-types'
+
+// video 图层 Task 8 起真渲染 Remotion <Video>，其内部依赖 useVideoConfig()，
+// 该 hook 只在 <Composition> 树内可用。这里跟 video-layer.test.tsx 一样 mock
+// 'remotion'，只为让「不抛错」这条契约测试脱离渲染上下文也能跑；
+// src/attribute 级别的断言（src 编码、muted 透传、zIndex 叠层）见 video-layer.test.tsx。
+vi.mock('remotion', () => ({
+  Video: (p: Record<string, unknown>) => <video data-testid="rv" src={p.src as string} muted={p.muted as boolean} />,
+  useCurrentFrame: () => 0,
+  useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
+}))
 
 function layer(over: Partial<Layer>): Layer {
   return {
@@ -42,7 +52,7 @@ describe('SpecView 可见性', () => {
     expect(el.className).toContain('painT')
   })
 
-  it('video 图层本期不渲染内容（④ 预留）→ Task 8 再开', () => {
+  it('video 图层可渲染，不抛错（Task 8 已开）', () => {
     const s = spec([layer({ id: 'lv', kind: 'video', content: { kind: 'video', src: 'a.mp4', muted: true } })])
     expect(() => render(<SpecView spec={s} timeSec={0} />)).not.toThrow()
   })

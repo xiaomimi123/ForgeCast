@@ -1,6 +1,7 @@
 import React from 'react'
+import { Video } from 'remotion'
 import { styleAt } from './effects'
-import { ImageContent } from './Image'
+import { encodePathForUrl, ImageContent } from './Image'
 import { TextContent } from './Text'
 import type { Layer, LayerStyle } from './videospec-types'
 
@@ -45,7 +46,7 @@ export function LayerView(
       inner = <div className={`shape shape-${layer.content.shape}`} />
       break
     case 'video':
-      inner = null   // Task 8 开启
+      inner = <Video src={encodePathForUrl(layer.content.src)} muted={layer.content.muted} />
       break
   }
   return <div id={layer.id} className={cls} style={style}>{inner}</div>
