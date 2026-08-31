@@ -5,7 +5,7 @@ import { SpecView } from './SpecView'
 import type { VideoSpec } from './videospec-types'
 
 /** 薄包装：唯一职责是把 Remotion 的帧换算成秒 + 挂旁白音轨。视觉逻辑全在 SpecView 里（便于纯测）。
- *  bgVariant 原样透传——它是 inputProps，由调用方解析好（组件内不随机，见 SpecView 注释）。
+ *  bgVariant 原样透传给 SpecView，由那里与 `spec.bgVariant` 收口成一个取值点（组件内不随机）。
  *
  *  旁白（设计稿 §5「旁白：<Audio> 进合成」）：src 必须是 **publicDir 相对**路径——
  *  spec 里存的是 workspace 相对（见 tts.ts），由 studio 侧 remotion-render.ts 在构造 inputProps

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { copyFixtures, createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as hyperframes from '../src/hyperframes'
+import * as remotionRender from '../src/remotion-render'
 import { generateVideo } from '../src/generate'
 import { mockCustomTemplateHtml } from '../src/fixtures/custom-template-fixture'
 
@@ -357,6 +358,41 @@ describe('generateVideo VideoSpec 落盘 + hf 分目录（Task 5 管线接入）
     expect(spec.version).toBe(1)
     expect(spec.layers.length).toBeGreaterThan(0)
     expect(spec.canvas).toEqual({ width: 1080, height: 1920 })
+  })
+
+  // Task 10 修复轮 1：bgVariant 必须写进落盘的 spec，否则 Web 预览拿不到它 → 预览无科技背景、
+  // 成片有，而实时预览正是子项目②的交付目标。且必须在**渲染之前**写好：`--bg=random` 时
+  // resolveBgVariant 只解析一次，晚写就可能「传给渲染的值」≠「写进磁盘的值」。
+  it('落盘的 spec 带 bgVariant，且与传给渲染的 inputProps 是同一个值', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const specOf = async (opts: { tpl: string; bg?: string }) => {
+      const r = await generateVideo(fctx, { slug: 'demo', ...opts } as any)
+      const row: any = ctx.db.prepare('SELECT spec_path FROM assets WHERE id = ?').get(r.assetId)
+      return JSON.parse(fs.readFileSync(path.join(fctx.config.paths.workspace, row.spec_path), 'utf8'))
+    }
+    expect((await specOf({ tpl: 'flash', bg: 'grid' })).bgVariant).toBe('grid')
+    // story 不加科技背景 → 字段缺席（JSON 里 undefined 不落键），预览侧同样不画背景
+    expect((await specOf({ tpl: 'story', bg: 'grid' })).bgVariant).toBeUndefined()
+    // --bg=random：随机只发生一次，落盘的值必然是五个合法变体之一（不是 undefined、不是 'random'）
+    expect(['grid', 'aurora', 'matrix', 'synth', 'mesh'])
+      .toContain((await specOf({ tpl: 'flash', bg: 'random' })).bgVariant)
+  })
+
+  it('spec.bgVariant 在渲染之前就写好（renderRemotion 拿到的 spec 已带该字段）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    // 落盘发生在渲染之后（renderAndRegister），所以「落盘时有」证明不了「渲染时有」——
+    // 这里直接在 renderRemotion 的入口把 spec 拍下来。
+    const seen: Array<string | undefined> = []
+    const spy = vi.spyOn(remotionRender, 'renderRemotion').mockImplementation(async (spec: any, outAbs: string) => {
+      seen.push(spec.bgVariant)
+      fs.mkdirSync(path.dirname(outAbs), { recursive: true }); fs.writeFileSync(outAbs, 'stub')
+    })
+    try {
+      await generateVideo(fctx, { slug: 'demo', tpl: 'flash', bg: 'grid' } as any)
+    } finally { spy.mockRestore() }
+    expect(seen).toEqual(['grid'])
   })
 
   it('hf 目录按 videoId 分开，不再互相覆盖', async () => {

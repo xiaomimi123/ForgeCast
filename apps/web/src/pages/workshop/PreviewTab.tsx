@@ -26,23 +26,37 @@ function videoIdFromSpecPath(specPath: string): string {
  * 只改 URL 基准，不动其它任何字段（spec 不可变，逐层浅拷贝）。
  */
 export function rebaseSpecForPreview(spec: VideoSpec, slug: string, videoId: string): VideoSpec {
-  const hfBase = `/files/${slug}/hf/${videoId}/`
-  const abs = (src: string): string => (/^([a-z]+:)?\/\//i.test(src) || src.startsWith('/') ? src : hfBase + src)
+  /** 已经是协议绝对（`https://…`）、协议相对（`//…`）或根相对（`/…`）的 URL：原样保留，别再拼基准。 */
+  const isAbsolute = (src: string): boolean => /^([a-z]+:)?\/\//i.test(src) || src.startsWith('/')
   const narration = spec.audio.narration
+  // 旁白的基准是 workspace 根（`/files/`），图层是 hf 目录——基准不同，但「已经是绝对 URL / 根
+  // 相对路径就别再拼」这条判断必须一样：只判 `startsWith('/')` 会把 `https://…` 的旁白拼成
+  // `/files/https://…`（当前 tts.ts 只产相对路径故不触发，但两条分支不该各判各的）。
+  const absFrom = (base: string) => (src: string): string => (isAbsolute(src) ? src : base + src)
+  const absLayer = absFrom(`/files/${slug}/hf/${videoId}/`)
+  const absNarration = absFrom('/files/')
   return {
     ...spec,
     layers: spec.layers.map((l) => (
       (l.content.kind === 'image' || l.content.kind === 'video')
-        ? { ...l, content: { ...l.content, src: abs(l.content.src) } }
+        ? { ...l, content: { ...l.content, src: absLayer(l.content.src) } }
         : l
     )),
     audio: {
       ...spec.audio,
-      narration: narration
-        ? { ...narration, src: narration.src.startsWith('/') ? narration.src : `/files/${narration.src}` }
-        : null,
+      narration: narration ? { ...narration, src: absNarration(narration.src) } : null,
     },
   }
+}
+
+/**
+ * 这份 spec 能不能用 Player 播？
+ * 自定义模板（`custom-<id>`，见 generate.ts renderCustomTemplate）落的是 `layers: []` 的占位 spec，
+ * 只为满足 spec_path 落库契约；它的画面在 hf 目录的 index.html 里，不在图层模型里。
+ * 不拦的话：spec_path 非空 → 正常加载、时长正确、能拖动，但**画面全程空白**且零报错。
+ */
+export function isUnsupported(spec: VideoSpec): boolean {
+  return spec.template.startsWith('custom-') || spec.layers.length === 0
 }
 
 /** 合成产物页内预览：用 @remotion/player 直接播该项目最近一条视频素材的 VideoSpec。
@@ -77,7 +91,7 @@ export default function PreviewTab({ slug, assets }: { slug: string; assets: Ass
         <div className="mb-2 text-xs text-faint">
           预览的是该项目最近一条生成的视频素材，不是选中的某条历史视频。
         </div>
-        {spec ? (
+        {spec && !isUnsupported(spec) ? (
           // 外层按 spec 的宽高比把高度封在 70vh 内：Player 自己保持比例，只给宽度约束。
           // 竖版 9:16 直接铺满卡片宽度会高出两个屏幕，得往下滚才能看见播放条。
           <div style={{ maxWidth: `calc(70vh * ${spec.canvas.width} / ${spec.canvas.height})`, margin: '0 auto' }}>
@@ -95,7 +109,13 @@ export default function PreviewTab({ slug, assets }: { slug: string; assets: Ass
             />
           </div>
         ) : (
-          !err && <div className="text-sm text-sub">载入素材包…</div>
+          !err && !spec && <div className="text-sm text-sub">载入素材包…</div>
+        )}
+        {spec && isUnsupported(spec) && (
+          <div className="text-sm text-sub">
+            自定义模板暂不支持实时预览——它的画面由 LLM 产出的模板 HTML 直接渲染，
+            没有走图层模型（spec 的 layers 是空的），播放器只会得到一片空白。请下载成片查看。
+          </div>
         )}
         {err && <div className="mt-2 text-sm text-danger">{err}</div>}
       </div>

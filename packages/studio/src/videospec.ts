@@ -17,6 +17,13 @@ export interface VideoSpec {
   layers: Layer[]                 // 图层层：渲染真相，剪辑台改这层
   audio: AudioSpec
   warnings: string[]              // 生成期的降级/异常，见 §6.3
+
+  /** 科技背景变体（`resolveBgVariant` 解析一次的结果；story 与 `--bg=none` 为 undefined）。
+   *  可选字段：Task 10 之前它只走 inputProps，Web 预览拿不到 → 预览无背景、成片有背景。
+   *  实时预览是子项目②的交付目标，故落进 spec；渲染时必须在 renderRemotion **之前**写好，
+   *  否则 `--bg=random` 下「传给渲染的值」与「写进磁盘的值」会是两个随机结果。
+   *  ① 的 HTML 路径不读它（背景由 injectTechFx 在 HTML 侧注入），加字段不影响等价性。 */
+  bgVariant?: string
 }
 
 /** 语义层：模板无关的「这条视频在讲什么」 */

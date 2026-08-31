@@ -206,6 +206,9 @@ async function renderHfPipeline(
   // 背景变体**只解析一次**，HTML 与 Remotion 两处共用：video.bg='random' 时各自随机会让
   // 写进 hf 目录的 index.html 与实际渲出的背景对不上（Task 10 拿这份 HTML 做预览就会预览≠成片）。
   const bgVariant = resolveBgVariant(tpl, video.bg)
+  // 必须在 renderAndRegister（内部先渲染、后落盘 spec）**之前**盖上：随机变体只解析一次，
+  // 落盘的 spec 与传给渲染的 inputProps 才是同一个值，Web 预览的背景才等于成片。
+  spec.bgVariant = bgVariant
   // story 特判：不加科技背景（保聊天真截图感）；其余四个模板都套 techFx
   html = injectTechFx(html, { bg: bgVariant, durationSec: duration })
   // 字幕已由 lower() 按 audio.captionsEnabled 生成进 spec.layers（随 rendered.html 一并注入），

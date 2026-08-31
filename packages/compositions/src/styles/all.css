@@ -1,8 +1,11 @@
-/* 六份样式的聚合入口。src/index.ts 逐个副作用导入这几份（Remotion 打包走那条路）；
-   这份聚合文件是给**需要把整包样式塞进一个 CSS 层**的宿主用的——控制台（apps/web）用
-   `@import ... layer(...)` 引它，好让 base.css 里那两条给 1080×1920 渲染页写的全局规则
-   （`* { margin:0;padding:0 }` 与 `html,body{overflow:hidden;font-family}`）落进低优先级层，
-   不再压过 Tailwind 的工具类。顺序与 index.ts 一致。 */
+/* 六份样式的**唯一**清单。两个宿主都从这里进：
+   - Remotion 打包：src/index.ts 只 `import './styles/all.css'`（webpack 的 css-loader 会把
+     下面这几条 @import 内联进 bundle）；
+   - 控制台（apps/web）：`@import '.../all.css' layer(forgecast-compositions)`，好让 base.css 里
+     那两条给 1080×1920 渲染页写的全局规则（`* { margin:0;padding:0 }` 与
+     `html,body{overflow:hidden;font-family}`）落进一个 CSS 层，不再压过 Tailwind 的工具类。
+   清单只此一份——在 index.ts 里再抄一遍，将来加第七份样式就会「成片有、预览没有」。
+   顺序：base 先（共享 FX），五份模板专属在后。 */
 @import './base.css';
 @import './flash.css';
 @import './story.css';

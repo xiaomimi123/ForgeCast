@@ -137,6 +137,30 @@ describe('SpecView 的模板作用域与横竖版', () => {
     expect(rootOf(spec({ canvas: { width: 1920, height: 1080 } })).classList.contains('landscape')).toBe(true)
   })
 
+  // Task 10 修复轮 1：bgVariant 从「只走 inputProps」改成「同时写进 spec」——Web 预览只拿得到
+  // spec（fetch 下来的 JSON），拿不到渲染侧的 inputProps。取值收口在 SpecView 一行里，
+  // 两处各判各的就会让预览与成片再次分叉。
+  describe('bgVariant 的单一取值点：spec.bgVariant ?? props.bgVariant', () => {
+    it('只给 spec.bgVariant（Web 预览的情形）也画出背景，且变体正确', () => {
+      const root = rootOf(spec({ bgVariant: 'aurora' }))
+      expect((root.querySelector('#techbg') as HTMLElement).className).toBe('bg-aurora')
+    })
+
+    it('只给 props.bgVariant（旧 spec 无该字段的回落）仍然画出背景', () => {
+      const root = rootOf(spec(), 'matrix')
+      expect((root.querySelector('#techbg') as HTMLElement).className).toBe('bg-matrix')
+    })
+
+    it('两者都给时 spec 优先（落盘的那份才是成片真相）', () => {
+      const root = rootOf(spec({ bgVariant: 'synth' }), 'grid')
+      expect((root.querySelector('#techbg') as HTMLElement).className).toBe('bg-synth')
+    })
+
+    it('两者都没有时不画背景（story）', () => {
+      expect(rootOf(spec({ template: 'story' })).querySelector('#techbg')).toBeNull()
+    })
+  })
+
   it('#techbg 在 #cam 内部（源模板的 <!--HF_BG--> 就在 <div id="cam"> 里，背景要跟着相机一起推）', () => {
     const root = rootOf(spec(), 'grid')
     const cam = root.querySelector('#cam') as HTMLElement

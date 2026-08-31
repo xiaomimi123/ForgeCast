@@ -1,9 +1,15 @@
-/* @layer 声明必须在 @import 之前（CSS 规范允许 @layer 语句先行），用来把层序钉死：
-   forgecast-compositions 在最前 → 合成样式包整体让位给 Tailwind 的 base/components/utilities。
-   不这样做的话，合成包里那两条给渲染页写的全局规则是**无层**的，而 Tailwind v4 的工具类全在
-   @layer utilities 里——无层规则恒胜任何层，`* { margin:0;padding:0 }` 会把全站的 p-3/mb-2
-   等间距工具类整片打掉（实测：预览页的卡片内边距全没了）。 */
-@layer forgecast-compositions;
+/* @layer 声明必须在 @import 之前（CSS 规范允许 @layer 语句先行），用来把层序钉死。
+   两件事要同时成立，所以合成层被夹在 base 与 components 之间：
+   1) 合成包里那两条给 1080×1920 渲染页写的全局规则是**无层**的，`* { margin:0;padding:0 }`
+      无层恒胜任何层，会把 Tailwind v4 放在 @layer utilities 里的 p-3/mb-2 等间距工具类整片打掉
+      （实测：预览页的卡片内边距全没了）。→ 必须进层，且要排在 utilities 之前。
+   2) 但**不能**排在 base 之前：Tailwind 的 preflight 在 @layer base，里面同样有一条通配
+      `*,::before,::after{margin:0;padding:0;border:0}`。级联层胜过特异度——base 在后就恒胜
+      合成层里的 `.tpl-story .chat{padding:120px 70px}`，于是**预览画面本身**被削平：气泡/卡片
+      padding 归零、demo 手机框没边框、截图 height:auto 不铺满。照样能播、零报错的坏结果。
+   夹在 base 与 components 之间：utilities 仍胜合成包的无层通配（问题 1 修好），
+   preflight 又压不过合成盒模型（问题 2 修好）。 */
+@layer theme, base, forgecast-compositions, components, utilities;
 @import "tailwindcss";
 @import "@forgecast/compositions/src/styles/all.css" layer(forgecast-compositions);
 
@@ -41,7 +47,11 @@ body {
 }
 
 /* 组件类：只此几个（卡片/主按钮/次按钮/分段 tab/胶囊/图章/眼眉小标签/工位导航），其余一律工具类拼 */
-.card-forge, .card {
+/* `.card` 是控制台与合成包**共有**的类名（spec 的 cssClass 里就有 'card'，见 lower.ts；
+   `.tpl-insight .card` 是黄框数据卡）。这条规则无层、无层恒胜任何层，会把预览里的数据卡改成
+   控制台的浅灰 1px 细边 + 4px 圆角——又一处「能播、零报错」的预览≠成片。
+   `:where()` 特异度为 0，所以加这个排除对控制台自身的层叠毫无影响。 */
+.card-forge, .card:not(:where(.specRoot *)) {
   background: var(--color-card);
   border: 1px solid var(--color-hairline);
   border-radius: 4px;

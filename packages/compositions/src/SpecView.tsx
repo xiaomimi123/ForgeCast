@@ -28,8 +28,9 @@ export function templateClass(template: string): string {
  * 注意：twBase 必须对 spec.layers 里**每一个**文本/字幕图层累加，不论它此刻是否可见——
  * 否则同一图层的鬼影字符会随着其他图层的出现/消失而改变（可见性与序号分配互相污染）。
  *
- * `bgVariant` 由调用方（Task 9 的渲染入口）用 studio 侧的 resolveTechBg 解析一次后经 inputProps
- * 传入——**组件内绝不随机**，否则每帧结果不同、渲染必然闪烁。story 传 undefined（聊天场不加背景）。
+ * `bgVariant` 由调用方（generate.ts）用 resolveBgVariant 解析**一次**，写进 `spec.bgVariant`，
+ * 同时经 inputProps 传入——**组件内绝不随机**，否则每帧结果不同、渲染必然闪烁。
+ * story 是 undefined（聊天场不加背景）。取值收口在下面那一行 `spec.bgVariant ?? bgVariant`。
  * 模板专属 CSS 在同一个全局样式包里，靠 .tpl-<template> 作用域隔离（见 styles/*.css）；横版规则
  * 靠 .landscape 类而非媒体查询（媒体查询在 Studio 预览里按浏览器窗口求值，会误命中，见 styles/*.css 注释）。
  */
@@ -47,6 +48,10 @@ export function SpecView(
     if (!visible) continue
     nodes.push(<LayerView key={layer.id} layer={layer} timeSec={timeSec} elemIndexBase={base} />)
   }
+  // bgVariant 的**唯一**取值点：spec 里的优先（Task 10 起 studio 在渲染前就把解析结果写进 spec，
+  // 于是 Web 预览只拿到 spec 也能画出与成片一致的背景），props 是老路径的回落（旧 spec 无此字段）。
+  // 两处各判各的会让预览与成片再次分叉，所以收口在这一行。
+  const bg = spec.bgVariant ?? bgVariant
   const landscape = spec.canvas.width >= spec.canvas.height
   const cls = `specRoot tpl-${templateClass(spec.template)}${landscape ? ' landscape' : ''}`
   // #techbg 必须在 #cam **内部**——源模板的 <!--HF_BG--> 就在 <div id="cam"> 里（flash/demo/
@@ -55,7 +60,7 @@ export function SpecView(
   return (
     <div className={cls} style={{ position: 'absolute', inset: 0 }}>
       <Camera timeSec={timeSec} durationSec={spec.durationSec}>
-        <Background variant={bgVariant} timeSec={timeSec} durationSec={spec.durationSec} />
+        <Background variant={bg} timeSec={timeSec} durationSec={spec.durationSec} />
         {nodes}
       </Camera>
     </div>

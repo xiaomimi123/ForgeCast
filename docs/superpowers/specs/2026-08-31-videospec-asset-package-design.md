@@ -72,6 +72,9 @@ export interface VideoSpec {
   layers: Layer[]                 // 图层层：渲染真相，剪辑台改这层
   audio: AudioSpec
   warnings: string[]              // 生成期的降级/异常，见 §6.3
+  bgVariant?: string              // 科技背景变体（resolveBgVariant 的结果；story/--bg=none 时缺席）
+                                  // 子项目② Task 10 加：只走 inputProps 的话 Web 预览拿不到它，
+                                  // 预览无背景、成片有背景。写盘发生在渲染之前，两处取同一个值。
 }
 
 /** 语义层：模板无关的「这条视频在讲什么」 */
