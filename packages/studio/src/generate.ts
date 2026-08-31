@@ -203,18 +203,31 @@ async function renderHfPipeline(
   const ratioSuffix = ratio === 'landscape' ? '-landscape' : ''
   let html = fillTemplate(readTemplate(`${tpl}${ratioSuffix}`), { duration: String(duration) })
   html = html.replace('<!--HF_SECTIONS-->', () => rendered.html)
+  // 背景变体**只解析一次**，HTML 与 Remotion 两处共用：video.bg='random' 时各自随机会让
+  // 写进 hf 目录的 index.html 与实际渲出的背景对不上（Task 10 拿这份 HTML 做预览就会预览≠成片）。
+  const bgVariant = resolveBgVariant(tpl, video.bg)
   // story 特判：不加科技背景（保聊天真截图感）；其余四个模板都套 techFx
-  html = injectTechFx(html, tpl === 'story' ? { durationSec: duration } : { bg: video.bg, durationSec: duration })
+  html = injectTechFx(html, { bg: bgVariant, durationSec: duration })
   // 字幕已由 lower() 按 audio.captionsEnabled 生成进 spec.layers（随 rendered.html 一并注入），
   // 这里只负责音轨标记；captions 固定传 false，避免 HF_CAPTIONS 标记被重复注入一份字幕。
   html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, false)
   html = fillAccents(html, rendered.accents)
   scaffoldHfProject(hfDir, html, shotAssets)
-  // 背景变体在这里解析**一次**再经 inputProps 进 Remotion（组件内不随机，否则逐帧不同、画面闪烁）；
-  // 取值规则与上面 injectTechFx 那行一致：story 不加背景，其余走 video.bg（'none'/空 → Background 渲空）。
-  const bgVariant = tpl === 'story' ? undefined : resolveTechBg(video.bg || 'none')
   return renderAndRegister(ctx, hfDir, slug, tpl, hook, projectId, onProgress, spec, audioMix,
     { engine: 'remotion', bgVariant })
+}
+
+/**
+ * 科技背景变体的取值规则（HTML 与 Remotion 两条渲染路径共用，解析一次）：
+ * - story：一律不加背景（保微信聊天截图观感）；
+ * - 其余模板：走 video.bg，`random`/`auto` 随机挑一套，`none`/空则不加背景。
+ * 组件侧绝不再随机——每帧重算会让画面闪烁（见 SpecView 注释）。
+ */
+export function resolveBgVariant(
+  tpl: string, bg: string | undefined, rand?: () => number,
+): string | undefined {
+  if (tpl === 'story') return undefined
+  return resolveTechBg(bg || 'none', rand)
 }
 
 /**

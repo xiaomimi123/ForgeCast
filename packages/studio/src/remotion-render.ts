@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { VideoSpec } from './videospec'
@@ -13,8 +14,14 @@ const ENTRY_POINT = path.join(COMPOSITIONS_SRC, 'entry.ts')
 const COMPOSITION_ID = 'spec'
 
 /** 已打好的 bundle：**键含 publicDir**——每条视频的 publicDir 不同，只按源码指纹缓存会让
- *  第二条视频拿到第一条的资源目录（截图/旁白串台）。值里再存指纹，改了组件源码就重打。 */
+ *  第二条视频拿到第一条的资源目录（截图/旁白串台）。值里再存指纹，改了组件源码就重打。
+ *  Map 有上限并在淘汰时删磁盘目录，见 resolveServeUrl：bundle() 的 outDir 在 os.tmpdir()
+ *  且 publicDir 是整目录复制，不删的话每条视频都在 /tmp 留一份「截图+旁白 wav+webpack 产物」
+ *  的完整副本，小盘 VPS 几十条就 no space left（renderHyperframes 时代不留任何 tmp）。 */
 const bundleCache = new Map<string, { fingerprint: string; serveUrl: string }>()
+
+/** bundle 目录保留份数。取 2 而不是 1：留一份给「同 publicDir 重渲」的命中，再多就是纯占盘。 */
+const MAX_CACHED_BUNDLES = 2
 
 /** compositions 包源码指纹（相对路径 + mtimeMs + size，不读内容）：变了才重建 bundle——
  *  每条视频都 bundle 一次会显著拖慢（webpack 冷启数秒起）。 */
@@ -48,11 +55,76 @@ export function fingerprintCompositions(dir = COMPOSITIONS_SRC): string {
 export function linkPublicDirToBundleRoot(bundleDir: string): void {
   const pub = path.join(bundleDir, 'public')
   if (!fs.existsSync(pub)) return
+  const failed: string[] = []
   for (const name of fs.readdirSync(pub)) {
     const dst = path.join(bundleDir, name)
     if (!fs.statSync(path.join(pub, name)).isDirectory()) continue
     if (fs.lstatSync(dst, { throwIfNoEntry: false })) continue
-    try { fs.symlinkSync(path.join('public', name), dst, 'dir') } catch { /* 链不上就退回 public/ 语义 */ }
+    try { fs.symlinkSync(path.join('public', name), dst, 'dir') } catch { /* 下面统一校验 */ }
+    // **必须校验**：链不上就退回 /public 语义，所有图片/字体 404，渲出的是「缺图但零报错」
+    // 的成片——本仓库最忌的失败形状。宁可在这里炸，也不要让静默坏片流到成品目录。
+    if (!fs.existsSync(dst)) failed.push(name)
+  }
+  if (failed.length) {
+    throw new Error(`Remotion 打包目录软链失败（${failed.join(', ')}）：静态资源将全部 404，`
+      + '已中止渲染以免产出缺图但零报错的成片。检查 bundle 目录所在文件系统是否支持软链。')
+  }
+}
+
+/**
+ * 取一个可用的 bundle serveUrl：命中（同 publicDir + 同指纹）就复用，否则 `build()` 重打。
+ * 抽出来是为了让缓存键与淘汰能被单测直接钉住（真 bundle 太慢，测试注入假 build）。
+ *
+ * 淘汰：超过 MAX_CACHED_BUNDLES 就删最早的一条，并**连同磁盘目录一起删**——只删 Map 不删盘
+ * 等于换个地方泄漏。只删 os.tmpdir() 下的目录（bundle() 的默认落点），避免误删调用方指定的路径。
+ */
+export async function resolveServeUrl(
+  publicDir: string, fingerprint: string, build: () => Promise<string>,
+): Promise<string> {
+  const hit = bundleCache.get(publicDir)
+  if (hit && hit.fingerprint === fingerprint) return hit.serveUrl
+  if (hit) evictBundle(publicDir)
+  const serveUrl = await build()
+  bundleCache.set(publicDir, { fingerprint, serveUrl })
+  while (bundleCache.size > MAX_CACHED_BUNDLES) evictBundle(bundleCache.keys().next().value as string)
+  return serveUrl
+}
+
+function evictBundle(key: string): void {
+  const gone = bundleCache.get(key)
+  bundleCache.delete(key)
+  if (!gone) return
+  const dir = path.resolve(gone.serveUrl)
+  if (!dir.startsWith(path.resolve(os.tmpdir()) + path.sep)) return
+  try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* 删不掉只是占盘，不该炸渲染 */ }
+}
+
+/**
+ * 把 `spec.audio.narration.src` 归一化成 **publicDir 相对**路径：spec 里存的是 workspace 相对
+ * （`<slug>/hf/<videoId>/assets/narration.wav`，见 tts.ts 的 path.relative(workspace, …)），
+ * 而 publicDir 是 hf 项目目录，图层里的图片 src 又是 hf 相对（`assets/<rel>`）——两套基准。
+ * 裁决：**在这里适配**，不动 videospec.ts schema、不动 lower()（①② 共用层，动它会波及等价门禁）。
+ * 做法：从左往右逐段剥前缀，取第一个在 publicDir 下真实存在的后缀；找不到返回 null（不挂音轨）。
+ */
+export function narrationSrcForPublicDir(src: string, publicDir: string): string | null {
+  const segs = src.split(/[\\/]+/).filter(Boolean)
+  for (let i = 0; i < segs.length; i++) {
+    const rel = segs.slice(i).join('/')
+    if (fs.existsSync(path.join(publicDir, rel))) return rel
+  }
+  return null
+}
+
+/** 构造传给 Remotion 的 inputProps：只改 narration.src 的基准，其余原样（spec 不可变，浅拷贝）。 */
+export function buildInputProps(
+  spec: VideoSpec, publicDir: string, bgVariant?: string,
+): { spec: VideoSpec; bgVariant?: string } {
+  const narration = spec.audio.narration
+  if (!narration) return { spec, bgVariant }
+  const rel = narrationSrcForPublicDir(narration.src, publicDir)
+  return {
+    spec: { ...spec, audio: { ...spec.audio, narration: rel ? { ...narration, src: rel } : null } },
+    bgVariant,
   }
 }
 
@@ -77,17 +149,20 @@ export async function renderRemotion(
   const { makeCancelSignal, renderMedia, selectComposition } = await import('@remotion/renderer')
 
   const publicDir = path.resolve(opts.publicDir)
-  const fingerprint = fingerprintCompositions()
-  const hit = bundleCache.get(publicDir)
-  let serveUrl = hit && hit.fingerprint === fingerprint ? hit.serveUrl : null
-  if (!serveUrl) {
+  const serveUrl = await resolveServeUrl(publicDir, fingerprintCompositions(), async () => {
     opts.onProgress?.('打包合成…')
-    serveUrl = await bundle({ entryPoint: ENTRY_POINT, publicDir })
-    linkPublicDirToBundleRoot(serveUrl)
-    bundleCache.set(publicDir, { fingerprint, serveUrl })
-  }
+    const dir = await bundle({ entryPoint: ENTRY_POINT, publicDir })
+    linkPublicDirToBundleRoot(dir)
+    return dir
+  })
 
-  const inputProps: Record<string, unknown> = { spec, bgVariant: opts.bgVariant }
+  const inputProps = buildInputProps(spec, publicDir, opts.bgVariant)
+  if (spec.audio.narration && !inputProps.spec.audio.narration) {
+    // 静默丢音轨 = 成片只剩 BGM 没人声且零报错，必须让它出现在 warnings 里
+    const msg = `旁白音轨未在渲染目录内找到（${spec.audio.narration.src}），成片将没有人声`
+    opts.onProgress?.(`⚠ ${msg}`)
+    spec.warnings.push(msg)
+  }
   const composition = await selectComposition({ serveUrl, id: COMPOSITION_ID, inputProps })
   const timeoutMs = opts.timeoutMs ?? (Number(process.env.FORGECAST_RENDER_TIMEOUT_MS) || RENDER_TIMEOUT_MS)
   const { cancelSignal, cancel } = makeCancelSignal()
