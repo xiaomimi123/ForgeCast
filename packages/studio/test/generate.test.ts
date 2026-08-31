@@ -384,3 +384,26 @@ describe('generateVideo VideoSpec 落盘 + hf 分目录（Task 5 管线接入）
     expect(w.join(' ')).toMatch(/TTS|降级/)
   })
 })
+
+describe('generateVideo 品牌名落片（回归：这是第 4 次复发的同一类 bug——changelog→flash→story→' +
+  'demo/insight，四轮各修一个实例；本轮改成一次性表驱动覆盖全部五个模板，防第 5 次复发）', () => {
+  // beforeEach 已建 project demo(brand_name='快客通')。demo 模板额外要求 shots/ 目录非空，
+  // 其余四个模板直接复用 beforeEach 的 pain-1.md 文案素材。
+  const templates: Array<'flash' | 'story' | 'demo' | 'changelog' | 'insight'> = ['flash', 'story', 'demo', 'changelog', 'insight']
+  it.each(templates)('tpl=%s 生成的 HTML 里必须能看到品牌名（结构指纹看不见文案内容，只有内容断言能防回归）', async (tpl) => {
+    if (tpl === 'demo') {
+      const shotsDir = path.join(root, 'workspace/demo/shots')
+      fs.mkdirSync(shotsDir, { recursive: true })
+      const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+      const ihdr = Buffer.alloc(25)
+      ihdr.writeUInt32BE(13, 0); ihdr.write('IHDR', 4)
+      ihdr.writeUInt32BE(1080, 8); ihdr.writeUInt32BE(1920, 12)
+      fs.writeFileSync(path.join(shotsDir, '01.png'), Buffer.concat([sig, ihdr]))
+    }
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const tctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await generateVideo(tctx, { slug: 'demo', tpl })
+    const html = hfIndexHtml(tctx.config.paths.workspace, 'demo')
+    expect(html).toContain('快客通')
+  })
+})

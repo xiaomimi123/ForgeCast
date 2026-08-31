@@ -363,7 +363,12 @@ function lowerDemo(sections: Section[], opts: LowerOpts): Layer[] {
 
   const nCar = carItems.length
   layers.push(textLayer('demo-price', fromId(sections, 'body-1'), st[2 + nCar], 3, 1, priceAnchor, 'price', DECODE_ALL))
-  layers.push(textLayer('demo-cta', fromId(sections, 'cta'), st[2 + nCar + 1], 3, 1, cta, 'cta', DECODE_ALL))
+  // demo-cta 原版同时渲 cta（.tw）与品牌名（无 tw，hyperframes.ts:479）两行——同 lowerFlash/
+  // lowerStory/lowerChangelog 顶部同类注释：brandName 必须在这里烧进 layer 文本，
+  // 缺失/空则退化成只有 cta 一行。
+  const demoCtaText = opts.brandName ? `${cta}\n@${opts.brandName}` : cta
+  const demoCtaEffects: Effect[] = opts.brandName ? [DECODE_LINE(0)] : DECODE_ALL
+  layers.push(textLayer('demo-cta', fromId(sections, 'cta'), st[2 + nCar + 1], 3, 1, demoCtaText, 'cta', demoCtaEffects))
   return layers
 }
 
@@ -466,7 +471,12 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
     })
   })
 
-  layers.push(textLayer('insight-outro', fromId(sections, 'cta'), outroStart, Math.max(0.5, durationSec - outroStart), 1, cta, 'cta', DECODE_ALL))
+  // insight-outro 原版同时渲 cta（.tw）与品牌名（无 tw，hyperframes.ts:754）两行——同
+  // lowerFlash/lowerStory/lowerChangelog/lowerDemo 顶部同类注释：brandName 必须在这里烧进
+  // layer 文本，缺失/空则退化成只有 cta 一行。
+  const insightOutroText = opts.brandName ? `${cta}\n@${opts.brandName}` : cta
+  const insightOutroEffects: Effect[] = opts.brandName ? [DECODE_LINE(0)] : DECODE_ALL
+  layers.push(textLayer('insight-outro', fromId(sections, 'cta'), outroStart, Math.max(0.5, durationSec - outroStart), 1, insightOutroText, 'cta', insightOutroEffects))
   return layers
 }
 

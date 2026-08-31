@@ -222,35 +222,44 @@ const DEMO_SHOTS: Array<{ rel: string; orientation: 'portrait' | 'landscape' }> 
  * - demoPlan：3 图 + 显式 plan——老 plan.cuts 直接给 {start,shot}，新 LowerPlan 用 {grid,offsetSec,cuts:{beat,shot}}
  *   表达同一组绝对时间；这里取 grid={t0:0,T:1}、offsetSec:0，让 beat 数值本身就等于秒数（8/14/20）。
  */
+// brandName: '品牌' 对齐 FIXTURES 同一个字段，for **every** template——不是只对齐 changelog。
+// Fix round 1（第 5 次修复）之前，flash/story/demo/insight 四个模板的 NEW_PIPELINE_OPTS 都没传
+// brandName，导致 lower() 里对应的 brandName 消费代码路径从未被这份等价性测试实际跑过：
+// demo-cta/insight-outro 两处曾经完全没读 opts.brandName（真实内容回归，遗漏了 4 轮才被发现），
+// flash/story 虽然在更早的轮次里已经把 brandName 接进 lower()，但同样从没被这里验证过。
+// twCount 本身不会因为这处改动而变化（brand 行在 flash/story/demo/insight 里原版都不带 `.tw`，
+// 只有 changelog 的 clCta 例外——两行都 `.tw`），这里补齐纯粹是为了让「内容回归」这条路径
+// 真正被结构指纹测试覆盖到，而不是靠巧合蒙混过关。
 const NEW_PIPELINE_OPTS: Record<keyof typeof FIXTURES, () => LowerOpts> = {
   flash: () => ({
-    videoId: 'v1', slug: 's', template: 'flash', canvas: CANVAS, durationSec: 30, cues: CUES, audio: AUDIO_OFF,
+    videoId: 'v1', slug: 's', template: 'flash', canvas: CANVAS, durationSec: 30, cues: CUES,
+    brandName: '品牌', audio: AUDIO_OFF,
   }),
   story: () => ({
     videoId: 'v1', slug: 's', template: 'story', canvas: CANVAS, durationSec: 30, cues: CUES,
-    beatGrid: grid2(30), audio: AUDIO_OFF,
+    beatGrid: grid2(30), brandName: '品牌', audio: AUDIO_OFF,
   }),
-  // brandName: '品牌' 对齐 FIXTURES.changelog 同一个字段——Fix round 2 起 clCta 把 brandName 烧进
-  // layer 文本，缺了这个字段 clCta 就会退化成只有 cta 一行，twCount 对不上基线的 2。
   changelog: () => ({
     videoId: 'v1', slug: 's', template: 'changelog', canvas: CANVAS, durationSec: 30, cues: CUES,
     brandName: '品牌', audio: AUDIO_OFF,
   }),
   demo: () => ({
-    videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 30, cues: CUES, shots: [], audio: AUDIO_OFF,
+    videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 30, cues: CUES, shots: [],
+    brandName: '品牌', audio: AUDIO_OFF,
   }),
   demoCarousel: () => ({
     videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 40, cues: CUES,
-    shots: DEMO_SHOTS, beatGrid: grid2(40), audio: AUDIO_OFF,
+    shots: DEMO_SHOTS, beatGrid: grid2(40), brandName: '品牌', audio: AUDIO_OFF,
   }),
   demoPlan: () => ({
     videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 30, cues: CUES,
     shots: DEMO_SHOTS,
     plan: { grid: { t0: 0, T: 1 }, offsetSec: 0, cuts: [{ beat: 8, shot: 0 }, { beat: 14, shot: 1 }, { beat: 20, shot: 2 }] },
-    audio: AUDIO_OFF,
+    brandName: '品牌', audio: AUDIO_OFF,
   }),
   insight: () => ({
-    videoId: 'v1', slug: 's', template: 'insight', canvas: CANVAS, durationSec: 30, cues: CUES, audio: AUDIO_OFF,
+    videoId: 'v1', slug: 's', template: 'insight', canvas: CANVAS, durationSec: 30, cues: CUES,
+    brandName: '品牌', audio: AUDIO_OFF,
   }),
 }
 
