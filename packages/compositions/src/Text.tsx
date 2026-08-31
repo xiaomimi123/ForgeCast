@@ -37,9 +37,25 @@ export function TextContent(
                 return <span key={ci} className="twc" style={{ opacity: timeSec >= t0 ? 1 : 0 }}>&nbsp;</span>
               }
               const st = charStateAt(ci, chars.length, elemIndex, layer.start, timeSec)
-              if (st.kind === 'hidden') return <span key={ci} className="twc" style={{ opacity: 0 }}>{ch}</span>
-              if (st.kind === 'ghost') return <span key={ci} className="twc"><span className="gh">{st.glyph}</span></span>
-              return <span key={ci} className="twc"><span className="fin">{ch}</span></span>
+              // .twc 的定位声明（position:relative + display:inline-block）是结构性的，不是装饰：
+              // .fin 恒挂载并占据正常文档流，靠它一个人决定字符框宽度；.gh 是绝对定位覆盖层，
+              // 不参与宽度计算。这样字符宽度在 hidden/ghost/final 三态之间保持恒定，不会因为
+              // POOL 里 CJK/片假名/ASCII 字宽不同而在每次 45ms 换鬼影时抖动。视觉细节（青色/
+              // 发光/text-shadow）留给样式表任务，这里只放定位。
+              const twcStyle: React.CSSProperties = { position: 'relative', display: 'inline-block' }
+              const ghStyle: React.CSSProperties = { position: 'absolute', left: 0, top: 0 }
+              if (st.kind === 'hidden') {
+                return <span key={ci} className="twc" style={twcStyle}><span className="fin" style={{ opacity: 0 }}>{ch}</span></span>
+              }
+              if (st.kind === 'ghost') {
+                return (
+                  <span key={ci} className="twc" style={twcStyle}>
+                    <span className="fin" style={{ opacity: 0 }}>{ch}</span>
+                    <span className="gh" style={ghStyle}>{st.glyph}</span>
+                  </span>
+                )
+              }
+              return <span key={ci} className="twc" style={twcStyle}><span className="fin">{ch}</span></span>
             })}
           </Tag>
         )
