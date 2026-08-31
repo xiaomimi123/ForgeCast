@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "videoId": "v1",
+  "slug": "s",
+  "template": "demo",
+  "createdAt": "2026-08-31T00:00:00.000Z",
+  "semantic": {
+    "hook": null,
+    "sourceAssetId": null,
+    "sections": [
+      {
+        "id": "pain",
+        "role": "pain",
+        "text": "标题"
+      },
+      {
+        "id": "body",
+        "role": "body",
+        "text": "卖点"
+      },
+      {
+        "id": "pain-1",
+        "role": "pain",
+        "items": [
+          "痛点一",
+          "痛点二"
+        ]
+      },
+      {
+        "id": "body-1",
+        "role": "body",
+        "text": "报价锚点"
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "text": "行动号召"
+      }
+    ]
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "durationSec": 40,
+  "layers": [
+    {
+      "id": "demo-hook",
+      "kind": "text",
+      "from": "pain",
+      "overridden": false,
+      "start": 0,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "标题"
+      },
+      "style": {
+        "cssClass": "hookT"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        }
+      ]
+    },
+    {
+      "id": "demo-pain",
+      "kind": "text",
+      "from": "pain-1",
+      "overridden": false,
+      "start": 3,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "痛点一\n痛点二"
+      },
+      "style": {
+        "cssClass": "painWrap"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        }
+      ]
+    },
+    {
+      "id": "car0",
+      "kind": "image",
+      "from": null,
+      "overridden": false,
+      "start": 6,
+      "duration": 6,
+      "track": 2,
+      "content": {
+        "kind": "image",
+        "src": "assets/shots 2026/首页 截图 #1.jpg"
+      },
+      "style": {
+        "cssClass": "phoneWrap"
+      },
+      "effects": [
+        {
+          "type": "pulse",
+          "at": 0
+        }
+      ]
+    },
+    {
+      "id": "car1",
+      "kind": "image",
+      "from": null,
+      "overridden": false,
+      "start": 12,
+      "duration": 8,
+      "track": 2,
+      "content": {
+        "kind": "image",
+        "src": "assets/shots 2026/详情页 ?草稿.png"
+      },
+      "style": {
+        "cssClass": "wideWrap"
+      },
+      "effects": [
+        {
+          "type": "pulse",
+          "at": 0
+        }
+      ]
+    },
+    {
+      "id": "car2",
+      "kind": "image",
+      "from": null,
+      "overridden": false,
+      "start": 20,
+      "duration": 6,
+      "track": 2,
+      "content": {
+        "kind": "image",
+        "src": "assets/shots 2026/结算 页.jpg"
+      },
+      "style": {
+        "cssClass": "phoneWrap"
+      },
+      "effects": [
+        {
+          "type": "pulse",
+          "at": 0
+        }
+      ]
+    },
+    {
+      "id": "car3",
+      "kind": "image",
+      "from": null,
+      "overridden": false,
+      "start": 26,
+      "duration": 8,
+      "track": 2,
+      "content": {
+        "kind": "image",
+        "src": "assets/shots 2026/首页 截图 #1.jpg"
+      },
+      "style": {
+        "cssClass": "phoneWrap"
+      },
+      "effects": [
+        {
+          "type": "pulse",
+          "at": 0
+        }
+      ]
+    },
+    {
+      "id": "demo-price",
+      "kind": "text",
+      "from": "body-1",
+      "overridden": false,
+      "start": 34,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "报价锚点"
+      },
+      "style": {
+        "cssClass": "price"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        }
+      ]
+    },
+    {
+      "id": "demo-cta",
+      "kind": "text",
+      "from": "cta",
+      "overridden": false,
+      "start": 37,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "行动号召\n@品牌"
+      },
+      "style": {
+        "cssClass": "cta"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "cap0",
+      "kind": "caption",
+      "from": null,
+      "overridden": false,
+      "start": 2,
+      "duration": 4,
+      "track": 9,
+      "content": {
+        "kind": "caption",
+        "text": "返工率高达 30%，每单多花 3 个工作日"
+      },
+      "style": {
+        "cssClass": "cap"
+      },
+      "effects": []
+    },
+    {
+      "id": "cap1",
+      "kind": "caption",
+      "from": null,
+      "overridden": false,
+      "start": 8,
+      "duration": 4,
+      "track": 9,
+      "content": {
+        "kind": "caption",
+        "text": "工期要 2-4周，一单多烧人力"
+      },
+      "style": {
+        "cssClass": "cap"
+      },
+      "effects": []
+    },
+    {
+      "id": "cap2",
+      "kind": "caption",
+      "from": null,
+      "overridden": false,
+      "start": 15,
+      "duration": 4,
+      "track": 9,
+      "content": {
+        "kind": "caption",
+        "text": "外面报价 5 万起"
+      },
+      "style": {
+        "cssClass": "cap"
+      },
+      "effects": []
+    }
+  ],
+  "audio": {
+    "narration": null,
+    "bgm": null,
+    "beatGrid": null,
+    "captionsEnabled": true
+  },
+  "warnings": []
+}

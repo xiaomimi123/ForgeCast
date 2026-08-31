@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "videoId": "v1",
+  "slug": "s",
+  "template": "flash",
+  "createdAt": "2026-08-31T00:00:00.000Z",
+  "semantic": {
+    "hook": null,
+    "sourceAssetId": null,
+    "sections": [
+      {
+        "id": "pain",
+        "role": "pain",
+        "text": "标题"
+      },
+      {
+        "id": "body",
+        "role": "body",
+        "text": "卖点"
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "text": "行动号召"
+      }
+    ]
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "durationSec": 30,
+  "layers": [
+    {
+      "id": "flashHook",
+      "kind": "text",
+      "from": "pain",
+      "overridden": false,
+      "start": 0,
+      "duration": 4,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "标题"
+      },
+      "style": {
+        "cssClass": "painT"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "flashCap0",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 4,
+      "duration": 2,
+      "track": 2,
+      "content": {
+        "kind": "text",
+        "text": "返工率高达 30%，每单多花 3 个工作日"
+      },
+      "style": {
+        "cssClass": "flowCap"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "y": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "flashCap1",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 8,
+      "duration": 4,
+      "track": 2,
+      "content": {
+        "kind": "text",
+        "text": "工期要 2-4周，一单多烧人力"
+      },
+      "style": {
+        "cssClass": "flowCap"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "y": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "flashHighlight",
+      "kind": "text",
+      "from": "body",
+      "overridden": false,
+      "start": 12.96,
+      "duration": 2.5,
+      "track": 3,
+      "content": {
+        "kind": "text",
+        "text": "卖点"
+      },
+      "style": {
+        "cssClass": "highlightCard"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "scale": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "id": "flashCta",
+      "kind": "text",
+      "from": "cta",
+      "overridden": false,
+      "start": 26.4,
+      "duration": 3.6,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "行动号召\n@品牌"
+      },
+      "style": {
+        "cssClass": "cta"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 0
+          }
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "cap0",
+      "kind": "caption",
+      "from": null,
+      "overridden": false,
+      "start": 2,
+      "duration": 4,
+      "track": 9,
+      "content": {
+        "kind": "caption",
+        "text": "返工率高达 30%，每单多花 3 个工作日"
+      },
+      "style": {
+        "cssClass": "cap"
+      },
+      "effects": []
+    },
+    {
+      "id": "cap1",
+      "kind": "caption",
+      "from": null,
+      "overridden": false,
+      "start": 8,
+      "duration": 4,
+      "track": 9,
+      "content": {
+        "kind": "caption",
+        "text": "工期要 2-4周，一单多烧人力"
+      },
+      "style": {
+        "cssClass": "cap"
+      },
+      "effects": []
+    },
+    {
+      "id": "cap2",
+      "kind": "caption",
+      "from": null,
+      "overridden": false,
+      "start": 15,
+      "duration": 4,
+      "track": 9,
+      "content": {
+        "kind": "caption",
+        "text": "外面报价 5 万起"
+      },
+      "style": {
+        "cssClass": "cap"
+      },
+      "effects": []
+    }
+  ],
+  "audio": {
+    "narration": null,
+    "bgm": null,
+    "beatGrid": null,
+    "captionsEnabled": true
+  },
+  "warnings": []
+}

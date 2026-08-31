@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "videoId": "v1",
+  "slug": "s",
+  "template": "insight",
+  "createdAt": "2026-08-31T00:00:00.000Z",
+  "semantic": {
+    "hook": null,
+    "sourceAssetId": null,
+    "sections": [
+      {
+        "id": "pain",
+        "role": "pain",
+        "text": "标题"
+      },
+      {
+        "id": "body",
+        "role": "body",
+        "text": "卖点"
+      },
+      {
+        "id": "stat",
+        "role": "stat",
+        "stat": {
+          "value": "30%",
+          "label": "返工率高达 ，每单多花 3 个工作日"
+        }
+      },
+      {
+        "id": "stat-1",
+        "role": "stat",
+        "stat": {
+          "value": "2-4周",
+          "label": "工期要 ，一单多烧人力"
+        }
+      },
+      {
+        "id": "stat-2",
+        "role": "stat",
+        "stat": {
+          "value": "5 万",
+          "label": "外面报价 起"
+        }
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "text": "行动号召"
+      }
+    ]
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "durationSec": 30,
+  "layers": [
+    {
+      "id": "insight-intro",
+      "kind": "text",
+      "from": "pain",
+      "overridden": false,
+      "start": 0,
+      "duration": 2,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "标题"
+      },
+      "style": {
+        "cssClass": "painT"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        }
+      ]
+    },
+    {
+      "id": "insCard0_0",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 2,
+      "duration": 8,
+      "track": 2,
+      "content": {
+        "kind": "text",
+        "text": "30% 返工率高达 ，每单多花 3 个工作日"
+      },
+      "style": {
+        "cssClass": "card",
+        "color": "#ffd54f"
+      },
+      "effects": [
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.45,
+          "params": {
+            "y": 24
+          }
+        },
+        {
+          "type": "demote",
+          "at": 6,
+          "duration": 0.3
+        },
+        {
+          "type": "exit",
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "insCard0_1",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 8,
+      "duration": 8,
+      "track": 3,
+      "content": {
+        "kind": "text",
+        "text": "2-4周 工期要 ，一单多烧人力"
+      },
+      "style": {
+        "cssClass": "card",
+        "color": "#ffd54f"
+      },
+      "effects": [
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.45,
+          "params": {
+            "y": 24
+          }
+        },
+        {
+          "type": "demote",
+          "at": 7,
+          "duration": 0.3
+        },
+        {
+          "type": "exit",
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "insCard0_2",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 15,
+      "duration": 12,
+      "track": 4,
+      "content": {
+        "kind": "text",
+        "text": "5 万 外面报价 起"
+      },
+      "style": {
+        "cssClass": "card",
+        "color": "#ffd54f"
+      },
+      "effects": [
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.45,
+          "params": {
+            "y": 24
+          }
+        },
+        {
+          "type": "exit",
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "insight-outro",
+      "kind": "text",
+      "from": "cta",
+      "overridden": false,
+      "start": 27,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "行动号召\n@品牌"
+      },
+      "style": {
+        "cssClass": "cta"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 0
+          }
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "narration": null,
+    "bgm": null,
+    "beatGrid": null,
+    "captionsEnabled": false
+  },
+  "warnings": []
+}

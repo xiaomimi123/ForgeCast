@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "videoId": "v1",
+  "slug": "s",
+  "template": "story",
+  "createdAt": "2026-08-31T00:00:00.000Z",
+  "semantic": {
+    "hook": null,
+    "sourceAssetId": null,
+    "sections": [
+      {
+        "id": "pain",
+        "role": "pain",
+        "text": "标题"
+      },
+      {
+        "id": "body",
+        "role": "body",
+        "text": "卖点"
+      },
+      {
+        "id": "body-1",
+        "role": "body",
+        "dialogue": [
+          {
+            "who": "them",
+            "text": "标题1"
+          },
+          {
+            "who": "me",
+            "text": "可以，等我一天"
+          },
+          {
+            "who": "them",
+            "text": "太好了，等你消息"
+          }
+        ]
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "text": "行动号召"
+      }
+    ]
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "durationSec": 30,
+  "layers": [
+    {
+      "id": "storyChat",
+      "kind": "text",
+      "from": "body-1",
+      "overridden": false,
+      "start": 0,
+      "duration": 24,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "对方：标题1\n我：可以，等我一天\n对方：太好了，等你消息"
+      },
+      "style": {
+        "cssClass": "chat"
+      },
+      "effects": [
+        {
+          "type": "slideUp",
+          "at": 0,
+          "duration": 0.5,
+          "params": {
+            "line": 0
+          }
+        },
+        {
+          "type": "slideUp",
+          "at": 11.5,
+          "duration": 0.5,
+          "params": {
+            "line": 1
+          }
+        },
+        {
+          "type": "slideUp",
+          "at": 23,
+          "duration": 0.5,
+          "params": {
+            "line": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "storySell",
+      "kind": "text",
+      "from": "body",
+      "overridden": false,
+      "start": 24,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "卖点"
+      },
+      "style": {
+        "cssClass": "sell"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "storyCta",
+      "kind": "text",
+      "from": "cta",
+      "overridden": false,
+      "start": 27,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "行动号召\n@品牌"
+      },
+      "style": {
+        "cssClass": "cta"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 0
+          }
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "narration": null,
+    "bgm": null,
+    "beatGrid": null,
+    "captionsEnabled": false
+  },
+  "warnings": []
+}

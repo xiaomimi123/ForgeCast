@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "videoId": "v1",
+  "slug": "s",
+  "template": "changelog",
+  "createdAt": "2026-08-31T00:00:00.000Z",
+  "semantic": {
+    "hook": null,
+    "sourceAssetId": null,
+    "sections": [
+      {
+        "id": "pain",
+        "role": "pain",
+        "text": "标题"
+      },
+      {
+        "id": "body",
+        "role": "body",
+        "text": "卖点"
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "text": "行动号召"
+      }
+    ]
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "durationSec": 30,
+  "layers": [
+    {
+      "id": "clTitle",
+      "kind": "text",
+      "from": "pain",
+      "overridden": false,
+      "start": 0,
+      "duration": 4.5,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "本周更新\n标题\n卖点"
+      },
+      "style": {
+        "cssClass": "title"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 1
+          }
+        },
+        {
+          "type": "decode",
+          "params": {
+            "line": 2
+          }
+        },
+        {
+          "type": "fadeIn",
+          "at": 0.1,
+          "duration": 0.5,
+          "params": {
+            "line": 0,
+            "y": -30
+          }
+        }
+      ]
+    },
+    {
+      "id": "clCap0",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 4.5,
+      "duration": 1.5,
+      "track": 2,
+      "content": {
+        "kind": "text",
+        "text": "返工率高达 30%，每单多花 3 个工作日"
+      },
+      "style": {
+        "cssClass": "tag"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "y": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "clCap1",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 8,
+      "duration": 4,
+      "track": 2,
+      "content": {
+        "kind": "text",
+        "text": "工期要 2-4周，一单多烧人力"
+      },
+      "style": {
+        "cssClass": "tag"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "y": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "clCap2",
+      "kind": "text",
+      "from": null,
+      "overridden": false,
+      "start": 15,
+      "duration": 4,
+      "track": 2,
+      "content": {
+        "kind": "text",
+        "text": "外面报价 5 万起"
+      },
+      "style": {
+        "cssClass": "tag"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "y": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "clCta",
+      "kind": "text",
+      "from": "cta",
+      "overridden": false,
+      "start": 26.4,
+      "duration": 3.6,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "品牌\n行动号召"
+      },
+      "style": {
+        "cssClass": "brand"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 0
+          }
+        },
+        {
+          "type": "decode",
+          "params": {
+            "line": 1
+          }
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "narration": null,
+    "bgm": null,
+    "beatGrid": null,
+    "captionsEnabled": false
+  },
+  "warnings": []
+}
