@@ -12,8 +12,10 @@ function videoIdFromSpecPath(specPath: string): string {
 export default function PreviewTab({ slug, assets }: { slug: string; assets: Asset[] }) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   // 目录改造后每次生成的产物按 videoId 分子目录，不再有唯一的 hf/index.html。
-  // 取该项目最近一条 type==='video' 且 spec_path 非空的素材（数组按 id 升序返回，故取最后一条），解出 videoId。
-  const latestVideo = [...assets].reverse().find((a) => a.type === 'video' && a.spec_path)
+  // 取该项目最近一条 type==='video' 且 spec_path 非空的素材，解出 videoId：
+  // GET /api/projects/:slug/assets（packages/server/src/app.ts:231）按 id DESC 返回，
+  // 即 assets[0] 最新——find() 从头找到的第一条已经是最新，不需要也不能 reverse()。
+  const latestVideo = assets.find((a) => a.type === 'video' && a.spec_path)
   const videoId = latestVideo?.spec_path ? videoIdFromSpecPath(latestVideo.spec_path) : null
   const [dur, setDur] = useState(0)
   const [t, setT] = useState(0)
