@@ -11,6 +11,7 @@ workspace/*/covers/
 workspace/*/raw/
 workspace/*/videos/
 workspace/*/hf/
+workspace/*/specs/
 workspace/*/shots/
 workspace/*/scripts/
 workspace/*/uploads/

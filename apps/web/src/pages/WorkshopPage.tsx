@@ -134,7 +134,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
       {/* key 强制切项目时重挂载，否则 CutPlanEditor 内部 plan state 不会清空，会残留上一个项目的卡点方案 */}
       {tab === 'cut' && selected && <CutPlanEditor key={selected} slug={selected} />}
       {tab === 'templates' && <TemplatesTab />}
-      {tab === 'preview' && selected && <PreviewTab key={selected} slug={selected} />}
+      {tab === 'preview' && selected && <PreviewTab key={selected} slug={selected} assets={assets.data ?? []} />}
 
       {activeRun.logs.length > 0 && (
         <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-48 overflow-y-auto space-y-1">

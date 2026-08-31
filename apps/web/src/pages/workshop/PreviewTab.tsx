@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Asset } from '../../api'
 
-/** 合成产物页内预览：iframe 加载 hf/index.html，父页面直接驱动其 window.__timelines 上的 GSAP 时间线。
- *  只读预览（播放/暂停/拖动），不做编辑。 */
-export default function PreviewTab({ slug }: { slug: string }) {
+/** 从 spec_path（`<slug>/specs/<videoId>.json`）里取出 videoId：即去掉目录前缀和 .json 后缀的文件名。 */
+function videoIdFromSpecPath(specPath: string): string {
+  const base = specPath.split('/').pop() ?? ''
+  return base.replace(/\.json$/, '')
+}
+
+/** 合成产物页内预览：iframe 加载该项目最近一条视频素材的 hf/<videoId>/index.html，
+ *  父页面直接驱动其 window.__timelines 上的 GSAP 时间线。只读预览（播放/暂停/拖动），不做编辑。 */
+export default function PreviewTab({ slug, assets }: { slug: string; assets: Asset[] }) {
   const frameRef = useRef<HTMLIFrameElement>(null)
+  // 目录改造后每次生成的产物按 videoId 分子目录，不再有唯一的 hf/index.html。
+  // 取该项目最近一条 type==='video' 且 spec_path 非空的素材（数组按 id 升序返回，故取最后一条），解出 videoId。
+  const latestVideo = [...assets].reverse().find((a) => a.type === 'video' && a.spec_path)
+  const videoId = latestVideo?.spec_path ? videoIdFromSpecPath(latestVideo.spec_path) : null
   const [dur, setDur] = useState(0)
   const [t, setT] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -62,14 +73,18 @@ export default function PreviewTab({ slug }: { slug: string }) {
     <div className="space-y-3">
       <div className="card p-3">
         <div className="mb-2 text-xs text-faint">
-          预览的是该项目最近一次生成的合成产物（每个项目一份、每次生成覆盖），不是选中的某条历史视频。
+          预览的是该项目最近一条生成的视频素材，不是选中的某条历史视频。
         </div>
-        <iframe
-          ref={frameRef} onLoad={onLoad} title="composition preview"
-          src={`/files/${slug}/hf/index.html`}
-          style={{ aspectRatio: ratio }}
-          className="w-full rounded border border-hairline bg-black"
-        />
+        {videoId ? (
+          <iframe
+            ref={frameRef} onLoad={onLoad} title="composition preview"
+            src={`/files/${slug}/hf/${videoId}/index.html`}
+            style={{ aspectRatio: ratio }}
+            className="w-full rounded border border-hairline bg-black"
+          />
+        ) : (
+          <div className="text-sm text-danger">没读到合成时间线——该项目可能还没生成过视频</div>
+        )}
         {err && <div className="mt-2 text-sm text-danger">{err}</div>}
         <div className="mt-3 flex items-center gap-3">
           <button className="btn px-3 py-1 text-sm" disabled={!dur}

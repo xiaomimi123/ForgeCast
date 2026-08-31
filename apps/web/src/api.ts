@@ -23,6 +23,8 @@ export interface Asset {
   review: string | null
   /** JSON 字符串复盘 {verdict,keep,change,focus,generatedAt,hadPerf}，自行解析 */
   retro: string | null
+  /** workspace 相对路径 `<slug>/specs/<videoId>.json`；历史视频（改造前生成）没有素材包，为 null */
+  spec_path: string | null
 }
 /** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
 export interface BgmList { root: string[]; byMood: Record<string, string[]> }
