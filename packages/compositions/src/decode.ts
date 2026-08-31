@@ -16,11 +16,31 @@ function mulberry32(a: number): () => number {
 
 export type CharState = { kind: 'hidden' } | { kind: 'ghost'; glyph: string } | { kind: 'final' }
 
+/**
+ * 逐字解码的字间步长（秒）：字越多步子越小，整行铺完不超过 1.1s。
+ * **单一出处**——Text.tsx（空格字符的出现时刻）与内容断言门禁都从这里取，不各自抄一份常量：
+ * 抄三份的话，将来正当地调解码节奏就得三处同步改，漏一处 = 门禁假红（自伤）。
+ */
+export function stepFor(charCount: number): number {
+  return Math.min(0.055, 1.1 / Math.max(1, charCount))
+}
+
+/**
+ * 一行 charCount 个字**全部锁定为最终字形**所需的时长（相对该图层 start 的秒数）。
+ * = 最后一个字的 t0（(n-1)·step）+ 鬼影阶段时长（K·GSTEP）。
+ *
+ * 内容断言门禁靠它挑比对时刻：解码中的字符会同时渲出真字（.fin）与鬼影字（.gh），
+ * 两者在 textContent 里交错，早于这个时刻做字面比对就会被鬼影污染成假红。
+ */
+export function lockTimeFor(charCount: number): number {
+  return (Math.max(1, charCount) - 1) * stepFor(charCount) + K * GSTEP
+}
+
 /** 第 charIndex 个字在 timeSec 时刻的状态。elemIndex 必须与原脚本的 `.tw` 文档顺序序号一致。 */
 export function charStateAt(
   charIndex: number, charCount: number, elemIndex: number, clipStart: number, timeSec: number,
 ): CharState {
-  const step = Math.min(0.055, 1.1 / Math.max(1, charCount))
+  const step = stepFor(charCount)
   const t0 = clipStart + charIndex * step
   if (timeSec < t0) return { kind: 'hidden' }
   const rel = timeSec - t0

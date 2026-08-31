@@ -1,5 +1,5 @@
 import React from 'react'
-import { charStateAt, decodeTargets } from './decode'
+import { charStateAt, decodeTargets, stepFor } from './decode'
 import { styleAt } from './effects'
 import type { Layer } from './videospec-types'
 
@@ -33,7 +33,7 @@ export function TextContent(
           <Tag key={i} id={`${layer.id}-l${i}`} className="tw" style={style}>
             {chars.map((ch, ci) => {
               if (ch === ' ') {
-                const t0 = layer.start + ci * Math.min(0.055, 1.1 / Math.max(1, chars.length))
+                const t0 = layer.start + ci * stepFor(chars.length)
                 return <span key={ci} className="twc" style={{ opacity: timeSec >= t0 ? 1 : 0 }}>&nbsp;</span>
               }
               const st = charStateAt(ci, chars.length, elemIndex, layer.start, timeSec)

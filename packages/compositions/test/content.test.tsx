@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
+import { lockTimeFor } from '../src/decode'
 import type { Layer, VideoSpec } from '../src/videospec-types'
 import flash from './fixtures/flash.json'
 import story from './fixtures/story.json'
@@ -39,7 +40,18 @@ const BRAND = '品牌'
 /** 图层中点时刻——保证该图层一定可见，且避开入场动画的极端帧。 */
 const mid = (l: Layer) => l.start + l.duration / 2
 
-const strip = (s: string) => s.replace(/\s+/g, '')
+/**
+ * 空白**归一化**，不是删除。
+ *
+ * 曾经写成 `replace(/\s+/g, '')`（整个抹掉），评审做变异实验时抓到：把 Text.tsx 里
+ * `if (ch === ' ')` 那支改成不渲染任何东西（解码行的每个空格都丢），整包 123 tests 照样全绿——
+ * `返工率高达 30%，每单多花 3 个工作日` 静默退化成 `返工率高达30%…` 能从门禁眼皮底下溜过去。
+ *
+ * 但也不能原样比对：DOM 里空格渲的是 `&nbsp;`（U+00A0），与 spec 文本里的普通空格不是同一个
+ * 码点，逐字节等值会假红。折叠成单个普通空格 + 去首尾，两边都成立，且行内空格的**有无**
+ * 仍然可见。
+ */
+const strip = (s: string) => s.replace(/\s+/g, ' ').trim()
 
 /** 按 id 取元素。用属性选择器而不是 `#${CSS.escape(id)}`——jsdom 环境下全局 `CSS` 是
  *  undefined（实测），且 id 里出现 `-`/`_` 之外的字符时属性选择器同样安全。 */
@@ -52,14 +64,44 @@ const textOf = (l: Layer): string | null =>
  * 该图层「逐字解码全部锁定」的最早时刻。
  *
  * 必须算准，不能随手取一个时间：解码中的字符会同时渲出真字（.fin，opacity 0）和鬼影字
- * （.gh），textContent 里两者交错，字面比对会被鬼影污染成假红。锁定条件见 decode.ts：
- * 第 i 个字 t0 = start + i*step（step = min(0.055, 1.1/字数)），t0 + K*GSTEP(=0.225) 后变 final。
+ * （.gh），textContent 里两者交错，字面比对会被鬼影污染成假红。
+ *
+ * 锁定时长直接调 `decode.ts` 的 `lockTimeFor()`，**不在这里抄一份 0.055/1.1/0.225**——
+ * 常量抄多份的话，将来正当地调解码节奏就得多处同步改，漏一处 = 门禁假红（自伤）。
+ *
+ * 取**最长的一行**：finish(n) = (n-1)·min(0.055, 1.1/n) 对 n 单调递增（n≤20 时 step 恒为
+ * 1.1/n、finish=1.1·(n-1)/n 递增；n>20 时 step 封顶 0.055、finish=0.055(n-1) 也递增），
+ * 所以最长行锁定了，其余行必然也锁定了。
  */
 function decodedAt(layer: Layer, text: string): number {
   const longest = Math.max(1, ...text.split('\n').map((l) => Array.from(l).length))
-  const step = Math.min(0.055, 1.1 / longest)
-  return layer.start + (longest - 1) * step + 0.225 + 1e-6
+  return layer.start + lockTimeFor(longest) + 1e-6
 }
+
+/**
+ * 覆盖面守护（文件级，不是每组一条）。
+ *
+ * 下面按 kind 分流的断言里，image / caption 两类在多数 fixture 组里一次都不进循环——单个 `it`
+ * 空转不可避免，但**整个 fixture 集合**必须至少各有一组带这两类图层，否则那两条断言就全空转了。
+ * 这不是杞人忧天：`lower()` 只在 `audio.captionsEnabled` 为真时才产 caption 图层，
+ * image 只在 `shots` 非空时才有；将来 `lower()` 语义变了、有人重跑 generate.ts，
+ * 这两类覆盖会**静默蒸发而九组全绿**。变异实验里「跳过 caption 图层」这一项能变红，
+ * 唯一的依托就是 flashCaptions 这组存在。
+ */
+describe('fixture 集合覆盖面守护', () => {
+  it('至少一组 fixture 含 image 图层（否则 src 编码断言全空转）', () => {
+    expect(FIXTURES.some(([, s]) => s.layers.some((l) => l.content.kind === 'image'))).toBe(true)
+  })
+  it('至少一组 fixture 含 caption 图层（否则字幕类图层完全没被渲染过）', () => {
+    expect(FIXTURES.some(([, s]) => s.layers.some((l) => l.content.kind === 'caption'))).toBe(true)
+  })
+  it('至少一组 fixture 的图片路径含需要编码的字符（否则编码断言恒真）', () => {
+    const needsEncoding = (p: string) => /[ #?]/.test(p) || /[^\x00-\x7F]/.test(p)
+    expect(FIXTURES.some(([, s]) => s.layers.some(
+      (l) => l.content.kind === 'image' && needsEncoding(l.content.src),
+    ))).toBe(true)
+  })
+})
 
 describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
   it('每个图层在其中点时刻都出现在 DOM 中', () => {
@@ -117,6 +159,21 @@ describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
       expect(src.split('/').length, `图层 ${layer.id} 的 src 目录层级被编坏`).toBe(raw.split('/').length)
       // 3) 解回来必须与 spec 里的原路径逐字相等——既防漏编，也防多编/编错。
       expect(decodeURIComponent(src), `图层 ${layer.id} 的 src 与 spec 不一致`).toBe(raw)
+
+      // 4) `wideWrap`（横图）还有**第二个编码发射点**：`.wideBg` 的 background-image。
+      // 只查 img[src] 等于只收了一半口——「图片路径编码丢失 / 编码函数选错」这一族回归
+      // 恰恰在 CSS url() 这个形状上翻过车（未编码的 `#`/`?` 在 url() 里同样截断）。
+      if (layer.style.cssClass === 'wideWrap') {
+        const bgEl = byId(container, layer.id)?.querySelector('.wideBg') as HTMLElement
+        expect(bgEl, `图层 ${layer.id} 未渲出 .wideBg`).not.toBeNull()
+        const bg = bgEl.style.backgroundImage
+        const inUrl = /url\(\s*['"]?([^'")]*)['"]?\s*\)/.exec(bg)?.[1] ?? ''
+        expect(inUrl, `图层 ${layer.id} 的 .wideBg 没带上图片路径`).not.toBe('')
+        for (const bad of [' ', '#', '?']) {
+          expect(inUrl, `图层 ${layer.id} 的 .wideBg url() 未编码 ${JSON.stringify(bad)}`).not.toContain(bad)
+        }
+        expect(decodeURIComponent(inUrl), `图层 ${layer.id} 的 .wideBg url() 与 spec 不一致`).toBe(raw)
+      }
     }
   })
 
