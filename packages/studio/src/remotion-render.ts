@@ -2,6 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Root.tsx 注册的 composition id 由 compositions 包**单一导出**，不再两处手抄字面量。
+// 深导入 src/composition 而非包入口：入口 index.ts 带六份 CSS 的副作用导入，Node 里 import 会炸。
+import { COMPOSITION_ID } from '@forgecast/compositions/src/composition'
 import type { VideoSpec } from './videospec'
 
 const STUB_BYTES = Buffer.from('FORGECAST_STUB_MP4\n')
@@ -10,14 +13,17 @@ const RENDER_TIMEOUT_MS = 600_000
 const COMPOSITIONS_SRC = fileURLToPath(new URL('../../compositions/src', import.meta.url))
 /** compositions 包的 Remotion 入口（registerRoot 在那里调）。 */
 const ENTRY_POINT = path.join(COMPOSITIONS_SRC, 'entry.ts')
-/** Root.tsx 里注册的唯一 composition id；宽高/时长由 calculateMetadata 从 spec 算。 */
-const COMPOSITION_ID = 'spec'
+
 
 /** 已打好的 bundle：**键含 publicDir**——每条视频的 publicDir 不同，只按源码指纹缓存会让
  *  第二条视频拿到第一条的资源目录（截图/旁白串台）。值里再存指纹，改了组件源码就重打。
- *  Map 有上限并在淘汰时删磁盘目录，见 resolveServeUrl：bundle() 的 outDir 在 os.tmpdir()
- *  且 publicDir 是整目录复制，不删的话每条视频都在 /tmp 留一份「截图+旁白 wav+webpack 产物」
- *  的完整副本，小盘 VPS 几十条就 no space left（renderHyperframes 时代不留任何 tmp）。 */
+ *
+ *  据实说明：hfDir 里含独立 videoId，所以**每条视频的 publicDir 都不同 → 这个缓存今天实际
+ *  从不命中**，省不到 webpack 冷启的时间。它现在真正起作用的只有淘汰侧（见 resolveServeUrl
+ *  的 evictBundle）：bundle() 的 outDir 在 os.tmpdir() 且 publicDir 是整目录复制，不删的话
+ *  每条视频都在 /tmp 留一份「截图+旁白 wav+webpack 产物」的完整副本，小盘 VPS 几十条就
+ *  no space left（renderHyperframes 时代不留任何 tmp）。让它真能命中（把 publicDir 从缓存键里
+ *  拆出去、或改用 symlink 版 publicDir）是独立一项，已裁决延后。 */
 const bundleCache = new Map<string, { fingerprint: string; serveUrl: string }>()
 
 /** bundle 目录保留份数。取 2 而不是 1：留一份给「同 publicDir 重渲」的命中，再多就是纯占盘。 */

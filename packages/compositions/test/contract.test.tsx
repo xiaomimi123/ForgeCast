@@ -117,3 +117,37 @@ describe('.tw 全局序号（elemIndex）分配', () => {
     expect(ghost!.textContent).toBe((expected as { kind: 'ghost'; glyph: string }).glyph)
   })
 })
+
+/**
+ * 内联 transform 只写给「真被动画的图层」。
+ *
+ * 回归背景：曾经无条件写 `translateY(0px) scale(1)`，恒等值看着无害，但**内联样式胜过样式表**
+ * ——字幕层在五份模板 CSS 里靠 `left:50%` + `transform: translateX(-50%)` 居中，被恒等 transform
+ * 顶掉后左边缘落在画布中线、右半截裁出画面，而视频照常渲出、时长正确、零报错。
+ */
+describe('内联 transform 不覆盖样式表', () => {
+  it('无 effects 的图层不带内联 transform', () => {
+    const s = spec([layer({ id: 'lt', effects: [] })])
+    const el = render(<SpecView spec={s} timeSec={0} />).container.querySelector('#lt') as HTMLElement
+    expect(el.style.transform).toBe('')
+  })
+
+  it('字幕图层（cssClass:cap、effects 空）渲出后 transform 为空——否则 .cap 的 translateX(-50%) 被顶掉', () => {
+    const cap = layer({
+      id: 'cap0', kind: 'caption', start: 0, duration: 3,
+      content: { kind: 'caption', text: '一行字幕' }, style: { cssClass: 'cap' }, effects: [],
+    })
+    const el = render(<SpecView spec={spec([cap])} timeSec={1} />).container.querySelector('#cap0') as HTMLElement
+    expect(el.className).toContain('cap')
+    expect(el.style.transform).toBe('')
+  })
+
+  it('有位移/缩放 effect 的图层仍照常写 transform', () => {
+    const s = spec([layer({
+      id: 'lf', start: 0, duration: 2,
+      effects: [{ type: 'slideUp', at: 0, duration: 0.3 }] as Layer['effects'],
+    })])
+    const el = render(<SpecView spec={s} timeSec={0} />).container.querySelector('#lf') as HTMLElement
+    expect(el.style.transform).toContain('translateY')
+  })
+})

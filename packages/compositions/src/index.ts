@@ -7,6 +7,7 @@ import './styles/all.css'
 
 export * from './videospec-types'
 export * from './time'
+export * from './composition'
 export { SpecView } from './SpecView'
 export { SpecComposition } from './SpecComposition'
 export { RemotionRoot } from './Root'

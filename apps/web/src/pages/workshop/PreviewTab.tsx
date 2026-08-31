@@ -4,7 +4,7 @@ import { Player } from '@remotion/player'
 // `* { margin:0;padding:0 }` 是给 1080×1920 渲染页写的，泄漏进控制台会把全站间距打平）。
 // 样式改由 index.css 用 `@import ... layer(forgecast-compositions)` 引入，见那里的注释。
 import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
-import { FPS } from '@forgecast/compositions/src/time'
+import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import { useEffect, useState } from 'react'
 import type { Asset } from '../../api'
@@ -98,7 +98,7 @@ export default function PreviewTab({ slug, assets }: { slug: string; assets: Ass
             <Player
               component={SpecComposition}
               inputProps={{ spec }}
-              durationInFrames={Math.max(1, Math.round(spec.durationSec * FPS))}
+              durationInFrames={Math.max(1, secToFrames(spec.durationSec))}
               fps={FPS}
               // 宽高比由 spec.canvas 决定：产品默认竖版 9:16，写死 16:9 会把竖版裁成左上角一小块，
               // 而「有画面/能播/拖动跟手」在被裁切的产物上照样全过——这个坑踩过。

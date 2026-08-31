@@ -61,7 +61,7 @@ export interface Layer {
 export type LayerContent =
   | { kind: 'text'; text: string }
   | { kind: 'image'; src: string }        // 相对 hf 目录
-  | { kind: 'video'; src: string; muted: boolean }   // ④ 预留，本次不渲染
+  | { kind: 'video'; src: string; muted: boolean }   // Task 8 起真渲染（Remotion <Video>）
   | { kind: 'caption'; text: string }
   | { kind: 'shape'; shape: 'rect' | 'ellipse' }
 

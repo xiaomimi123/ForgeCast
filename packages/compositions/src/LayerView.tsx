@@ -30,7 +30,13 @@ export function LayerView(
     ...base,
     zIndex: layer.track,
     opacity: (base.opacity as number ?? 1) * clipFx.opacity,
-    transform: `translateY(${clipFx.y}px) scale(${clipFx.scale})`,
+  }
+  // 只有真被动画到的图层才写 transform。恒等值 `translateY(0px) scale(1)` 看着无害，但内联样式
+  // 胜过样式表——字幕层（cssClass:'cap'、effects: []）在五份模板 CSS 里靠 `left:50%` +
+  // `transform: translateX(-50%)` 居中，被这条恒等 transform 顶掉后字幕左边缘落在画布中线，
+  // 右半截裁出画面，而视频照常渲出、零报错。GSAP 语义本来也是「只写被动画的目标」。
+  if (clipFx.y !== 0 || clipFx.scale !== 1) {
+    style.transform = `translateY(${clipFx.y}px) scale(${clipFx.scale})`
   }
   const cls = ['clip', layer.style.cssClass].filter(Boolean).join(' ')
   let inner: React.ReactNode = null
@@ -46,6 +52,10 @@ export function LayerView(
       inner = <div className={`shape shape-${layer.content.shape}`} />
       break
     case 'video':
+      // 未包 <Sequence>：<Video> 的片源始终从 0 秒起播，故 start > 0 的 video 图层拿到的是
+      // 「片源 0 秒处的画面」而不是「时间轴 start 处对应的片源偏移」。当前五模板的 video 图层
+      // 都是整段铺满、start=0，所以不暴露；子项目④（真实素材剪辑）要按时间轴裁片段时，
+      // 必须在这里包一层 <Sequence from={secToFrames(layer.start)}> 并决定 trim 语义。
       inner = <Video src={encodePathForUrl(layer.content.src)} muted={layer.content.muted} />
       break
   }

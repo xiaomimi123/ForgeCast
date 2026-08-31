@@ -20,10 +20,10 @@ export function TextContent(
       {lines.map((line, i) => {
         const isTw = targets.all || targets.lines.has(i)
         const s = styleAt(layer.effects, layer.start, layer.duration, timeSec, i)
-        const style: React.CSSProperties = {
-          opacity: s.opacity,
-          transform: `translateY(${s.y}px) scale(${s.scale})`,
-        }
+        // 同 LayerView：恒等 transform 也会顶掉样式表里的 transform（行级同样有模板 CSS 会用），
+        // 故只在这一行真被动画时才写。
+        const style: React.CSSProperties = { opacity: s.opacity }
+        if (s.y !== 0 || s.scale !== 1) style.transform = `translateY(${s.y}px) scale(${s.scale})`
         if (!isTw) {
           return <Tag key={i} id={`${layer.id}-l${i}`} style={style}>{line}</Tag>
         }
