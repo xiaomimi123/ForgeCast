@@ -7,8 +7,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@forgecast/compositions": "workspace:*",
     "@forgecast/copywriter": "workspace:*",
-    "@forgecast/core": "workspace:*"
+    "@forgecast/core": "workspace:*",
+    "@remotion/bundler": "4.0.519",
+    "@remotion/renderer": "4.0.519"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

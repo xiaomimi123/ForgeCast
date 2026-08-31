@@ -16,8 +16,10 @@ export function templateClass(template: string): string {
 }
 
 /**
- * 纯展示：给定 spec 与时刻，渲出该时刻应该看到的全部图层。**不碰任何 Remotion hook**——
- * 内容断言门禁直接打这一层，用普通 React 测试即可，不必起 Remotion 运行时。
+ * 纯展示：给定 spec 与时刻，渲出该时刻应该看到的全部图层。**自身不碰任何 Remotion hook**——
+ * 内容断言门禁直接打这一层，用普通 React 测试即可。
+ * 例外：video 图层落到 remotion 的 <Video>（见 LayerView），它内部要 useVideoConfig——
+ * 含 video 图层的 spec 仍需 Remotion 上下文（测试里 mock remotion 即可，见 video-layer.test.tsx）。
  *
  * 可见性判断只在这里做一次（`SpecComposition` 不再包 <Sequence>），避免两处判断不一致。
  * `.tw` 全局序号按 spec.layers 顺序、层内按行号累加，复现原 DECODE_RUNTIME 的

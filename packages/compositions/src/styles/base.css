@@ -2,10 +2,17 @@
    只做「搬」不做「改」：数值、类名、选择器一律照抄，不合并规则、不重排。 */
 
 /* ── 五模板共有且完全一致的字体与重置（原在每份模板 <style> 顶部，此处去重一份） ──
-   注：url() 用根相对路径而非模板里的 "assets/fonts/…" —— Remotion 的 webpack 不解析
-   根相对 url，交由静态目录在运行时提供；local() 回落与原模板一致。 */
-@font-face { font-family: "NotoSC"; src: url("/assets/fonts/NotoSansSC.otf"), local("PingFang SC"), local("Noto Sans CJK SC"); font-weight: 400; }
-@font-face { font-family: "NotoSC"; src: url("/assets/fonts/NotoSansSC-Bold.otf"), local("PingFang SC Semibold"), local("Noto Sans CJK SC Bold"); font-weight: 700 900; }
+   注：url() 用根相对路径而非模板里的 "assets/fonts/…"，由静态目录在运行时提供；
+   local() 回落与原模板一致。 */
+/* url 前的 webpackIgnore 必须留着：Remotion 的 css-loader 会在**打包期**按 resolve.roots 把
+   "/assets/..." 当模块解析，字体没随包放时整个 bundle() 直接失败（不是运行期回落 local()）。
+   加上它后这段 url 原样留在 CSS 里，运行期由渲染页面按根路径请求：bundle({publicDir}) 把
+   publicDir 复制到 <bundle>/public/，remotion-render.ts 再把 public/assets 软链回 bundle 根，
+   于是解析到 <hf 项目>/assets/fonts/（scaffoldHfProject 软链到 templates/hf/fonts）。
+   仓库里现在没打包字体（见 templates/hf/fonts/README.md），故实际回落 local("PingFang SC")——
+   与 HyperFrames 时期行为一致；Docker 容器内无该字体会出豆腐块，放入字体文件即自动生效。 */
+@font-face { font-family: "NotoSC"; src: /* webpackIgnore: true */ url("/assets/fonts/NotoSansSC.otf"), local("PingFang SC"), local("Noto Sans CJK SC"); font-weight: 400; }
+@font-face { font-family: "NotoSC"; src: /* webpackIgnore: true */ url("/assets/fonts/NotoSansSC-Bold.otf"), local("PingFang SC Semibold"), local("Noto Sans CJK SC Bold"); font-weight: 700 900; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { overflow: hidden; font-family: "NotoSC", sans-serif; }
 /* 原模板的 html,body{width/height} 由 Remotion 的 canvas 尺寸决定，故不搬死宽高；

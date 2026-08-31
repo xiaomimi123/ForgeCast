@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, chooseBgmPath, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, chooseBgmPath, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, resolveTechBg, scaffoldHfProject } from './hyperframes'
+import { renderRemotion } from './remotion-render'
 import type { BeatGrid, Shot } from './hyperframes'
 import { lower, type LowerPlan } from './lower'
 import { buildSemantic } from './semantic'
@@ -209,7 +210,11 @@ async function renderHfPipeline(
   html = injectAudioCaptions(html, voice.audioRel, voice.cues, duration, false)
   html = fillAccents(html, rendered.accents)
   scaffoldHfProject(hfDir, html, shotAssets)
-  return renderAndRegister(ctx, hfDir, slug, tpl, hook, projectId, onProgress, spec, audioMix)
+  // 背景变体在这里解析**一次**再经 inputProps 进 Remotion（组件内不随机，否则逐帧不同、画面闪烁）；
+  // 取值规则与上面 injectTechFx 那行一致：story 不加背景，其余走 video.bg（'none'/空 → Background 渲空）。
+  const bgVariant = tpl === 'story' ? undefined : resolveTechBg(video.bg || 'none')
+  return renderAndRegister(ctx, hfDir, slug, tpl, hook, projectId, onProgress, spec, audioMix,
+    { engine: 'remotion', bgVariant })
 }
 
 /**
@@ -221,13 +226,22 @@ async function renderHfPipeline(
  */
 async function renderAndRegister(
   ctx: CoreCtx, hfDir: string, slug: string, tpl: string, hook: string | null,
-  projectId: number, onProgress: (m: string) => void, spec: VideoSpec, audioMix?: AudioMix,
+  projectId: number, onProgress: (m: string) => void, spec: VideoSpec, audioMix: AudioMix | undefined,
+  via: { engine: 'remotion'; bgVariant?: string } | { engine: 'hyperframes' },
 ): Promise<GeneratedVideo> {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const relPath = path.join(slug, 'videos', `${tpl}-${hook ?? tpl}-${stamp}-${spec.videoId.slice(0, 6)}.mp4`)
   const outAbs = path.join(ctx.config.paths.workspace, relPath)
-  onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
-  await renderHyperframes(hfDir, outAbs, ctx.config.video.mode === 'stub' ? 'stub' : 'render', { onProgress })
+  const mode = ctx.config.video.mode === 'stub' ? 'stub' : 'render'
+  if (via.engine === 'remotion') {
+    onProgress(`渲染视频（Remotion，${ctx.config.video.mode}）…`)
+    // publicDir 指向 hf 项目目录：spec 里的图片 src 是 `assets/<rel>`，字体是 assets/fonts，
+    // 都以这个目录为根（scaffoldHfProject 摆好的）。只有 bundle() 收 publicDir，renderMedia 不收。
+    await renderRemotion(spec, outAbs, { mode, publicDir: hfDir, bgVariant: via.bgVariant, onProgress })
+  } else {
+    onProgress(`渲染视频（HyperFrames，${ctx.config.video.mode}）…`)
+    await renderHyperframes(hfDir, outAbs, mode, { onProgress })
+  }
   if (audioMix && ctx.config.video.mode !== 'stub') {
     try {
       onProgress('混入 BGM/音效…')
@@ -310,5 +324,7 @@ async function renderCustomTemplate(
     },
     warnings,
   }
-  return renderAndRegister(ctx, hfDir, slug, `custom-${row.id}`, hook, projectId, onProgress, spec, audioMix)
+  // 自定义模板不走 Layer 模型（HTML 由 LLM 产出），本期继续用 HyperFrames 渲
+  return renderAndRegister(ctx, hfDir, slug, `custom-${row.id}`, hook, projectId, onProgress, spec, audioMix,
+    { engine: 'hyperframes' })
 }
