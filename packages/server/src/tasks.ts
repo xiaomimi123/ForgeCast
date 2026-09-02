@@ -1,15 +1,18 @@
 import { randomUUID } from 'node:crypto'
 
 export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string; result?: unknown }
+export interface TaskMeta { kind: 'copy' | 'video'; slug: string; sourceAssetId?: number }
 export interface TaskRecord {
   id: string
   status: 'pending' | 'running' | 'done' | 'failed'
   events: TaskEvent[]
+  meta?: TaskMeta
 }
 
 export interface TaskQueue {
-  enqueue(fn: (log: (msg: string) => void) => Promise<unknown>): string
+  enqueue(fn: (log: (msg: string) => void) => Promise<unknown>, meta?: TaskMeta): string
   get(id: string): TaskRecord | undefined
+  list(): TaskRecord[]
   subscribe(id: string, cb: (e: TaskEvent) => void): () => void
 }
 
@@ -25,9 +28,9 @@ export function createTaskQueue(): TaskQueue {
   }
 
   return {
-    enqueue(fn) {
+    enqueue(fn, meta) {
       const id = randomUUID()
-      tasks.set(id, { id, status: 'pending', events: [] })
+      tasks.set(id, { id, status: 'pending', events: [], meta })
       chain = chain.then(async () => {
         const t = tasks.get(id)!
         t.status = 'running'
@@ -43,6 +46,7 @@ export function createTaskQueue(): TaskQueue {
       return id
     },
     get: (id) => tasks.get(id),
+    list: () => [...tasks.values()],
     subscribe(id, cb) {
       if (!subs.has(id)) subs.set(id, new Set())
       subs.get(id)!.add(cb)

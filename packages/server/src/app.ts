@@ -220,7 +220,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const taskId = queue.enqueue((log) => generateCopy(ctx, {
       slug, hook: body.hook, n, feedback: body.feedback,
       renderCovers: body.renderCovers ?? true, onProgress: log,
-    }))
+    }), { kind: 'copy', slug })
     return c.json({ taskId })
   })
 
@@ -616,7 +616,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       captions: typeof body.captions === 'boolean' ? body.captions : undefined,
       ratio,
       onProgress: log,
-    }))
+    }), { kind: 'video', slug, sourceAssetId: body.assetId })
     return c.json({ taskId })
   })
 

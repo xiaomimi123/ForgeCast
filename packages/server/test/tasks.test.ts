@@ -38,4 +38,17 @@ describe('createTaskQueue', () => {
     off()
     expect(got).toEqual(['log', 'done'])
   })
+  it('enqueue 可带 meta，list() 返回含 meta 的任务', async () => {
+    const q = createTaskQueue()
+    const id = q.enqueue(async () => 'ok', { kind: 'video', slug: 's1', sourceAssetId: 7 })
+    await new Promise((r) => setTimeout(r, 10))
+    const rec = q.list().find((t) => t.id === id)
+    expect(rec?.meta).toEqual({ kind: 'video', slug: 's1', sourceAssetId: 7 })
+    expect(rec?.status).toBe('done')
+  })
+  it('不带 meta 的既有调用不受影响', async () => {
+    const q = createTaskQueue()
+    const id = q.enqueue(async () => 'ok')
+    expect(q.get(id)?.meta).toBeUndefined()
+  })
 })
