@@ -30,7 +30,8 @@ export interface ContentItemView {
   title: string
   copyAssetId: number
   cover: { assetId: number; url: string } | null
-  render: { assetId: number; url: string; specPath: string | null; version: number; status: string } | null
+  /** 最新一版渲染成片；`assetIds` 是该文案关联的**全部**版本 id（含最新），删除内容时要整条清掉，否则旧版成孤儿 */
+  render: { assetId: number; assetIds: number[]; url: string; specPath: string | null; version: number; status: string } | null
   progress: number | null
   error: string | null
   warnings: string[]
@@ -145,6 +146,7 @@ export function buildContentItems(input: BuildContentItemsInput): ContentItemVie
       render: latest
         ? {
             assetId: latest.id,
+            assetIds: vids.map((v) => v.id),
             url: fileUrl(latest.file_path),
             specPath: latest.spec_path ?? null,
             version: vids.length,

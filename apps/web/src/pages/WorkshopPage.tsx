@@ -61,14 +61,19 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
     qc.invalidateQueries({ queryKey: ['content-items', selected] })
   }
 
-  function generate(feedback?: string, hookOverride?: string, nOverride?: number) {
+  function generate() {
     if (!selected) return
     setActiveKey('copy')
     copyRun.run(
-      async () => (await api<{ taskId: string }>(`/api/projects/${selected}/copy`, {
-        method: 'POST',
-        body: JSON.stringify({ hook: hookOverride ?? hook, n: nOverride ?? n, feedback }),
-      })).taskId,
+      async () => {
+        const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/copy`, {
+          method: 'POST',
+          body: JSON.stringify({ hook, n }),
+        })
+        // 入队即失效（见 makeVideo 里的说明），保持两条链路对称
+        qc.invalidateQueries({ queryKey: ['content-items', selected] })
+        return taskId
+      },
       invalidateProjectData,
     )
   }
@@ -77,9 +82,17 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
     if (!selected) return
     setActiveKey('video')
     videoRun.run(
-      async () => (await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
-        method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions, ratio: vp.ratio }),
-      })).taskId,
+      async () => {
+        const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
+          method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions, ratio: vp.ratio }),
+        })
+        // 拿到 taskId（＝任务已入队、meta 已写）后立刻失效 content-items：
+        // 派生 rendering 靠的是任务队列（server content-items.ts：pending|running ⇒ rendering），
+        // 而 refetchInterval 只在缓存里已经有 rendering 项时才轮询。不在这里主动失效一次，
+        // 缓存永远停在 script_ready → 不轮询 → 发现不了 rendering，鸡生蛋。
+        qc.invalidateQueries({ queryKey: ['content-items', selected] })
+        return taskId
+      },
       invalidateProjectData,
     )
   }
@@ -98,7 +111,8 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
   }
   /** 删一条内容 = 删掉它背后的文案/封面/成片素材（ContentItem 只是这三者的视图） */
   function deleteContentItem(item: ContentItemView) {
-    const ids = [item.render?.assetId, item.cover?.assetId, item.copyAssetId].filter((v): v is number => typeof v === 'number')
+    // render.assetIds 是全部版本（不是只有最新那条），否则旧版素材行与文件成孤儿且再也无法从队列触达
+    const ids = [...(item.render?.assetIds ?? []), item.cover?.assetId, item.copyAssetId].filter((v): v is number => typeof v === 'number')
     Promise.all(ids.map((id) => api(`/api/assets/${id}`, { method: 'DELETE' })))
       .then(() => { if (selectedItemId === item.id) setSelectedItemId(null) })
       .catch((e) => alert('删除失败：' + (e instanceof Error ? e.message : String(e))))

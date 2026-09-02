@@ -44,6 +44,8 @@ describe('聚合', () => {
     const [item] = buildContentItems({ ...base, assets: [copy(1), video(9), video(11)], readSpec: linkSpec(1) })
     expect(item.render?.assetId).toBe(11)
     expect(item.render?.version).toBe(2)
+    // assetIds 要含全部版本（删除内容时按它整条清，只删最新会留孤儿）
+    expect(item.render?.assetIds).toEqual([9, 11])
   })
   it('spec_path 为 null / readSpec 抛错 的 video 不关联也不炸', () => {
     const boom = () => { throw new Error('bad json') }

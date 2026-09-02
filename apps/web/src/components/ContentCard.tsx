@@ -39,12 +39,14 @@ function StatusDot({ status }: { status: ContentItemView['status'] }) {
  * P0 无消费方，不传 onApprove（通过动作在成片库，见 task-5 brief）。
  */
 export default function ContentCard({
-  item, selected, onOpen, onDelete,
+  item, selected, onOpen, onDelete, onRegenCover,
 }: {
   item: ContentItemView
   selected: boolean
   onOpen: (item: ContentItemView) => void
   onDelete: (item: ContentItemView) => void
+  /** 可选：重生封面（`POST /api/assets/:copyAssetId/cover`）。不传则菜单不出这一项。 */
+  onRegenCover?: (item: ContentItemView) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -109,12 +111,21 @@ export default function ContentCard({
             className="absolute right-0 top-6 z-10 min-w-[88px] rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] py-1 shadow-md"
             onClick={(e) => e.stopPropagation()}
           >
+            {onRegenCover && (
+              <button
+                type="button"
+                className="block w-full whitespace-nowrap px-3 py-1.5 text-left text-xs text-[var(--fc-ink)] hover:bg-[var(--fc-line-3)]"
+                onClick={() => { setMenuOpen(false); onRegenCover(item) }}
+              >
+                重生封面
+              </button>
+            )}
             <button
               type="button"
               className="block w-full px-3 py-1.5 text-left text-xs text-[var(--fc-accent)] hover:bg-[var(--fc-accent-tint)]"
               onClick={() => {
                 setMenuOpen(false)
-                if (window.confirm('删除这条内容及其封面/视频素材？不可恢复')) onDelete(item)
+                if (window.confirm('删除这条内容及其封面/视频素材（含历史版本）？不可恢复')) onDelete(item)
               }}
             >
               删除

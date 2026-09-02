@@ -148,7 +148,7 @@ export interface ContentItemView {
   id: number; seq: number; hook: string | null; status: ContentStatus
   title: string; copyAssetId: number
   cover: { assetId: number; url: string } | null
-  render: { assetId: number; url: string; specPath: string | null; version: number; status: string } | null
+  render: { assetId: number; assetIds: number[]; url: string; specPath: string | null; version: number; status: string } | null
   progress: number | null; error: string | null; warnings: string[]
 }
 

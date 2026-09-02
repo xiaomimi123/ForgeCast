@@ -1,9 +1,9 @@
-import { useQuery, type UseQueryResult } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { api, type Asset, type BgmList, type ContentItemView, type CustomTemplate } from '../../api'
 import ContentCard from '../../components/ContentCard'
 import TaskProgress from '../../components/TaskProgress'
 import { Empty, Failure, Skeleton } from '../../components/ui/States'
-import type { TaskRun } from '../../useTaskRun'
+import { useTaskRun, type TaskRun } from '../../useTaskRun'
 import CutPlanEditor from '../CutPlanEditor'
 import PreviewTab from './PreviewTab'
 import ScriptTab from './ScriptTab'
@@ -79,7 +79,23 @@ export default function EditorTransitionTab({
   scriptAssets: Asset[]
   onScriptBusyChange: (v: boolean) => void
 }) {
+  const qc = useQueryClient()
   const templates = useQuery({ queryKey: ['templates'], queryFn: () => api<CustomTemplate[]>('/api/templates') })
+
+  // 重生封面：唯一入口是队列卡「⋯」菜单（`POST /api/assets/:copyAssetId/cover`，模板/选图走默认自动）
+  const coverRun = useTaskRun()
+  function regenCover(item: ContentItemView) {
+    coverRun.run(
+      async () => (await api<{ taskId: string }>(`/api/assets/${item.copyAssetId}/cover`, {
+        method: 'POST', body: JSON.stringify({}),
+      })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['content-items', selected] })
+        qc.invalidateQueries({ queryKey: ['assets', selected] })
+        if (!ok) alert('封面生成失败：' + (e?.message ?? '未知错误'))
+      },
+    )
+  }
   const tplOptions = [
     ...VIDEO_TPLS,
     ...(templates.data ?? []).map((t) => ({ value: `custom-${t.id}`, label: `${t.name}（对标拆解 · ${t.aspect_ratio === 'portrait' ? '竖屏' : '横屏'}）` })),
@@ -123,7 +139,10 @@ export default function EditorTransitionTab({
           </div>
 
           <div className="card p-2">
-            <div className="px-1.5 pb-1.5 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">内容队列</div>
+            <div className="flex items-center gap-2 px-1.5 pb-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">内容队列</span>
+              {coverRun.running && <span className="text-[10px] text-[var(--fc-muted)]">封面生成中…</span>}
+            </div>
             {items.isLoading && <div className="p-2"><Skeleton lines={4} /></div>}
             {items.isError && (
               <div className="p-2">
@@ -141,7 +160,8 @@ export default function EditorTransitionTab({
             )}
             {list.map((item) => (
               <div key={item.id}>
-                <ContentCard item={item} selected={item.id === selectedItemId} onOpen={onSelectItem} onDelete={onDeleteItem} />
+                <ContentCard item={item} selected={item.id === selectedItemId} onOpen={onSelectItem}
+                  onDelete={onDeleteItem} onRegenCover={regenCover} />
                 {item.status === 'failed' && (
                   <div className="px-1 pb-2">
                     <Failure step="渲染" error={item.error ?? ''} onRetry={() => onMakeVideo(item.copyAssetId)} />
