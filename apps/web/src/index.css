@@ -172,3 +172,39 @@ body {
 .station[aria-selected="true"] .no, .station[aria-selected="true"] .ct { color: var(--color-hairline-strong); }
 .station.spur { border-left: 1px dashed var(--color-hairline-strong); flex: 0 0 auto; min-width: 140px; }
 .station:hover:not([aria-selected="true"]) { background: var(--color-hairline); }
+
+/* design tokens（docs/剪辑台-实施说明.md §3，逐字复制，P1 新组件用变量，存量渐进迁移） */
+:root {
+  /* 面 */
+  --fc-bg:        #F1F2EE;  /* 页底 */
+  --fc-surface:   #FAFAF8;  /* 面板 / 卡片 */
+  --fc-surface-2: #FFFFFF;  /* 输入框、当前行 */
+  --fc-sunken:    #E7E8E2;  /* 占位、禁用底 */
+
+  /* 墨 */
+  --fc-ink:       #181A16;  /* 正文 / 主操作底 */
+  --fc-ink-2:     #2A2E24;  /* 主操作 hover */
+  --fc-muted:     #6E7368;  /* 次要文字 */
+  --fc-faint:     #9AA093;  /* 弱文字 */
+
+  /* 线 */
+  --fc-line:      #D9DBD2;  /* 弱描边 / 分隔 */
+  --fc-line-2:    #B9BCB0;  /* 强描边 / 控件边框 */
+  --fc-line-3:    #EDEEE9;  /* 列表行分隔 */
+  --fc-track:     #E3E5DE;  /* 时间轴轨道分隔 */
+
+  /* 强调（锈红） */
+  --fc-accent:      #C13A1B;  /* 当前 / 待办 / 播放头 */
+  --fc-accent-tint: #F5E4DE;  /* 选中底 */
+  --fc-accent-deep: #8F2A13;  /* 链接 hover */
+
+  /* 剪辑台画布（新增，仅此处） */
+  --fc-canvas:      #0E100C;
+  --fc-canvas-line: #2E322A;
+  --fc-mat:         #181A16;  /* 预览区背景，同 ink */
+
+  /* 圆角 */
+  --fc-r-xs: 2px;  /* chip / 标签 */
+  --fc-r-sm: 3px;  /* 按钮 / 卡片 / 输入 */
+  --fc-r-md: 4px;
+}

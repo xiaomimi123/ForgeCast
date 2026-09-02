@@ -9,8 +9,7 @@ import WorkshopPage from './pages/WorkshopPage'
 import Drawer from './components/Drawer'
 import ProjectDrawer from './drawers/ProjectDrawer'
 import TailorDrawer from './drawers/TailorDrawer'
-import Rail, { type SectionKey } from './Rail'
-import Topbar from './Topbar'
+import Topbar, { type SectionKey } from './Topbar'
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<SectionKey>('scout')
@@ -26,10 +25,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-paper text-ink">
-      <Topbar onOpenSettings={() => setSettingsOpen(true)} onOpenTopics={() => setTopicsOpen(true)} />
-      <div className="mt-4 px-7">
-        <Rail active={activeSection} onChange={setActiveSection} />
-      </div>
+      <Topbar
+        active={activeSection}
+        onChange={setActiveSection}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenTopics={() => setTopicsOpen(true)}
+      />
       <main className="p-7">
         {activeSection === 'scout' && <ScoutShellPage onOpenProject={openProject} />}
         {activeSection === 'projects' && <ProjectsPage onOpenProject={openProject} />}
