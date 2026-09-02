@@ -143,3 +143,11 @@ PlayerRef 的 `frameupdate` 事件驱动时间轴播放头；点时间轴/拖播
 - **样式层无自动门禁**（②终审确认的最大洞）：剪辑台大量动 UI，只有人工验收兜底。tokens 抽成 CSS 变量后靠实施说明 §9 清单逐屏核。
 - 派生状态依赖任务队列内存态：server 重启后「渲染中」会退回派生的静态判断（任务丢了 = 按 assets 现状显示），可接受。
 - `rewriteSection` 整条重 lower 会重排未 overridden 图层的时间——这是设计使然（段间时长联动），确认弹窗里要说清。
+
+## 10. P1 计划期修正（2026-09-04，写 P1 实施计划时的三条裁决）
+
+摸底发现 `lower()` 的 `LowerOpts.cues`（TTS 逐句时间轴）**不在 spec 里**——§2「重置=重跑 lower」与 §3.3「重写=整条重 lower」都不可行。且重写后旁白仍是旧文案合成的，重排时间轴无意义。修正为：
+
+1. **重置为生成结果 = orig 快照**：`renderAndRegister` 落盘 spec 时同步写 `specs/<videoId>.orig.json`；`POST …/reset` 把快照拷回。逐字节还原，比重跑 lower 更忠实。旧视频无快照 → 按钮隐藏、端点 404 带说明。
+2. **LLM 重写某段 = 只换该段文本图层**：重生成 section 文本 → 更新 `semantic.sections[i]` + `from===sectionId` 且 `kind==='text'` 的图层 `content.text`（不动结构与时间轴）。多图层/结构化段（dialogue/stat/shots）**禁用**（400，UI 置灰）。`overridden` 图层受影响时 409 返回清单，前端确认后带 `force` 重发。重写后「旁白与画面文案不一致」push 进 `spec.warnings` 并在 UI 提示。
+3. **Inspector 参数拆两档**：可改集 `{bg 变体, bgm, mood}`（写进 spec 后走 renderFromSpec，不丢手工改动）；只读集 `{tpl, ratio, captions}`（显示为只读+「重新生成才可改」——改它们需整条重 lower，会覆盖手工编辑，属既有「出视频」全管线的事）。
