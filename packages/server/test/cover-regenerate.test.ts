@@ -49,6 +49,20 @@ async function generateOne(): Promise<any> {
   throw new Error('生成超时')
 }
 
+/** 发一次重生封面并等任务跑完 */
+async function regen(copyId: number, template = 'contrast') {
+  const res = await app.request(`/api/assets/${copyId}/cover`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ template }),
+  })
+  expect(res.status).toBe(200)
+  await runTask(((await res.json()) as any).taskId)
+}
+
+async function coverRows(): Promise<any[]> {
+  const assets = await (await app.request('/api/projects/demo-project/assets')).json() as any[]
+  return assets.filter((a) => a.type === 'cover')
+}
+
 describe('POST /api/assets/:id/cover', () => {
   it('id 不存在 → 404', async () => {
     expect((await app.request('/api/assets/999999/cover', { method: 'POST' })).status).toBe(404)
@@ -59,17 +73,29 @@ describe('POST /api/assets/:id/cover', () => {
     ).run()
     expect((await app.request(`/api/assets/${info.lastInsertRowid}/cover`, { method: 'POST' })).status).toBe(404)
   })
-  it('id 是真实 copy 素材 → 真渲染出一张新 cover 素材（走真 Playwright，环境已装 chromium）', async () => {
+  it('id 是真实 copy 素材 → 真渲染出封面，文件走 copy 同词干（走真 Playwright，环境已装 chromium）', async () => {
     const copy = await generateOne()
-    const res = await app.request(`/api/assets/${copy.id}/cover`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ template: 'contrast' }),
-    })
-    expect(res.status).toBe(200)
-    const { taskId } = await res.json() as any
-    await runTask(taskId)
-    const assets = await (await app.request('/api/projects/demo-project/assets')).json() as any[]
-    const cover = assets.find((a) => a.type === 'cover')
-    expect(cover).toBeDefined()
-    expect(fs.existsSync(path.join(ctx.config.paths.workspace, cover.file_path))).toBe(true)
+    await regen(copy.id)
+    const covers = await coverRows()
+    expect(covers).toHaveLength(1)
+    // 词干必须与 copy 一致：内容工位聚合（content-items.ts）就是靠它把封面挂到这条内容上
+    const stem = (p: string) => p.split('/').pop()!.replace(/\.[^.]+$/, '')
+    expect(stem(covers[0].file_path)).toBe(stem(copy.file_path))
+    expect(fs.existsSync(path.join(ctx.config.paths.workspace, covers[0].file_path))).toBe(true)
   }, 20000)
+  it('重复重生 → 覆盖同一文件、同一行，不再堆新 cover 行', async () => {
+    const copy = await generateOne()
+    await regen(copy.id)
+    const first = (await coverRows())[0]
+    const abs = path.join(ctx.config.paths.workspace, first.file_path)
+    const before = fs.statSync(abs).mtimeMs
+    await wait(20)
+    await regen(copy.id, 'bigtext')
+    const after = await coverRows()
+    expect(after).toHaveLength(1)
+    expect(after[0].id).toBe(first.id)
+    expect(after[0].file_path).toBe(first.file_path)
+    // 文件是就地覆盖的：路径不变但 mtime 前进（前端靠 content-items 的 ?v=<mtime> 破缓存）
+    expect(fs.statSync(abs).mtimeMs).toBeGreaterThan(before)
+  }, 40000)
 })

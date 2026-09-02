@@ -43,9 +43,27 @@ export interface BuildContentItemsInput {
   tasks: TaskRecord[]
   readTitle: (filePath: string) => string | null
   slug: string
+  /**
+   * 可选：给文件取一个「版本号」（实现方用 mtimeMs），用于封面的缓存破除。
+   * 重生封面是**就地覆盖同一个文件路径**的，URL 不变浏览器就一直吃旧图。
+   * 取不到（文件不存在 / stat 抛错）返回 null，URL 就不带参数。
+   */
+  statVersion?: (filePath: string) => number | null
 }
 
 const fileUrl = (p: string) => `/files/${p}`
+
+/** 带版本参数的文件 URL；statVersion 缺省或抛错/返回 null 时回落成裸 URL（fail-soft，与其它注入方一致） */
+function versionedUrl(p: string, statVersion?: (filePath: string) => number | null): string {
+  if (!statVersion) return fileUrl(p)
+  let v: number | null = null
+  try {
+    v = statVersion(p)
+  } catch {
+    v = null
+  }
+  return v == null ? fileUrl(p) : `${fileUrl(p)}?v=${v}`
+}
 const baseName = (p: string) => p.split('/').pop() ?? p
 /** 去掉扩展名的词干：生成代码里 copy/cover 共用同一个 `${hook}-${stamp}-${i}-${rand}` 词干 */
 const stem = (p: string) => baseName(p).replace(/\.[^.]+$/, '')
@@ -82,7 +100,7 @@ function readTitleSafe(readTitle: (p: string) => string | null, filePath: string
 }
 
 export function buildContentItems(input: BuildContentItemsInput): ContentItemView[] {
-  const { assets, readSpec, tasks, readTitle, slug } = input
+  const { assets, readSpec, tasks, readTitle, slug, statVersion } = input
 
   const copies = assets.filter((a) => a.type === 'copy').sort((a, b) => a.id - b.id)
   const covers = assets.filter((a) => a.type === 'cover')
@@ -142,7 +160,8 @@ export function buildContentItems(input: BuildContentItemsInput): ContentItemVie
       status,
       title: readTitleSafe(readTitle, copy.file_path),
       copyAssetId: copy.id,
-      cover: coverRow ? { assetId: coverRow.id, url: fileUrl(coverRow.file_path) } : null,
+      // 封面 URL 带 ?v=<mtime>：重生封面覆盖同一路径，不带版本参数浏览器会一直显示旧图
+      cover: coverRow ? { assetId: coverRow.id, url: versionedUrl(coverRow.file_path, statVersion) } : null,
       render: latest
         ? {
             assetId: latest.id,

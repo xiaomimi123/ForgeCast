@@ -1,5 +1,4 @@
 import { execFile } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -109,8 +108,12 @@ export interface RegenerateCoverOptions {
 export interface RegeneratedCover { assetId: number; filePath: string }
 
 /**
- * 独立重新生成封面：以一条 copy 素材为入口（读它已落盘的 md 重新解析封面文案，不重新生成正文），
- * 渲染出一张新封面并插入新 cover asset 行——旧封面不删，和"重新生成文案"的行为一致，用户自己删不满意的。
+ * 独立重新生成封面：以一条 copy 素材为入口（读它已落盘的 md 重新解析封面文案，不重新生成正文）。
+ *
+ * **就地覆盖，不插新行**：输出文件复用 copy 的词干（`copy/pain-xxx.md` → `covers/pain-xxx.png`），
+ * db 里更新同词干的既有 cover 行（没有才插）。这是内容工位聚合（server content-items.ts）
+ * 拿词干把 cover 关联到 copy 的前提——早先每次插一条新时间戳词干的行，聚合永远连不上，
+ * 卡片缩略图不换、新行成孤儿，属「看着成功实则没效果」。
  */
 export async function regenerateCover(ctx: CoreCtx, copyAssetId: number, opts: RegenerateCoverOptions = {}): Promise<RegeneratedCover> {
   const copy: any = ctx.db.prepare("SELECT * FROM assets WHERE id = ? AND type = 'copy'").get(copyAssetId)
@@ -141,15 +144,23 @@ export async function regenerateCover(ctx: CoreCtx, copyAssetId: number, opts: R
   }
 
   const template = opts.template ?? (coverShot ? 'annotate' : 'bigtext')
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const rand = randomBytes(4).toString('hex')
-  const coverRel = path.join(project.slug, 'covers', `${copy.hook ?? 'cover'}-${stamp}-${rand}.png`)
+  // 词干＝copy 文件名去扩展名，与批量生成路径（generate.ts）落封面用的是同一个词干
+  const copyStem = (copy.file_path.split('/').pop() ?? String(copy.file_path)).replace(/\.[^.]+$/, '')
+  const coverRel = path.join(project.slug, 'covers', `${copyStem}.png`)
   await renderCover({
     templatesDir: ctx.config.paths.templates,
     template, main: doc.cover.main, sub: doc.cover.sub,
     shotDataUri: coverShot ?? undefined,
     outPath: path.join(ctx.config.paths.workspace, coverRel),
   })
+  const existing: any = ctx.db.prepare(
+    "SELECT id FROM assets WHERE project_id = ? AND type = 'cover' AND file_path = ?",
+  ).get(project.id, coverRel)
+  if (existing) {
+    // 文件已被上面覆盖写掉，行只需回到 draft（重生过的封面要重新过审）并清掉旧 warnings
+    ctx.db.prepare("UPDATE assets SET status = 'draft', warnings = '[]', hook = ? WHERE id = ?").run(copy.hook, existing.id)
+    return { assetId: Number(existing.id), filePath: coverRel }
+  }
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings) VALUES (?, ?, ?, ?, ?)',
   ).run(project.id, 'cover', copy.hook, coverRel, '[]')

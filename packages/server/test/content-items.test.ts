@@ -40,6 +40,21 @@ describe('聚合', () => {
     expect(item.cover?.assetId).toBe(2)
     expect(item.cover?.url).toBe('/files/s1/covers/pain-t-1-ab.png')
   })
+  it('给了 statVersion → 封面 URL 带 ?v=<mtime>（重生封面覆盖同路径，靠它破缓存）', () => {
+    const [item] = buildContentItems({
+      ...base, assets: [copy(1), cover(2)], readSpec: () => null, statVersion: () => 1730000000123,
+    })
+    expect(item.cover?.url).toBe('/files/s1/covers/pain-t-1-ab.png?v=1730000000123')
+  })
+  it('statVersion 抛错 / 返回 null → 回落成不带参数的裸 URL', () => {
+    const boom = buildContentItems({
+      ...base, assets: [copy(1), cover(2)], readSpec: () => null,
+      statVersion: () => { throw new Error('stat failed') },
+    })
+    expect(boom[0].cover?.url).toBe('/files/s1/covers/pain-t-1-ab.png')
+    const nil = buildContentItems({ ...base, assets: [copy(1), cover(2)], readSpec: () => null, statVersion: () => null })
+    expect(nil[0].cover?.url).toBe('/files/s1/covers/pain-t-1-ab.png')
+  })
   it('多条 video 取最新为 render，version=条数', () => {
     const [item] = buildContentItems({ ...base, assets: [copy(1), video(9), video(11)], readSpec: linkSpec(1) })
     expect(item.render?.assetId).toBe(11)

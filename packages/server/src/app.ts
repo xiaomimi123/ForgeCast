@@ -242,6 +242,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json(buildContentItems({
       assets, slug, tasks: queue.list(),
       readSpec: (p) => { try { return JSON.parse(fs.readFileSync(abs(p), 'utf8')) } catch { return null } },
+      // 封面就地覆盖（重生封面），URL 得带 mtime 版本参数才不吃浏览器缓存；stat 抛错回落成不带参数
+      statVersion: (p) => { try { return fs.statSync(abs(p)).mtimeMs } catch { return null } },
       readTitle: (p) => {
         try {
           const line = fs.readFileSync(abs(p), 'utf8').split('\n').find((l) => l.trim())
