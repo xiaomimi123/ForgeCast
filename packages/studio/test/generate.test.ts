@@ -346,6 +346,24 @@ describe('generateVideo 自定义模板（stub）', () => {
     expect(row.type).toBe('video')
   })
 
+  it('自定义模板也把 spec.semantic.sourceAssetId 接上传入的文案 assetId（与四固定模板同语义）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const pacing = { durationSec: 12, segments: [{ start: 0, end: 4 }, { start: 4, end: 8 }, { start: 8, end: 12 }] }
+    const info = cctx.db.prepare(
+      "INSERT INTO custom_templates (name, aspect_ratio, segment_count, segments_json) VALUES ('对标A', 'portrait', 3, ?)",
+    ).run(JSON.stringify(pacing))
+    const id = Number(info.lastInsertRowid)
+    const htmlDir = path.join(cctx.config.paths.templates, 'hf', 'custom')
+    fs.mkdirSync(htmlDir, { recursive: true })
+    fs.writeFileSync(path.join(htmlDir, `${id}.html`), mockCustomTemplateHtml(3, 1080, 1920), 'utf8')
+
+    const out = await generateVideo(cctx, { slug: 'demo', tpl: `custom-${id}`, assetId: 1 })
+    const row: any = cctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const spec = JSON.parse(fs.readFileSync(path.join(cctx.config.paths.workspace, row.spec_path), 'utf8'))
+    expect(spec.semantic.sourceAssetId).toBe(1)
+  })
+
   it('自定义模板 id 不存在 → 抛错', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const cctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }

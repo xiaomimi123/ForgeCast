@@ -80,7 +80,10 @@ export default function ContentCard({
     >
       {/* 缩略图 31×55，9:16，无图占位 --fc-sunken */}
       <div className="shrink-0 overflow-hidden rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)]" style={{ width: 31, height: 55 }}>
-        {item.cover?.url && <img src={item.cover.url} alt="" className="h-full w-full object-cover" />}
+        {item.cover?.url && (
+          <img src={item.cover.url} alt="" className="h-full w-full object-cover"
+            onError={(e) => { e.currentTarget.style.display = 'none' }} />
+        )}
       </div>
 
       <div className="min-w-0 flex-1 space-y-0.5">

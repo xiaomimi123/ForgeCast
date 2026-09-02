@@ -96,7 +96,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     if (!Number.isFinite(id)) throw new Error(`非法自定义模板标识: ${tpl}`)
     const row: any = ctx.db.prepare('SELECT * FROM custom_templates WHERE id = ?').get(id)
     if (!row) throw new Error(`自定义模板不存在: ${tpl}`)
-    return renderCustomTemplate(ctx, row, { slug, doc, hook: copy.hook, projectId: project.id, video, onProgress })
+    return renderCustomTemplate(ctx, row, { slug, doc, hook: copy.hook, projectId: project.id, video, onProgress, sourceAssetId: Number(copy.id) })
   }
 
   // demo：产品截图轮播。读 shots/，无图报错退出（本模板无图即无意义）——需在通用管线前处理
@@ -290,9 +290,9 @@ async function renderAndRegister(
  */
 async function renderCustomTemplate(
   ctx: CoreCtx, row: any,
-  opts: { slug: string; doc: ReturnType<typeof parseCopyOutput>; hook: string; projectId: number; video: VideoCfg; onProgress: (m: string) => void },
+  opts: { slug: string; doc: ReturnType<typeof parseCopyOutput>; hook: string; projectId: number; video: VideoCfg; onProgress: (m: string) => void; sourceAssetId: number },
 ): Promise<GeneratedVideo> {
-  const { slug, doc, hook, projectId, video, onProgress } = opts
+  const { slug, doc, hook, projectId, video, onProgress, sourceAssetId } = opts
   const videoId = randomUUID()
   const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
   onProgress('TTS 配音…')
@@ -330,7 +330,7 @@ async function renderCustomTemplate(
     slug,
     template: `custom-${row.id}`,
     createdAt: new Date().toISOString(),
-    semantic: { hook: null, sourceAssetId: null, sections: [] },
+    semantic: { hook: null, sourceAssetId, sections: [] },
     canvas,
     durationSec: duration,
     layers: [],

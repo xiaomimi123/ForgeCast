@@ -115,14 +115,35 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
       .then(invalidateProjectData)
       .catch((e) => alert('删除失败：' + (e instanceof Error ? e.message : String(e))))
   }
-  /** 删一条内容 = 删掉它背后的文案/封面/成片素材（ContentItem 只是这三者的视图） */
-  function deleteContentItem(item: ContentItemView) {
+  /**
+   * 删一条内容 = 删掉它背后的文案/封面/成片素材（ContentItem 只是这三者的视图）。
+   * 必须顺序删、videos → cover → copy：带询单的视频会被 lifecycle.ts 的护栏 409 拦下，
+   * 若并行删，copy/cover 已经删成功而 video 卡在 409——卡片消失、视频却成了孤儿，
+   * 用户只看到一句笼统 alert。改成顺序执行，任一项失败立即停止后续删除并点名是哪一项、
+   * 报什么错，同时告诉用户已删了几项、剩余项还在（可去成片库处理）。
+   */
+  async function deleteContentItem(item: ContentItemView) {
     // render.assetIds 是全部版本（不是只有最新那条），否则旧版素材行与文件成孤儿且再也无法从队列触达
-    const ids = [...(item.render?.assetIds ?? []), item.cover?.assetId, item.copyAssetId].filter((v): v is number => typeof v === 'number')
-    Promise.all(ids.map((id) => api(`/api/assets/${id}`, { method: 'DELETE' })))
-      .then(() => { if (selectedItemId === item.id) setSelectedItemId(null) })
-      .catch((e) => alert('删除失败：' + (e instanceof Error ? e.message : String(e))))
-      .finally(invalidateProjectData)
+    const steps: Array<{ label: string; id: number }> = [
+      ...(item.render?.assetIds ?? []).map((id) => ({ label: `视频 #${id}`, id })),
+      ...(item.cover?.assetId != null ? [{ label: `封面 #${item.cover.assetId}`, id: item.cover.assetId }] : []),
+      { label: `文案 #${item.copyAssetId}`, id: item.copyAssetId },
+    ]
+    let done = 0
+    for (const step of steps) {
+      try {
+        await api(`/api/assets/${step.id}`, { method: 'DELETE' })
+        done += 1
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        const remaining = steps.length - done
+        alert(`已删 ${done} 项，失败于 ${step.label}：${msg}；剩余 ${remaining} 项未删，可在成片库处理`)
+        invalidateProjectData() // 让 UI 反映已经删掉的那部分
+        return
+      }
+    }
+    if (selectedItemId === item.id) setSelectedItemId(null)
+    invalidateProjectData()
   }
 
   return (

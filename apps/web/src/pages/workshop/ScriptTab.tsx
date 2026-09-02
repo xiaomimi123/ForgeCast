@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api, ASSET_STATUS_LABEL, HOOK_LABEL, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
+import { Skeleton } from '../../components/ui/States'
 import { useTaskRun } from '../../useTaskRun'
 
 /** 单张拍摄脚本卡片：markdown 预览 / 编辑保存 / 审核 / 删除（编辑走通用 content 路由） */
@@ -57,7 +58,7 @@ function ScriptCard({ asset }: { asset: Asset }) {
         </div>
       ) : (
         <div className="max-h-96 overflow-y-auto border-t border-hairline pt-2 text-sm leading-relaxed [&_h1]:text-base [&_h1]:font-black [&_h2]:mt-3 [&_h2]:font-bold [&_h3]:mt-2 [&_h3]:font-semibold [&_li]:ml-4">
-          <ReactMarkdown>{content.data?.content ?? '加载中…'}</ReactMarkdown>
+          {content.isLoading ? <Skeleton lines={3} /> : <ReactMarkdown>{content.data?.content ?? ''}</ReactMarkdown>}
         </div>
       )}
     </div>
@@ -99,7 +100,7 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
           <label className="text-sm text-sub">文案来源</label>
           <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={chosen ?? ''} onChange={(e) => setFromCopy(Number(e.target.value))}>
-            {copyAssets.length === 0 && <option value="">暂无文案，先去「文案」tab 生成</option>}
+            {copyAssets.length === 0 && <option value="">暂无文案，先在左侧生成</option>}
             {/* 下拉里显示中文钩子名，不许露 pain/sideline 这类库内枚举（验收清单第 3 条） */}
             {copyAssets.map((a) => <option key={a.id} value={a.id}>#{a.id} · {a.hook ? (HOOK_LABEL[a.hook] ?? a.hook) : '—'}</option>)}
           </select>

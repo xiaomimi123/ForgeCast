@@ -106,6 +106,11 @@ describe('聚合', () => {
       tasks: [{ id: 't', status: 'pending', events: [], meta: { kind: 'video', slug: 's1', sourceAssetId: 1 } } as never] })
     expect(item.status).toBe('rendering')
   })
+  it('kind=copy 的 running 任务不点亮 rendering——闸门只认 kind=video', () => {
+    const [item] = buildContentItems({ ...base, assets: [copy(1)], readSpec: () => null,
+      tasks: [{ id: 't', status: 'running', events: [], meta: { kind: 'copy', slug: 's1', sourceAssetId: 1 } } as never] })
+    expect(item.status).toBe('script_ready')
+  })
   it('跨项目隔离：别的项目同 id 的 running 任务不点亮本项目卡片', () => {
     const [item] = buildContentItems({ ...base, assets: [copy(1)], readSpec: () => null,
       tasks: [{ id: 't', status: 'running', events: [], meta: { kind: 'video', slug: 's2', sourceAssetId: 1 } } as never] })
