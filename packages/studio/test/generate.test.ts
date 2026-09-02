@@ -60,6 +60,14 @@ describe('generateVideo (stub)', () => {
     expect(row.type).toBe('video')
     expect(row.file_path).toBe(out.filePath)
   })
+  it('生成的 spec.semantic.sourceAssetId = 传入的文案 assetId（video→copy 链接，Task 3 聚合靠它）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash', assetId: 1 })
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const spec = JSON.parse(fs.readFileSync(path.join(fctx.config.paths.workspace, row.spec_path), 'utf8'))
+    expect(spec.semantic.sourceAssetId).toBe(1)
+  })
   it('tpl=flash + ratio=landscape 走横屏模板，画布 1920x1080', async () => {
     const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
     const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }

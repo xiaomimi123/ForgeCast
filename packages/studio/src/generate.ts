@@ -107,15 +107,16 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     for (const sh of shots) shotAssets[sh.rel] = fs.readFileSync(path.join(ctx.config.paths.workspace, slug, 'shots', sh.rel))
     return renderHfPipeline(ctx, {
       slug, tpl: 'demo', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, shots, shotAssets,
+      sourceAssetId: Number(copy.id),
     })
   }
 
   if (tpl === 'changelog' || tpl === 'insight' || tpl === 'story') {
-    return renderHfPipeline(ctx, { slug, tpl, doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress })
+    return renderHfPipeline(ctx, { slug, tpl, doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, sourceAssetId: Number(copy.id) })
   }
 
   // 兜底：未知 tpl 与 tpl==='flash' 一样都走 flash（原版行为，见下方分支硬编码 'flash'）
-  return renderHfPipeline(ctx, { slug, tpl: 'flash', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress })
+  return renderHfPipeline(ctx, { slug, tpl: 'flash', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, sourceAssetId: Number(copy.id) })
 }
 
 /**
@@ -137,9 +138,10 @@ async function renderHfPipeline(
     onProgress: (m: string) => void
     shots?: Shot[]
     shotAssets?: Record<string, Buffer>
+    sourceAssetId?: number
   },
 ): Promise<GeneratedVideo> {
-  const { slug, tpl, doc, hook, brandName, projectId, video, ratio, onProgress, shots = [], shotAssets } = opts
+  const { slug, tpl, doc, hook, brandName, projectId, video, ratio, onProgress, shots = [], shotAssets, sourceAssetId } = opts
   const videoId = randomUUID()
   const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
 
@@ -192,7 +194,7 @@ async function renderHfPipeline(
     captionsEnabled: video.captions,
   }
 
-  const semantic = buildSemantic(doc, tpl, { cues: voice.cues, brandName })
+  const semantic = buildSemantic(doc, tpl, { cues: voice.cues, brandName, sourceAssetId })
   const spec = lower(semantic, {
     videoId, slug, template: tpl, canvas, durationSec: duration, cues: voice.cues,
     beatGrid: grid, shots, plan, audio: audioSpec, brandName,

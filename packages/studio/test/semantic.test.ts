@@ -37,6 +37,15 @@ describe('buildSemantic 上屏文案清洗', () => {
     expect(a).toEqual(b)
     expect(a.sections.every((x) => x.id && /^[a-z0-9-]+$/.test(x.id))).toBe(true)
   })
+
+  it('opts.sourceAssetId 透传进 semantic（聚合视图靠它连 video↔copy）', () => {
+    const s = buildSemantic(doc, 'flash', { sourceAssetId: 42 })
+    expect(s.sourceAssetId).toBe(42)
+  })
+
+  it('不传 sourceAssetId 时保持 null（equivalence 基线兼容）', () => {
+    expect(buildSemantic(doc, 'flash').sourceAssetId).toBeNull()
+  })
 })
 
 describe('中文数字识别（回归：中文口播曾渲出空片，以及卡片印错数字比没有卡片更误导人）', () => {

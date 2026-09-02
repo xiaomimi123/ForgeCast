@@ -6,6 +6,7 @@ import { cleanNarrationText } from './tts'
 export interface BuildSemanticOpts {
   brandName?: string
   cues?: Cue[]
+  sourceAssetId?: number
 }
 
 /**
@@ -123,7 +124,7 @@ export function buildSemantic(doc: CopyDoc, template: string, opts: BuildSemanti
 
   return {
     hook: (doc as { hook?: string }).hook ?? null,
-    sourceAssetId: null,
+    sourceAssetId: opts?.sourceAssetId ?? null,
     sections,
   }
 }
