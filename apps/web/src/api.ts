@@ -141,3 +141,21 @@ export interface TopicPattern {
   title_patterns: string; emotion_type: string; topic_clusters: string
   recommended_topics: string; sample_note_ids: string; created_at: string
 }
+
+/** GET /api/projects/:slug/content-items 返回形状（剪辑台一条内容 = 一个对象，封面/文案/视频是其字段）。见 docs/剪辑台-实施说明.md §6 */
+export type ContentStatus = 'script_ready' | 'rendering' | 'review' | 'approved' | 'failed'
+export interface ContentItemView {
+  id: number; seq: number; hook: string | null; status: ContentStatus
+  title: string; copyAssetId: number
+  cover: { assetId: number; url: string } | null
+  render: { assetId: number; url: string; specPath: string | null; version: number; status: string } | null
+  progress: number | null; error: string | null; warnings: string[]
+}
+
+/** 钩子枚举展示映射——键用库内真实枚举（见 CopyTab.HOOKS / TopicsPage.HOOK_LABEL），不要在组件里硬编码中文 */
+export const HOOK_LABEL: Record<string, string> = {
+  pain: '行业痛点', sideline: '副业', infogap: '信息差', story: '接单故事', fun: '趣味',
+}
+export const STATUS_LABEL: Record<ContentStatus, string> = {
+  script_ready: '待出片', rendering: '渲染中', review: '待审', approved: '已通过', failed: '失败',
+}
