@@ -18,6 +18,7 @@ import { collectStatus, extractSignals, importSignals, listMatches, listSignals,
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
+import { buildContentItems } from './content-items'
 import { readAutoScoutCfg } from './scheduler'
 
 // 可通过 PATCH 修改的项目字段白名单
@@ -229,6 +230,25 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(c.req.param('slug'))
     if (!project) return c.json({ error: '项目不存在' }, 404)
     return c.json(ctx.db.prepare('SELECT * FROM assets WHERE project_id = ? ORDER BY id DESC').all(project.id))
+  })
+
+  // 内容工位：一条内容（文案 + 封面 + 成片 + 渲染进度）一个对象。注册在 SPA `/*` 兜底之前
+  app.get('/api/projects/:slug/content-items', (c) => {
+    const slug = c.req.param('slug')
+    const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+    if (!project) return c.json({ error: '项目不存在' }, 404)
+    const assets = ctx.db.prepare('SELECT * FROM assets WHERE project_id = ? ORDER BY id DESC').all(project.id) as any[]
+    const abs = (p: string) => path.join(ctx.config.paths.workspace, p)
+    return c.json(buildContentItems({
+      assets, slug, tasks: queue.list(),
+      readSpec: (p) => { try { return JSON.parse(fs.readFileSync(abs(p), 'utf8')) } catch { return null } },
+      readTitle: (p) => {
+        try {
+          const line = fs.readFileSync(abs(p), 'utf8').split('\n').find((l) => l.trim())
+          return line ? line.replace(/^#+\s*/, '').trim().slice(0, 60) : null
+        } catch { return null }
+      },
+    }))
   })
 
   function assetAbsPath(id: string): { row: any; abs: string } | null {
