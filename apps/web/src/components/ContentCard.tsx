@@ -64,7 +64,7 @@ export default function ContentCard({
       role="button"
       tabIndex={0}
       onClick={() => onOpen(item)}
-      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(item) }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(item) } }}
       className="relative flex cursor-pointer items-start gap-2.5 border-l-[3px] py-[7px] pl-2.5 pr-8 transition-colors"
       style={{
         height: 71,
@@ -73,8 +73,8 @@ export default function ContentCard({
         borderLeftColor: selected ? 'var(--fc-accent)' : 'transparent',
         opacity: done ? 0.62 : 1,
       }}
-      onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = '#F5F6F1' }}
-      onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = 'transparent' }}
+      onMouseEnter={(e) => { if (!selected) { e.currentTarget.style.background = '#F5F6F1'; e.currentTarget.style.borderLeftColor = 'var(--fc-line)' } }}
+      onMouseLeave={(e) => { if (!selected) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderLeftColor = 'transparent' } }}
     >
       {/* 缩略图 31×55，9:16，无图占位 --fc-sunken */}
       <div className="shrink-0 overflow-hidden rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)]" style={{ width: 31, height: 55 }}>
