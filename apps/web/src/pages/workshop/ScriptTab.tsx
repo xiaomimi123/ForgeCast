@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, HOOK_LABEL, type Asset } from '../../api'
+import { api, ASSET_STATUS_LABEL, HOOK_LABEL, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
 import { useTaskRun } from '../../useTaskRun'
 
@@ -30,8 +30,9 @@ function ScriptCard({ asset }: { asset: Asset }) {
     <div className="card space-y-3 p-4">
       <div className="flex items-center justify-between">
         <div className="text-sm text-sub">
-          拍摄脚本 #{asset.id} · {asset.hook ?? '—'} ·
-          <span className={asset.status === 'approved' ? 'text-green-600 font-medium' : ''}> {asset.status}</span>
+          {/* 抬头只出中文：钩子走 HOOK_LABEL、状态走 ASSET_STATUS_LABEL（验收清单第 3 条） */}
+          拍摄脚本 #{asset.id} · {asset.hook ? (HOOK_LABEL[asset.hook] ?? asset.hook) : '—'} ·
+          <span className={asset.status === 'approved' ? 'text-green-600 font-medium' : ''}> {ASSET_STATUS_LABEL[asset.status] ?? asset.status}</span>
         </div>
         <div className="flex gap-2">
           {!editing && (
