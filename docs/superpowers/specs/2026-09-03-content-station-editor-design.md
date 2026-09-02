@@ -88,17 +88,13 @@
 
 ## 5. 前端结构
 
-### 5.1 路由
+### 5.1 视图切换（修正：本应用无路由）
 
-实施说明 §2 的 `/station/content/...` 改挂现有命名：
+写计划前核实：当前 app 是**纯 state 切换、不占 URL**（`Rail.tsx` 注释明写「单页 tab 切换（不占 URL）」，「板块重组」那轮已把 react-router 移除）。实施说明 §2 的路由是建议而非硬要求，遵循现状：
 
-```
-/workshop/:slug/editor/:videoId?   剪辑台（工位默认页）
-/workshop/library                  成片库（跨项目）
-/workshop/templates                模板库
-```
-
-旧 7 个 tab 的 URL 全部重定向进新结构（/board→/scout 先例）。项目选择器只作用于 editor。
+- 三个视图（剪辑台 / 成片库 / 模板库）= WorkshopPage 内的 state tab，不引入路由库。
+- 「选中某条内容」= 剪辑台内的 state；项目选择器只作用于剪辑台；成片库跨项目。
+- 深链/可分享 URL 不在本期（将来引入路由是独立决策）。
 
 ### 5.2 三栏装配与单一真相
 
