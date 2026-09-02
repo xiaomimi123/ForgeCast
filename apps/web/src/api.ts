@@ -159,3 +159,7 @@ export const HOOK_LABEL: Record<string, string> = {
 export const STATUS_LABEL: Record<ContentStatus, string> = {
   script_ready: '待出片', rendering: '渲染中', review: '待审', approved: '已通过', failed: '失败',
 }
+/** assets.status 的展示映射——列表里不许出现 draft/approved 这类库内枚举（验收清单第 3 条） */
+export const ASSET_STATUS_LABEL: Record<string, string> = {
+  draft: '待审', approved: '已通过', published: '已发布',
+}

@@ -55,7 +55,7 @@ export default function EditorTransitionTab({
   selected, hook, setHook, n, setN, busy, copyRun, videoRun, onGenerate,
   vp, setVp, bgmList, onMakeVideo,
   items, selectedItemId, onSelectItem, onDeleteItem,
-  assets, copyAssets, scriptAssets, onScriptBusyChange,
+  assetsQuery, copyAssets, scriptAssets, onScriptBusyChange,
 }: {
   selected: string
   hook: string
@@ -74,13 +74,17 @@ export default function EditorTransitionTab({
   selectedItemId: number | null
   onSelectItem: (item: ContentItemView) => void
   onDeleteItem: (item: ContentItemView) => void
-  assets: Asset[]
+  assetsQuery: UseQueryResult<Asset[]>
   copyAssets: Asset[]
   scriptAssets: Asset[]
   onScriptBusyChange: (v: boolean) => void
 }) {
   const qc = useQueryClient()
-  const templates = useQuery({ queryKey: ['templates'], queryFn: () => api<CustomTemplate[]>('/api/templates') })
+  // networkMode:'always'——默认的 'online' 在断网时把查询挂成 paused、isError 永远为 false，
+  // 页面就会掉进空态而不是失败态（验收清单第 4 条要求断网显示可读失败态）
+  const templates = useQuery({
+    queryKey: ['templates'], queryFn: () => api<CustomTemplate[]>('/api/templates'), networkMode: 'always',
+  })
 
   // 重生封面：唯一入口是队列卡「⋯」菜单（`POST /api/assets/:copyAssetId/cover`，模板/选图走默认自动）
   const coverRun = useTaskRun()
@@ -174,9 +178,11 @@ export default function EditorTransitionTab({
 
         {/* ── 中：预览播放器（原「预览」tab 原样内嵌）── */}
         <div className="min-w-0">
-          {selected
-            ? <PreviewTab key={selected} slug={selected} assets={assets} />
-            : <Empty why="先在左上角选一个项目" />}
+          {assetsQuery.isError
+            ? <Failure step="载入素材" error={assetsQuery.error instanceof Error ? assetsQuery.error.message : String(assetsQuery.error)} onRetry={() => assetsQuery.refetch()} />
+            : selected
+              ? <PreviewTab key={selected} slug={selected} assets={assetsQuery.data ?? []} />
+              : <Empty why="先在左上角选一个项目" />}
         </div>
 
         {/* ── 右：渲染参数 + 对选中内容「渲成片」── */}

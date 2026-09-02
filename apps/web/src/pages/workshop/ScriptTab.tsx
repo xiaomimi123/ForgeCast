@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { api, type Asset } from '../../api'
+import { api, HOOK_LABEL, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
 import { useTaskRun } from '../../useTaskRun'
 
@@ -99,7 +99,8 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
           <select className="mt-1 w-full rounded-md border border-hairline-strong bg-card p-2 text-sm"
             value={chosen ?? ''} onChange={(e) => setFromCopy(Number(e.target.value))}>
             {copyAssets.length === 0 && <option value="">暂无文案，先去「文案」tab 生成</option>}
-            {copyAssets.map((a) => <option key={a.id} value={a.id}>#{a.id} · {a.hook}</option>)}
+            {/* 下拉里显示中文钩子名，不许露 pain/sideline 这类库内枚举（验收清单第 3 条） */}
+            {copyAssets.map((a) => <option key={a.id} value={a.id}>#{a.id} · {a.hook ? (HOOK_LABEL[a.hook] ?? a.hook) : '—'}</option>)}
           </select>
         </div>
         <div>

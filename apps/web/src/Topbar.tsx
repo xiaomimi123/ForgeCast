@@ -33,7 +33,10 @@ export default function Topbar({
 }) {
   const report = useQuery({ queryKey: ['report', 'p0'], queryFn: () => api<WeeklyReport>(`/api/report?since=${since14dAgo()}`) })
   const candidates = useQuery({ queryKey: ['candidates'], queryFn: () => api<Candidate[]>('/api/candidates') })
-  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
+  // networkMode 必须与 WorkshopPage 的同名查询一致：['projects'] 是**同一个** query 实例，
+  // 谁先触发 fetch 谁的 networkMode 生效。留成默认 'online' 的话断网时它会把这条查询挂成
+  // paused，做内容工位再挂上来就永远等不到 isError，失败态退化成空态（验收清单第 4 条）。
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects'), networkMode: 'always' })
   const tailor = useQuery({ queryKey: ['tailor'], queryFn: () => api<TailorRequest[]>('/api/tailor') })
   const inDecompose = (projects.data ?? []).filter((p) => p.stage === 'analysis' || p.stage === 'rebranding').length
 

@@ -5,7 +5,8 @@ import AcceptanceSection from './board/AcceptanceSection'
 
 export default function ProjectsPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
-  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
+  // 与 Topbar / WorkshopPage 同名查询保持一致的 networkMode，理由见 Topbar.tsx 的注释
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects'), networkMode: 'always' })
   const moveStage = useMutation({
     mutationFn: ({ slug, stage }: { slug: string; stage: string }) =>
       api(`/api/projects/${slug}`, { method: 'PATCH', body: JSON.stringify({ stage }) }),

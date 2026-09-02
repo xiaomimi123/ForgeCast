@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type Project } from '../api'
+import { Failure } from '../components/ui/States'
 import { useTaskRun } from '../useTaskRun'
 import EditorTransitionTab, { type VideoParams } from './workshop/EditorTransitionTab'
 import LibraryTab from './workshop/LibraryTab'
@@ -37,12 +38,16 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
   // 剪辑台左栏队列当前选中的 ContentItem（右栏「渲成片」的作用对象）
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null)
 
-  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
+  // 做内容工位的查询统一 networkMode:'always'：react-query 默认的 'online' 在断网时把查询挂成
+  // fetchStatus:'paused'、isError 永远为 false，页面于是渲染成「空态」——断网看到「还没有内容」
+  // 正是本仓最忌的零报错坏结果。改成 always 让 fetch 真失败进 isError，交给 <Failure/> 显示。
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects'), networkMode: 'always' })
   const selected = slug || projects.data?.[0]?.slug || ''
   const assets = useQuery({
     queryKey: ['assets', selected],
     queryFn: () => api<Asset[]>(`/api/projects/${selected}/assets`),
     enabled: !!selected,
+    networkMode: 'always',
   })
   // 渲染中每 2s 拉一次进度；没有 rendering 的条目就完全不轮询（refetchInterval 返回 false）
   const contentItems = useQuery({
@@ -50,8 +55,9 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
     queryFn: () => api<ContentItemView[]>(`/api/projects/${selected}/content-items`),
     enabled: !!selected,
     refetchInterval: (q) => (q.state.data?.some((i) => i.status === 'rendering') ? 2000 : false),
+    networkMode: 'always',
   })
-  const bgmList = useQuery({ queryKey: ['bgm'], queryFn: () => api<BgmList>('/api/bgm') })
+  const bgmList = useQuery({ queryKey: ['bgm'], queryFn: () => api<BgmList>('/api/bgm'), networkMode: 'always' })
 
   // 切项目时清掉上一个项目的选中项，避免右栏对着不存在的内容渲片
   useEffect(() => { setSelectedItemId(null) }, [selected])
@@ -133,22 +139,28 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
         </div>
       </div>
 
-      {tab === 'editor' && (
+      {/* 项目列表本身挂了：两个 tab 谁都没法工作，直接给整屏失败态——否则会掉进「这个项目还没有内容」的空态 */}
+      {projects.isError && (
+        <Failure step="载入项目列表"
+          error={projects.error instanceof Error ? projects.error.message : String(projects.error)}
+          onRetry={() => projects.refetch()} />
+      )}
+      {!projects.isError && tab === 'editor' && (
         <EditorTransitionTab
           selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
           busy={busy} copyRun={copyRun} videoRun={videoRun} onGenerate={() => generate()}
           vp={vp} setVp={setVp} bgmList={bgmList.data} onMakeVideo={makeVideo}
           items={contentItems} selectedItemId={selectedItemId}
           onSelectItem={(item) => setSelectedItemId(item.id)} onDeleteItem={deleteContentItem}
-          assets={assets.data ?? []} copyAssets={copyAssets} scriptAssets={scriptAssets}
+          assetsQuery={assets} copyAssets={copyAssets} scriptAssets={scriptAssets}
           onScriptBusyChange={setScriptBusy}
         />
       )}
-      {tab === 'library' && (
+      {!projects.isError && tab === 'library' && (
         <LibraryTab selected={selected} assetsQuery={assets} scriptAssets={scriptAssets}
           onStatus={setAssetStatus} onDelete={deleteAsset} />
       )}
-      {tab === 'templates' && <TemplatesTab />}
+      {!projects.isError && tab === 'templates' && <TemplatesTab />}
 
       {activeRun.logs.length > 0 && (
         <div ref={logRef} className="rounded-lg border bg-neutral-900 p-3 text-xs text-green-400 font-mono h-48 overflow-y-auto space-y-1">

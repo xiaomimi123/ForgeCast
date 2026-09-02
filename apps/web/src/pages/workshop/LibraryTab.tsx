@@ -1,6 +1,6 @@
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import { api, type Asset } from '../../api'
+import { api, ASSET_STATUS_LABEL, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
 import { Empty, Failure, Skeleton } from '../../components/ui/States'
 import { useTaskRun } from '../../useTaskRun'
@@ -76,16 +76,21 @@ function VideoCard({ asset, scriptAssets, onStatus, onDelete }: {
   }
 
   const source = asset.origin === 'upload' ? '实拍' : '渲染'
+  // 卡上只出中文，不露 draft/approved 这类库内枚举（验收清单第 3 条）；未知枚举兜底显示原值
+  const statusLabel = ASSET_STATUS_LABEL[asset.status ?? ''] ?? asset.status
   return (
     <div className="card space-y-2 p-2">
       <video src={`/files/${asset.file_path}`} controls preload="metadata"
         className="aspect-[9/16] w-full rounded-lg border border-hairline-strong bg-black object-contain" />
       <div className="space-y-2 px-1">
         <div className="flex items-center justify-between gap-2">
-          <div className="truncate text-xs text-sub">{source} · {asset.status}{report ? ` · 总分 ${report.scores.overall}` : ''}</div>
+          <div className="truncate text-xs text-sub">{source} · {statusLabel}{report ? ` · 总分 ${report.scores.overall}` : ''}</div>
           <div className="flex shrink-0 items-center gap-1.5">
             {asset.status === 'draft' && (
-              <button className="btn px-2 py-0.5 text-xs" onClick={() => onStatus(asset.id)}>审核通过</button>
+              <button
+                className="rounded-[var(--fc-r-xs)] border border-[var(--fc-line-2)] px-2 py-0.5 text-xs text-[var(--fc-ink)] hover:bg-[var(--fc-line-3)]"
+                onClick={() => onStatus(asset.id)}
+              >审核通过</button>
             )}
             <button className="rounded-md border border-danger px-2 py-0.5 text-xs text-danger"
               onClick={() => { if (window.confirm('删除这条成片？文件和记录都会删掉')) onDelete(asset.id) }}>删除</button>
