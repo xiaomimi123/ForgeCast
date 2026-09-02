@@ -245,7 +245,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       readTitle: (p) => {
         try {
           const line = fs.readFileSync(abs(p), 'utf8').split('\n').find((l) => l.trim())
-          return line ? line.replace(/^#+\s*/, '').trim().slice(0, 60) : null
+          // 首个非空行可能是纯 `# `，去掉井号后为空串——空串也回落文件名，不能只靠 ?? 兜 null
+          return (line?.replace(/^#+\s*/, '').trim().slice(0, 60) || null)
         } catch { return null }
       },
     }))
@@ -636,7 +637,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       captions: typeof body.captions === 'boolean' ? body.captions : undefined,
       ratio,
       onProgress: log,
-    }), { kind: 'video', slug, sourceAssetId: body.assetId })
+    }), { kind: 'video', slug, sourceAssetId: typeof body.assetId === 'number' ? body.assetId : undefined })
     return c.json({ taskId })
   })
 

@@ -69,6 +69,17 @@ function parseProgress(task: TaskRecord): number | null {
   return last
 }
 
+/** 标题 fail-soft：注入方抛错或给空串，一律回落文件名（与 readSpec 的 fail-soft 契约对称） */
+function readTitleSafe(readTitle: (p: string) => string | null, filePath: string): string {
+  let t: string | null = null
+  try {
+    t = readTitle(filePath)
+  } catch {
+    t = null
+  }
+  return t?.trim() || baseName(filePath)
+}
+
 export function buildContentItems(input: BuildContentItemsInput): ContentItemView[] {
   const { assets, readSpec, tasks, readTitle, slug } = input
 
@@ -128,7 +139,7 @@ export function buildContentItems(input: BuildContentItemsInput): ContentItemVie
       seq: i + 1,
       hook: copy.hook ?? null,
       status,
-      title: readTitle(copy.file_path) ?? baseName(copy.file_path),
+      title: readTitleSafe(readTitle, copy.file_path),
       copyAssetId: copy.id,
       cover: coverRow ? { assetId: coverRow.id, url: fileUrl(coverRow.file_path) } : null,
       render: latest

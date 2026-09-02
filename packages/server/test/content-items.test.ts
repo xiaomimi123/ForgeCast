@@ -75,6 +75,41 @@ describe('聚合', () => {
     const [item] = buildContentItems({ ...base, readTitle: () => null, assets: [copy(1)], readSpec: () => null })
     expect(item.title).toBe('pain-t-1-ab.md')
   })
+  it('readTitle 抛错 / 返回空串 都回落文件名，不穿透', () => {
+    const boom = () => { throw new Error('读不了') }
+    expect(buildContentItems({ ...base, readTitle: boom, assets: [copy(1)], readSpec: () => null })[0].title).toBe('pain-t-1-ab.md')
+    expect(buildContentItems({ ...base, readTitle: () => '  ', assets: [copy(1)], readSpec: () => null })[0].title).toBe('pain-t-1-ab.md')
+  })
+  it('published 的 video 也算 approved', () => {
+    const [item] = buildContentItems({ ...base, assets: [copy(1), video(9, 'published')], readSpec: linkSpec(1) })
+    expect(item.status).toBe('approved')
+  })
+  it('pending 任务（还没轮到跑）也算 rendering', () => {
+    const [item] = buildContentItems({ ...base, assets: [copy(1)], readSpec: () => null,
+      tasks: [{ id: 't', status: 'pending', events: [], meta: { kind: 'video', slug: 's1', sourceAssetId: 1 } } as never] })
+    expect(item.status).toBe('rendering')
+  })
+  it('跨项目隔离：别的项目同 id 的 running 任务不点亮本项目卡片', () => {
+    const [item] = buildContentItems({ ...base, assets: [copy(1)], readSpec: () => null,
+      tasks: [{ id: 't', status: 'running', events: [], meta: { kind: 'video', slug: 's2', sourceAssetId: 1 } } as never] })
+    expect(item.status).toBe('script_ready')
+  })
+  it('两条 copy 各带各的 video / task，互不串线', () => {
+    const c1 = copy(1, 's1/copy/pain-t-1-ab.md')
+    const c2 = copy(2, 's1/copy/pain-t-2-cd.md')
+    const items = buildContentItems({
+      ...base,
+      assets: [c1, c2, video(9, 'approved'), cover(20, 's1/covers/pain-t-2-cd.png')],
+      readSpec: linkSpec(1),
+      tasks: [{ id: 't', status: 'running', events: [{ ts: 1, type: 'log', message: '渲染 30%' }], meta: { kind: 'video', slug: 's1', sourceAssetId: 2 } } as never],
+    })
+    expect(items.map((i) => i.status)).toEqual(['approved', 'rendering'])
+    expect(items[0].render?.assetId).toBe(9)
+    expect(items[0].progress).toBe(null)
+    expect(items[1].render).toBe(null)
+    expect(items[1].progress).toBe(30)
+    expect(items[1].cover?.assetId).toBe(20)
+  })
 })
 
 // —— 路由级：仿既有 assets 路由测试的建库方式 ——
