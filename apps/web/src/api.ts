@@ -152,7 +152,7 @@ export interface ContentItemView {
   progress: number | null; error: string | null; warnings: string[]
 }
 
-/** 钩子枚举展示映射——键用库内真实枚举（见 CopyTab.HOOKS / TopicsPage.HOOK_LABEL），不要在组件里硬编码中文 */
+/** 钩子枚举展示映射——键用库内真实枚举（见 EditorTransitionTab.HOOKS / TopicsPage.HOOK_LABEL），不要在组件里硬编码中文 */
 export const HOOK_LABEL: Record<string, string> = {
   pain: '行业痛点', sideline: '副业', infogap: '信息差', story: '接单故事', fun: '趣味',
 }

@@ -1,7 +1,8 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { api, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
+import { Empty, Failure, Skeleton } from '../../components/ui/States'
 import { useTaskRun } from '../../useTaskRun'
 
 interface ReviewReport {
@@ -33,8 +34,11 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   )
 }
 
-/** 单条上传成片卡片：竖屏播放器 + 审片（可选脚本基准）+ 报告展示 */
-function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
+/**
+ * 成片卡：竖屏播放器 + 审片（可选脚本基准）+ 报告 + 复盘 + 通过/删除。
+ * 渲染成片与实拍上传共用一张卡，只有抬头的来源标签不同（旧「成片」tab 的卡片平移，并扩到渲染成片）。
+ */
+function VideoCard({ asset, scriptAssets, onStatus, onDelete }: {
   asset: Asset
   scriptAssets: Asset[]
   onStatus: (id: number) => void
@@ -48,6 +52,7 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
   const retroRun = useTaskRun()
   let retro: RetroReport | null = null
   if (asset.retro) { try { retro = JSON.parse(asset.retro) } catch { retro = null } }
+
   function runRetro() {
     retroRun.run(
       async () => (await api<{ taskId: string }>(`/api/assets/${asset.id}/retro`, { method: 'POST' })).taskId,
@@ -70,13 +75,14 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
     )
   }
 
+  const source = asset.origin === 'upload' ? '实拍' : '渲染'
   return (
     <div className="card space-y-2 p-2">
       <video src={`/files/${asset.file_path}`} controls preload="metadata"
         className="aspect-[9/16] w-full rounded-lg border border-hairline-strong bg-black object-contain" />
       <div className="space-y-2 px-1">
         <div className="flex items-center justify-between gap-2">
-          <div className="truncate text-xs text-sub">实拍 · {asset.status}{report ? ` · 总分 ${report.scores.overall}` : ''}</div>
+          <div className="truncate text-xs text-sub">{source} · {asset.status}{report ? ` · 总分 ${report.scores.overall}` : ''}</div>
           <div className="flex shrink-0 items-center gap-1.5">
             {asset.status === 'draft' && (
               <button className="btn px-2 py-0.5 text-xs" onClick={() => onStatus(asset.id)}>审核通过</button>
@@ -127,10 +133,13 @@ function UploadCard({ asset, scriptAssets, onStatus, onDelete }: {
   )
 }
 
-/** 成片 tab：上传实拍视频 → 审片打分 → 按建议迭代下一条（人机协作主线） */
-export default function UploadTab({ selected, uploadAssets, scriptAssets, onStatus, onDelete }: {
+/**
+ * 成片库：本项目全部 video 素材（渲染 + 实拍上传）一个列表 + 审片 / 通过 / 删除 / 上传入口。
+ * 本屏唯一黑实心按钮 = 「上传成片」（推进流水线的下一步），卡上动作全是描边或 chip（§7）。
+ */
+export default function LibraryTab({ selected, assetsQuery, scriptAssets, onStatus, onDelete }: {
   selected: string
-  uploadAssets: Asset[]
+  assetsQuery: UseQueryResult<Asset[]>
   scriptAssets: Asset[]
   onStatus: (id: number) => void
   onDelete: (id: number) => void
@@ -138,6 +147,7 @@ export default function UploadTab({ selected, uploadAssets, scriptAssets, onStat
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+
   async function upload(file: File) {
     setUploading(true)
     try {
@@ -146,26 +156,49 @@ export default function UploadTab({ selected, uploadAssets, scriptAssets, onStat
       const res = await fetch(`/api/projects/${selected}/upload-video`, { method: 'POST', body: fd })
       if (!res.ok) alert(`上传失败: ${await res.text()}`)
       qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['content-items', selected] })
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
     }
   }
+
+  const uploadButton = (
+    <button className="rounded-[var(--fc-r-sm)] bg-[var(--fc-ink)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+      disabled={!selected || uploading} onClick={() => fileRef.current?.click()}>
+      {uploading ? '上传中…' : '上传成片（mp4/mov）'}
+    </button>
+  )
+
+  const videos = (assetsQuery.data ?? []).filter((a) => a.type === 'video')
+
   return (
     <div className="space-y-4">
       <div className="card flex items-center gap-3 p-4">
         <input ref={fileRef} type="file" accept=".mp4,.mov,.m4v" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f) }} />
-        <button className="btn px-4 py-2 disabled:opacity-50" disabled={!selected || uploading}
-          onClick={() => fileRef.current?.click()}>
-          {uploading ? '上传中…' : '上传成片（mp4/mov）'}
-        </button>
-        <p className="text-xs text-faint">按「拍摄脚本」拍好剪好后传上来，系统对照脚本审片打分并给下一条的改进建议。</p>
+        {uploadButton}
+        <p className="text-xs text-faint">渲染成片和实拍成片都在这里审。按「拍摄脚本」拍好剪好后传上来，系统对照脚本审片打分并给下一条的改进建议。</p>
       </div>
+
+      {assetsQuery.isLoading && <Skeleton lines={4} />}
+      {assetsQuery.isError && (
+        <Failure step="载入成片列表"
+          error={assetsQuery.error instanceof Error ? assetsQuery.error.message : String(assetsQuery.error)}
+          onRetry={() => assetsQuery.refetch()} />
+      )}
+      {!assetsQuery.isLoading && !assetsQuery.isError && videos.length === 0 && (
+        // 空态里的动作用描边：顶部「上传成片」已经是本屏唯一的黑实心按钮（§7）
+        <Empty why="这个项目还没有成片——去剪辑台渲一条，或直接传实拍" action={
+          <button className="rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] px-4 py-2 text-sm font-medium text-[var(--fc-ink)] hover:bg-[var(--fc-line-3)] disabled:opacity-40"
+            disabled={!selected || uploading} onClick={() => fileRef.current?.click()}>
+            {uploading ? '上传中…' : '上传成片（mp4/mov）'}
+          </button>
+        } />
+      )}
       <div className="grid grid-cols-2 gap-4 2xl:grid-cols-3">
-        {uploadAssets.length === 0 && <div className="text-sm text-faint">暂无实拍成片。</div>}
-        {uploadAssets.map((a) => (
-          <UploadCard key={a.id} asset={a} scriptAssets={scriptAssets} onStatus={onStatus} onDelete={onDelete} />
+        {videos.map((a) => (
+          <VideoCard key={a.id} asset={a} scriptAssets={scriptAssets} onStatus={onStatus} onDelete={onDelete} />
         ))}
       </div>
     </div>
