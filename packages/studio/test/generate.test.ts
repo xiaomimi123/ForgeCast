@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -444,6 +445,38 @@ describe('generateVideo VideoSpec 落盘 + hf 分目录（Task 5 管线接入）
     expect(Array.isArray(w)).toBe(true)
     expect(w.length).toBeGreaterThan(0)
     expect(w.join(' ')).toMatch(/TTS|降级/)
+  })
+
+  it('生成落盘 spec 的同时写 orig 快照，且内容一致', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const r = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const row: any = ctx.db.prepare('SELECT spec_path FROM assets WHERE id = ?').get(r.assetId)
+    const abs = path.join(fctx.config.paths.workspace, row.spec_path)
+    const origAbs = abs.replace(/\.json$/, '.orig.json')
+    expect(fs.existsSync(origAbs)).toBe(true)
+    expect(JSON.parse(fs.readFileSync(origAbs, 'utf8'))).toEqual(JSON.parse(fs.readFileSync(abs, 'utf8')))
+  })
+
+  it('重复渲染不覆盖已有 orig（同 videoId 二次渲染，先手改 orig 再跑一次）', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    // videoId 正常每次调用都随机；这里钉死同一个 id 来模拟「对同一条视频重渲」的场景。
+    const fixedId = 'fixed-uuid-0000'
+    const spy = vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedId as any)
+    try {
+      const r1 = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+      const row1: any = ctx.db.prepare('SELECT spec_path FROM assets WHERE id = ?').get(r1.assetId)
+      const abs = path.join(fctx.config.paths.workspace, row1.spec_path)
+      const origAbs = abs.replace(/\.json$/, '.orig.json')
+      expect(fs.existsSync(origAbs)).toBe(true)
+      // 手改 orig，模拟「已经保存过一次编辑历史」
+      fs.writeFileSync(origAbs, JSON.stringify({ hand: 'edited' }))
+      // 同一 videoId 再渲一次（重渲）
+      await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+      // spec.json 应已被新一轮渲染覆盖，但 orig 不应被覆盖
+      expect(JSON.parse(fs.readFileSync(origAbs, 'utf8'))).toEqual({ hand: 'edited' })
+    } finally { spy.mockRestore() }
   })
 })
 

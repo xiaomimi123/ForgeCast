@@ -274,6 +274,10 @@ async function renderAndRegister(
   const specAbsPath = path.join(ctx.config.paths.workspace, specRelPath)
   fs.mkdirSync(path.dirname(specAbsPath), { recursive: true })
   fs.writeFileSync(specAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+  // orig 快照：只在第一次生成时写（重渲/重复渲染不覆盖），剪辑台「重置」端点靠它逐字节还原——
+  // 而不是重跑 lower()（lower 需要的 cues 等中间产物不在 spec 里，快照更忠实）。
+  const origAbsPath = specAbsPath.replace(/\.json$/, '.orig.json')
+  if (!fs.existsSync(origAbsPath)) fs.writeFileSync(origAbsPath, JSON.stringify(spec, null, 2), 'utf8')
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings, spec_path) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(projectId, 'video', hook, relPath, JSON.stringify(spec.warnings), specRelPath)

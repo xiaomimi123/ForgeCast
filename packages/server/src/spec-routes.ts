@@ -1,0 +1,88 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import type { CoreCtx } from '@forgecast/core'
+import type { Hono } from 'hono'
+import type { TaskQueue } from './tasks'
+
+/** uuid 形状（防路径穿越，照 cutplan 的 bgmInside 先例思路）。 */
+const VIDEO_ID_RE = /^[0-9a-f-]{8,64}$/i
+
+/** PUT 校验：拒绝理由要具体（直接进 400 的 error），供剪辑台展示。纯函数，可测可复用。 */
+export function validateSpecPut(body: any, videoId: string): string | null {
+  if (!body || typeof body !== 'object') return '请求体不是有效的 spec'
+  if (body.version !== 1) return 'version 必须为 1'
+  if (body.videoId !== videoId) return 'videoId 与路径参数不一致'
+  if (!Array.isArray(body.layers)) return 'layers 必须为数组'
+  for (const l of body.layers) {
+    if (!l || typeof l !== 'object') return 'layers 中存在非法图层'
+    if (typeof l.id !== 'string' || !l.id) return '图层缺少 id'
+    if (typeof l.kind !== 'string' || !l.kind) return `图层 ${l.id ?? '?'} 缺少 kind`
+    if (typeof l.start !== 'number') return `图层 ${l.id ?? '?'} 缺少 start`
+    if (typeof l.duration !== 'number') return `图层 ${l.id ?? '?'} 缺少 duration`
+    if (typeof l.track !== 'number') return `图层 ${l.id ?? '?'} 缺少 track`
+    if (!(l.start >= 0)) return `图层 ${l.id} 的 start 必须 >= 0`
+    if (!(l.duration > 0)) return `图层 ${l.id} 的 duration 必须 > 0`
+  }
+  // 同 track 时间不重叠：按 track 分组，组内按 start 排序后相邻比较
+  const byTrack = new Map<number, Array<{ id: string; start: number; duration: number }>>()
+  for (const l of body.layers) {
+    const arr = byTrack.get(l.track) ?? []
+    arr.push({ id: l.id, start: l.start, duration: l.duration })
+    byTrack.set(l.track, arr)
+  }
+  for (const [track, arr] of byTrack) {
+    arr.sort((a, b) => a.start - b.start)
+    for (let i = 1; i < arr.length; i++) {
+      const prev = arr[i - 1]
+      const cur = arr[i]
+      if (cur.start < prev.start + prev.duration) {
+        return `track ${track} 上图层 ${prev.id} 与 ${cur.id} 时间重叠`
+      }
+    }
+  }
+  return null
+}
+
+/** 剪辑台的「保存」（GET/PUT spec）与「重置为生成结果」（POST .../reset，靠 orig 快照逐字节还原）。 */
+export function registerSpecRoutes(app: Hono, ctx: CoreCtx, _queue: TaskQueue): void {
+  const projExists = (slug: string) => !!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+  const specAbs = (slug: string, videoId: string) => path.join(ctx.config.paths.workspace, slug, 'specs', `${videoId}.json`)
+  const origAbs = (slug: string, videoId: string) => path.join(ctx.config.paths.workspace, slug, 'specs', `${videoId}.orig.json`)
+
+  app.get('/api/projects/:slug/specs/:videoId', (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const p = specAbs(slug, videoId)
+    if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
+    try { return c.json(JSON.parse(fs.readFileSync(p, 'utf8'))) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+  })
+
+  app.put('/api/projects/:slug/specs/:videoId', async (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const body = await c.req.json().catch(() => null)
+    const err = validateSpecPut(body, videoId)
+    if (err) return c.json({ error: err }, 400)
+    const p = specAbs(slug, videoId)
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, JSON.stringify(body, null, 2), 'utf8')
+    return c.json({ ok: true })
+  })
+
+  app.post('/api/projects/:slug/specs/:videoId/reset', (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const op = origAbs(slug, videoId)
+    if (!fs.existsSync(op)) return c.json({ error: '无生成快照（此视频生成于旧版本）' }, 404)
+    const content = fs.readFileSync(op, 'utf8')
+    fs.mkdirSync(path.dirname(specAbs(slug, videoId)), { recursive: true })
+    fs.writeFileSync(specAbs(slug, videoId), content, 'utf8')
+    try { return c.json(JSON.parse(content)) } catch { return c.json({ error: 'orig 快照文件损坏' }, 500) }
+  })
+}

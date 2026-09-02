@@ -20,6 +20,7 @@ import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
 import { buildContentItems } from './content-items'
 import { readAutoScoutCfg } from './scheduler'
+import { registerSpecRoutes } from './spec-routes'
 
 // 可通过 PATCH 修改的项目字段白名单
 const PATCHABLE = ['brand_name', 'target_buyer', 'demo_url', 'price_deploy', 'price_custom', 'stage'] as const
@@ -253,6 +254,10 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       },
     }))
   })
+
+  // 剪辑台：spec 读写 + orig 快照重置。必须在 SPA `/*` 兜底之前挂载（本仓出过注册在兜底后
+  // Docker 下全 404 的事故），跟 content-items 挂在一起。
+  registerSpecRoutes(app, ctx, queue)
 
   function assetAbsPath(id: string): { row: any; abs: string } | null {
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(id)
