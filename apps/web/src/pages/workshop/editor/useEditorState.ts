@@ -137,8 +137,12 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
     setHistory((h) => (h && h.present !== base ? push({ ...h, present: base }, h.present) : h))
   }, [])
 
-  const undo = useCallback(() => setHistory((h) => (h ? undoH(h) : h)), [])
-  const redo = useCallback(() => setHistory((h) => (h ? redoH(h) : h)), [])
+  // 拖拽进行中（transient 序列未收尾）时忽略撤销/重做：此刻 present 是「还没入栈的中间态」，
+  // undo 会把 past 顶上那格弹出来当 present，而拖拽的基线还攥在 transientBase 里——松手时
+  // commit 再把基线压回去，净效果是**白吃掉一级历史**，用户按一次 ⌘Z 反而多丢一步。
+  const dragging = () => transientBase.current !== null
+  const undo = useCallback(() => setHistory((h) => (h && !dragging() ? undoH(h) : h)), [])
+  const redo = useCallback(() => setHistory((h) => (h && !dragging() ? redoH(h) : h)), [])
 
   const save = useCallback(async (explicit?: VideoSpec): Promise<boolean> => {
     const cur = explicit ?? historyRef.current?.present

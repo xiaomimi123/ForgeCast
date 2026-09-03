@@ -63,7 +63,7 @@ interface RewriteResp { spec: VideoSpec; newText: string }
  *   否则服务端读的是磁盘旧版本，返回的新 spec 一整包替换回来就把本地手改吃掉了。
  */
 export default function ShotList({
-  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer,
+  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced,
 }: {
   slug: string
   videoId: string | null
@@ -73,6 +73,8 @@ export default function ShotList({
   onNotice: (msg: string) => void
   /** 选中这一镜的文本图层 → 右栏图层检查器（选中来源之一，另一个是时间轴点选）。 */
   onSelectLayer: (layerId: string | null) => void
+  /** spec 被整包换掉了（重写返回的是一整份新 spec）——右栏的参数草稿据此作废。 */
+  onSpecReplaced: () => void
 }) {
   const spec = ed.spec
   const shots = useMemo(() => (spec && !isUnsupported(spec) ? deriveShots(spec) : []), [spec])
@@ -152,6 +154,7 @@ export default function ShotList({
       // 服务端已经把这份写回磁盘了：不对齐净快照的话「未保存」会立刻假亮，
       // 用户会去按一次毫无意义的 ⌘S（而且那次 PUT 传的还是同样的内容）。
       ed.markSaved(out.spec)
+      onSpecReplaced()
       setDraft(null)
       onNotice('已重写；旁白仍为旧配音，语音与画面文案可能不一致')
     } catch (e) {

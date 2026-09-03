@@ -35,9 +35,17 @@ type Drag =
  */
 export function moveShotBy(base: VideoSpec, shot: ShotView, delta: number): VideoSpec {
   const startOf = (spec: VideoSpec, id: string) => spec.layers.find((l) => l.id === id)?.start
+  // **移动顺序按位移方向排**：同 section 若有两层同 track，先移的会被还没动的同伴挡住（moveLayer
+  // 是逐层对当时的邻居钳制的），effective 塌成 0，整组一动不动。右移先移最右边那层、左移先移最左边
+  // 那层，让路总是先腾出来。今天每段恰好一层不发作，但顺序依赖的死锁不该留着等模板变复杂。
+  const order = [...shot.layerIds].sort((a, b) => {
+    const sa = startOf(base, a) ?? 0
+    const sb = startOf(base, b) ?? 0
+    return delta >= 0 ? sb - sa : sa - sb
+  })
   const applyAll = (d: number) => {
     let next = base
-    for (const id of shot.layerIds) {
+    for (const id of order) {
       const s0 = startOf(base, id)
       if (s0 === undefined) continue
       next = moveLayer(next, id, s0 + d)
@@ -47,7 +55,7 @@ export function moveShotBy(base: VideoSpec, shot: ShotView, delta: number): Vide
   const first = applyAll(delta)
   // 实际位移取组内**绝对值最小**的那个：它就是这次拖拽真正能走到的距离
   let effective = delta
-  for (const id of shot.layerIds) {
+  for (const id of order) {
     const s0 = startOf(base, id)
     const s1 = startOf(first, id)
     if (s0 === undefined || s1 === undefined) continue
@@ -333,11 +341,20 @@ type Cell =
 export function layoutRow(shots: ShotView[], duration: number): Cell[] {
   const cells: Cell[] = []
   const w = (sec: number) => Math.max(0, sec) * 10
+  const sorted = [...shots].sort((a, b) => a.startSec - b.startSec)
   let cursor = 0
-  for (const shot of [...shots].sort((a, b) => a.startSec - b.startSec)) {
+  for (let i = 0; i < sorted.length; i++) {
+    const shot = sorted[i]
     if (shot.startSec > cursor) cells.push({ kind: 'gap', key: `gap-${shot.sectionId}`, weight: w(shot.startSec - cursor) })
-    cells.push({ kind: 'clip', key: shot.sectionId, weight: w(shot.endSec - shot.startSec), shot })
-    cursor = Math.max(cursor, shot.endSec)
+    // **重叠的分镜要把权重裁掉**：分镜之间本不该重叠，但语义段的图层区间是派生出来的，撞上一次
+    // 就足以让「权重总和 > 片长×10」——flex 会把整轨等比压缩，于是**每一个** Clip 都跟刻度和
+    // 播放头对不上（错位随重叠量放大）。裁成 [max(start,cursor), min(end, 下一段 start)] 这一段，
+    // 宁可把重叠的那截画短，也不让整轨失准。
+    const next = sorted[i + 1]
+    const from = Math.max(shot.startSec, cursor)
+    const to = Math.min(shot.endSec, next ? Math.max(next.startSec, from) : Infinity)
+    cells.push({ kind: 'clip', key: shot.sectionId, weight: w(to - from), shot })
+    cursor = Math.max(cursor, to)
   }
   if (duration > cursor) cells.push({ kind: 'gap', key: 'gap-tail', weight: w(duration - cursor) })
   return cells

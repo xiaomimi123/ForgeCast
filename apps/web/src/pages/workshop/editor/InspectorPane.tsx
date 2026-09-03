@@ -8,8 +8,15 @@ import type { TaskRun } from '../../../useTaskRun'
 import { BGS, MOODS, OUTLINE, VIDEO_TPLS, type VideoParams } from './ui'
 import type { useEditorState } from './useEditorState'
 
-/** §10 可改集的暂存草稿。键缺席＝没编辑过（paramsDiff 就是按这条口径跳过的）。 */
-export interface ParamsDraft { bgVariant?: string; bgmSrc?: string | null; mood?: string | null }
+/**
+ * 暂存草稿。键缺席＝没编辑过（paramsDiff 就是按这条口径跳过的）。
+ *
+ * **只有 bg 与 bgm 两项**。`mood` 虽然在 §10 的可改集里，但它在整条链路上**只写不读**——
+ * `renderFromSpec` 用的是 `bgm.src` 这个具体文件，没有任何一处会按 mood 重新挑曲。
+ * 让它可改，用户改完会看到「用新参数重渲（1 项）」，点下去白烧几分钟 CPU 渲出一份逐字节相同的新版本，
+ * 按钮就是在撒谎。故降进只读档，等 P2 的「按情绪自动选曲」接上再放开。
+ */
+export interface ParamsDraft { bgVariant?: string; bgmSrc?: string | null }
 
 /** 六种特效（Effect['type'] 的全集）与它们的人话名。新增类型时这里要跟着加。 */
 const EFFECTS: Array<{ type: Effect['type']; label: string }> = [
@@ -72,10 +79,11 @@ export function mergeParamsDraft(spec: VideoSpec, draft: ParamsDraft): VideoSpec
   if (draft.bgVariant !== undefined && draft.bgVariant !== spec.bgVariant) {
     next = { ...next, bgVariant: draft.bgVariant }
   }
-  if (draft.bgmSrc !== undefined || draft.mood !== undefined) {
-    const src = draft.bgmSrc !== undefined ? draft.bgmSrc : (spec.audio.bgm?.src ?? null)
-    const mood = draft.mood !== undefined ? draft.mood : (spec.audio.bgm?.mood ?? null)
-    next = { ...next, audio: { ...next.audio, bgm: src ? { src, mood } : null } }
+  if (draft.bgmSrc !== undefined) {
+    // mood 不可改（见 ParamsDraft 注释），但换曲时要**带着原来的 mood 一起写回**：
+    // bgm 是一个对象，只写 src 会把 mood 抹成 null。
+    const mood = spec.audio.bgm?.mood ?? null
+    next = { ...next, audio: { ...next.audio, bgm: draft.bgmSrc ? { src: draft.bgmSrc, mood } : null } }
   }
   return next
 }
@@ -94,6 +102,7 @@ export function mergeParamsDraft(spec: VideoSpec, draft: ParamsDraft): VideoSpec
  */
 export default function InspectorPane({
   ed, current, bgmList, selectedLayerId, vp, setVp, busy, videoRun, onMakeVideo, onNotice, onEnqueueRender, onRenderFromSpec,
+  specEpoch, className,
 }: {
   ed: ReturnType<typeof useEditorState>
   current: ContentItemView | null
@@ -109,12 +118,21 @@ export default function InspectorPane({
   onEnqueueRender: () => Promise<boolean>
   /** ⋯ 里那个「用当前编辑结果渲成片」的正主：带确认与防御式保存。 */
   onRenderFromSpec: () => void
+  /** spec 被**整包换掉**的次数（重置 / 重写）。草稿是「相对当前 spec 的改动」，换了就得清。 */
+  specEpoch: number
+  className?: string
 }) {
   const spec = ed.spec
   const [draft, setDraft] = useState<ParamsDraft>({})
   const [applying, setApplying] = useState(false)
-  // 换内容项 / 重置 / 重写后草稿必须清空：它是「相对当前 spec 的改动」，换了 spec 就无所指了
-  useEffect(() => { setDraft({}) }, [current?.id])
+  /**
+   * 换内容项、以及 spec 被整包换掉（重置为生成结果 / 重写这段）后清空草稿。
+   *
+   * **只依赖 `current?.id` 是不够的**：重置不换内容项，草稿会连同 accent 圆点一起留在界面上，
+   * 用户点「用新参数重渲」就把刚刚重置掉的那支 BGM 又贴了回去——他明明选的是「回到生成结果」。
+   * 所以调用方在这两条路径上递增 `specEpoch`，这里跟着它一起清。
+   */
+  useEffect(() => { setDraft({}) }, [current?.id, specEpoch])
 
   const diff = useMemo(() => (spec ? paramsDiff(spec, draft) : []), [spec, draft])
   const changed = (key: string) => diff.some((d) => d.key === key)
@@ -140,7 +158,7 @@ export default function InspectorPane({
 
   return (
     <aside
-      className="flex min-h-0 flex-col overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)]"
+      className={`flex min-h-0 flex-col overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)] ${className ?? ''}`}
       style={{ boxSizing: 'border-box' }}
     >
       <div className="flex h-[34px] shrink-0 items-center border-b border-[var(--fc-line)] px-3 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
@@ -187,14 +205,11 @@ export default function InspectorPane({
                     <BgmOptions list={bgmList} current={draft.bgmSrc ?? spec.audio.bgm?.src ?? null} />
                   </select>
                 </Field>
-                <Field label="情绪" changed={changed('mood')}
-                  hint="情绪只是这条视频的标注，不会自动换曲——换曲请用上面的 BGM">
-                  <select className={CTRL} value={draft.mood ?? spec.audio.bgm?.mood ?? ''}
-                    onChange={(e) => setDraft({ ...draft, mood: e.target.value || null })}>
-                    {MOODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </select>
+                <Field label="情绪" hint="按情绪自动选曲 P2 接入；现在它只是标注，改了不影响成片">
+                  <div className={CTRL_RO}>
+                    {MOODS.find((m) => m.value === (spec.audio.bgm?.mood ?? ''))?.label ?? spec.audio.bgm?.mood}
+                  </div>
                 </Field>
-
                 <Field label="模板" hint="重新生成才可改"><div className={CTRL_RO}>{spec.template}</div></Field>
                 <Field label="比例" hint="重新生成才可改">
                   <div className={CTRL_RO}>{spec.canvas.width >= spec.canvas.height ? '横屏 16:9' : '竖屏 9:16'}</div>
@@ -203,7 +218,7 @@ export default function InspectorPane({
                   <div className={CTRL_RO}>{spec.audio.captionsEnabled ? '已烧录' : '未烧录'}</div>
                 </Field>
                 <p className="text-[11px] leading-relaxed text-[var(--fc-faint)]">
-                  灰显三项要重新生成才可改——它们决定画面怎么搭出来，改了得整条重跑。
+                  灰显四项在剪辑台里改不了：模板 / 比例 / 字幕决定画面怎么搭出来，要整条重跑；情绪等 P2 的自动选曲接上再放开。
                 </p>
 
                 <button

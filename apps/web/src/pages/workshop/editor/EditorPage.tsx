@@ -7,7 +7,7 @@ import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
@@ -97,12 +97,18 @@ export default function EditorPage({
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
   /** 窄屏（<1240）时右栏收成抽屉；这个 state 是抽屉的开合。 */
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /**
+   * spec 被**整包换掉**的次数（重置为生成结果 / 重写这段）。右栏的参数草稿是「相对当前 spec 的
+   * 改动」，spec 换了草稿就无所指——但这两条路径都不换内容项，光靠 `current.id` 察觉不到。
+   */
+  const [specEpoch, setSpecEpoch] = useState(0)
   const wide = useViewportAtLeast(NARROW_PX)
 
   // 换内容项时复位这条内容独有的临时状态
   useEffect(() => {
     setCurrentSec(0); setMenuOpen(false); setNotice(null); setResetUnavailable(false); setSelectedLayerId(null)
   }, [videoId])
+  const bumpSpecEpoch = useCallback(() => setSpecEpoch((v) => v + 1), [])
 
   // 点菜单外面关掉它。用 mousedown 而非 click：click 要等按键抬起，期间菜单还盖在页面上，
   // 点它下面的控件会「第一下只关菜单」。写法与 ContentCard 的「⋯」一致。
@@ -194,6 +200,7 @@ export default function EditorPage({
     if (!confirm('重置为生成结果？剪辑台里的手工改动会全部丢弃，且不可撤销。')) return
     try {
       await ed.resetToOrig()
+      bumpSpecEpoch()
       setNotice('已重置为生成结果')
     } catch (e) {
       if (e instanceof NoOrigSnapshotError) { setResetUnavailable(true); setNotice(e.message); return }
@@ -324,6 +331,7 @@ export default function EditorPage({
             <ShotList
               slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
               currentSec={currentSec} onNotice={setNotice} onSelectLayer={setSelectedLayerId}
+              onSpecReplaced={bumpSpecEpoch}
             />
           </div>
         </section>
@@ -334,6 +342,7 @@ export default function EditorPage({
             ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
             vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
             onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
+            specEpoch={specEpoch}
           />
         )}
 
@@ -349,10 +358,14 @@ export default function EditorPage({
       {!wide && drawerOpen && (
         <div className="fixed inset-0 z-30 flex justify-end bg-black/25" onClick={() => setDrawerOpen(false)}>
           <div className="h-full w-[320px] bg-[var(--fc-surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {/* `h-full` 必须传到 aside 上：它是 `flex-col` + 内层 `overflow-y-auto`，不给高度约束
+                内层永远算不出「超出」，矮窗口下底部的「渲成片」被挤出可视区且**滚不到**。 */}
             <InspectorPane
+              className="h-full"
               ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
               vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
+              specEpoch={specEpoch}
             />
           </div>
         </div>
