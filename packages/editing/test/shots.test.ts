@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type { VideoSpec } from '@forgecast/studio'
+// 值导入（不是 import type）：这条跨包断言是两份 rewritable 判定之间唯一的真钉子。
+// no-node-deps 守卫只扫 src/，测试里的值导入不违规；@forgecast/studio 已是 devDependency。
+import { findRewritableTarget } from '@forgecast/studio'
 import { deriveShots } from '../src/shots'
+import { updateLayerText } from '../src/ops'
 import { baseSpec, captionLayer, textLayer } from './fixtures'
 
 describe('deriveShots', () => {
@@ -13,8 +18,8 @@ describe('deriveShots', () => {
         ],
       },
       layers: [
-        textLayer({ id: 'a1', from: 'sec-a', start: 1, duration: 2 }),   // [1,3)
-        textLayer({ id: 'b1', from: 'sec-b', start: 6, duration: 1 }),   // [6,7)
+        textLayer({ id: 'a1', from: 'sec-a', start: 1, duration: 2, content: { kind: 'text', text: 'A' } }),   // [1,3)
+        textLayer({ id: 'b1', from: 'sec-b', start: 6, duration: 1, content: { kind: 'text', text: 'B' } }),   // [6,7)
         captionLayer({ id: 'b2', from: 'sec-b', start: 4, duration: 1 }), // [4,5)
       ],
     })
@@ -93,6 +98,82 @@ describe('deriveShots', () => {
     })
   })
 
+  describe('rewritable 与 studio findRewritableTarget 交叉断言（真钉子）', () => {
+    /** studio 侧判定：不抛 = 支持重写。两份实现任何一侧漂移，下面的等值断言就红。 */
+    const studioSaysRewritable = (spec: VideoSpec, sectionId: string): boolean => {
+      try {
+        findRewritableTarget(spec, sectionId)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    const cases: Array<[name: string, spec: VideoSpec, sectionId: string]> = [
+      ['text 段 + 单文本图层', baseSpec(), 'sec-hook'],
+      [
+        'dialogue 段',
+        baseSpec({
+          semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-d', role: 'body', dialogue: [{ who: 'them', text: 'hi' }] }] },
+          layers: [textLayer({ from: 'sec-d' })],
+        }),
+        'sec-d',
+      ],
+      [
+        'text 段 + 双文本图层',
+        baseSpec({
+          semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }] },
+          layers: [textLayer({ id: 'l1' }), textLayer({ id: 'l2' })],
+        }),
+        'sec-hook',
+      ],
+      [
+        'stat 段',
+        baseSpec({
+          semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-s', role: 'stat', stat: { value: '10x', label: 'x' } }] },
+          layers: [textLayer({ from: 'sec-s' })],
+        }),
+        'sec-s',
+      ],
+      [
+        '段内零文本图层（只有 caption）',
+        baseSpec({
+          semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }] },
+          layers: [captionLayer()],
+        }),
+        'sec-hook',
+      ],
+    ]
+
+    for (const [name, spec, sectionId] of cases) {
+      it(`${name}：editing 的 rewritable === studio 判定`, () => {
+        const shot = deriveShots(spec).find((s) => s.sectionId === sectionId)!
+        expect(shot.rewritable).toBe(studioSaysRewritable(spec, sectionId))
+      })
+    }
+  })
+
+  describe('text 取图层真相（改图层不反写语义层，列表不能 stale）', () => {
+    it('updateLayerText 改字后，deriveShots 的 text 是新值而不是 section.text', () => {
+      const spec = baseSpec()
+      const out = updateLayerText(spec, 'l-hook', '新文案')
+      expect(out.semantic.sections[0].text).toBe('原文案') // 铁律：语义层不被反写
+      const shot = deriveShots(out).find((s) => s.sectionId === 'sec-hook')!
+      expect(shot.text).toBe('新文案')
+    })
+
+    it('dialogue 段（无唯一文本图层来源）仍显示 section 侧内容', () => {
+      const spec = baseSpec({
+        semantic: {
+          hook: null, sourceAssetId: null,
+          sections: [{ id: 'sec-d', role: 'body', dialogue: [{ who: 'them', text: '你好' }, { who: 'me', text: '在' }] }],
+        },
+        layers: [captionLayer({ from: 'sec-d' })],
+      })
+      expect(deriveShots(spec)[0].text).toBe('你好 / 在')
+    })
+  })
+
   it('非 text 段的 text 字段兜底：items / dialogue / stat 有可读文本', () => {
     const spec = baseSpec({
       semantic: {
@@ -104,7 +185,7 @@ describe('deriveShots', () => {
         ],
       },
       layers: [
-        textLayer({ id: 'i', from: 'sec-i' }), textLayer({ id: 'd', from: 'sec-d' }), textLayer({ id: 's', from: 'sec-s' }),
+        captionLayer({ id: 'i', from: 'sec-i' }), captionLayer({ id: 'd', from: 'sec-d' }), captionLayer({ id: 's', from: 'sec-s' }),
       ],
     })
     const shots = deriveShots(spec)

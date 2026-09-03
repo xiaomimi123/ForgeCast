@@ -196,12 +196,26 @@ describe('snapStart 拍点吸附', () => {
     expect(snapStart(beatSpec(), 'l-hook', 7.48, 0.08)).toBe(7.5)
   })
 
+  it('恰好等于阈值 → 吸附（边界是闭区间）', () => {
+    expect(snapStart(beatSpec(), 'l-hook', 2.08, 0.08)).toBe(2)
+  })
+
   it('阈值外原值返回', () => {
     expect(snapStart(beatSpec(), 'l-hook', 2.2, 0.08)).toBe(2.2)
   })
 
   it('无 beatGrid 原值返回', () => {
     expect(snapStart(baseSpec(), 'l-hook', 2.03, 0.08)).toBe(2.03)
+  })
+
+  it('向左外推的负拍点钳到 0，绝不吸出负起点', () => {
+    // t0=0.5 T=1：raw=-0.6 的最近网格点是 -0.5，钳到 0 后已在阈值外 → 原值返回，而不是返回 -0.5
+    const g = baseSpec({
+      audio: { narration: null, bgm: null, beatGrid: { t0: 0.5, T: 1, bpm: 60, strongBeats: [0.5] }, captionsEnabled: true },
+    })
+    expect(snapStart(g, 'l-hook', -0.6, 0.15)).toBe(-0.6)
+    // 落在 0 附近时吸到 0（合法起点）
+    expect(snapStart(g, 'l-hook', -0.05, 0.08)).toBe(0)
   })
 
   it('纯函数：不改 spec', () => {

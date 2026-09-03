@@ -94,12 +94,15 @@ export function resizeLayer(spec: VideoSpec, layerId: string, newDuration: numbe
  * 拖拽时的拍点吸附。beatGrid 的 strongBeats 只是采样出来的前若干个拍，时间轴后半段没有条目，
  * 所以按 t0 + n·T 外推整条网格，而不是在 strongBeats 数组里找最近值。
  * layerId 目前不参与计算（吸附只看时间轴），保留在签名里是给「按图层禁用吸附」留的位置。
+ * 拍点先钳到 >= 0：t0 不是 0 时（如 t0=0.5、T=1）向左外推会算出负拍点，吸上去就是非法起点。
  */
 export function snapStart(spec: VideoSpec, layerId: string, rawStart: number, thresholdSec: number): number {
   void layerId
   const grid = spec.audio.beatGrid
   if (!grid || grid.T <= 0) return rawStart
   const n = Math.round((rawStart - grid.t0) / grid.T)
-  const beat = round3(grid.t0 + n * grid.T)
-  return Math.abs(rawStart - beat) <= thresholdSec ? beat : rawStart
+  const beat = Math.max(0, round3(grid.t0 + n * grid.T))
+  // 距离先 round3 再比：2.08 与拍点 2.0 的浮点差是 0.08000000000000007，直接比会把「恰好等于阈值」
+  // 判成阈值外，用户在 UI 上填 0.08 却吸不上。
+  return round3(Math.abs(rawStart - beat)) <= thresholdSec ? beat : rawStart
 }
