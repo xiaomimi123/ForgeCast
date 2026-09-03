@@ -141,14 +141,20 @@ export default function InspectorPane({
     if (!spec || diff.length === 0 || applying) return
     setApplying(true)
     try {
-      const next = mergeParamsDraft(spec, draft)
-      // 先进历史（这次参数改动可撤销），再落盘。**save 必须收到显式的 next**：
-      // `apply` 的 setState 还没刷新，save 内部从 ref 取 present 会拿到改动前那一份，
-      // 于是「保存了旧值 → 渲了旧值」，而 UI 上参数明明已经变了。
-      ed.apply(next)
-      if (!(await ed.save(next))) { onNotice('重渲已取消：当前内容没有可保存的素材包'); return }
-      setDraft({})
-      if (await onEnqueueRender()) onNotice('已按新参数入队重渲，进度看队列卡片')
+      // 与「重写这段」互斥：这里也是一次服务端读改写（PUT 落盘 + POST 入队重渲读盘），
+      // 在途时若中栏「重写这段」并发发出另一条读改写，两者会静默互覆盖磁盘。
+      const ran = await ed.runExclusive(async () => {
+        const next = mergeParamsDraft(spec, draft)
+        // 先进历史（这次参数改动可撤销），再落盘。**save 必须收到显式的 next**：
+        // `apply` 的 setState 还没刷新，save 内部从 ref 取 present 会拿到改动前那一份，
+        // 于是「保存了旧值 → 渲了旧值」，而 UI 上参数明明已经变了。
+        ed.apply(next)
+        if (!(await ed.save(next))) { onNotice('重渲已取消：当前内容没有可保存的素材包'); return true }
+        setDraft({})
+        if (await onEnqueueRender()) onNotice('已按新参数入队重渲，进度看队列卡片')
+        return true
+      })
+      if (ran === undefined) onNotice('另一操作进行中，请稍候')
     } catch (e) {
       onNotice(`重渲失败：${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -223,7 +229,7 @@ export default function InspectorPane({
 
                 <button
                   className={`w-full ${OUTLINE} !h-[34px] !py-0`}
-                  disabled={diff.length === 0 || applying || ed.saving}
+                  disabled={diff.length === 0 || applying || ed.saving || ed.busy}
                   title={diff.length === 0 ? '先改点参数' : '保存改动并按新参数入队重渲'}
                   onClick={applyParams}
                 >
@@ -237,7 +243,7 @@ export default function InspectorPane({
 
       {spec && (
         <div className="shrink-0 border-t border-[var(--fc-line)] p-3">
-          <button className={`w-full ${OUTLINE}`} onClick={onRenderFromSpec} disabled={ed.saving}>
+          <button className={`w-full ${OUTLINE}`} onClick={onRenderFromSpec} disabled={ed.saving || ed.busy}>
             用当前编辑结果渲成片
           </button>
           <p className="mt-1 text-[11px] leading-relaxed text-[var(--fc-faint)]">

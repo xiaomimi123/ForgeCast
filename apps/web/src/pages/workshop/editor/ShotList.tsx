@@ -117,46 +117,53 @@ export default function ShotList({
     // **上锁必须在第一个 await 之前**：下面的 save 也是异步的，锁若等到 save 之后再上，
     // 保存在途那段时间按钮还是可点的，双击 = 两次 save + 两次不带 force 的 POST，
     // 响应乱序时后到的旧结果会盖掉新结果，还连压两格 undo。
-    if (rewriting) return
+    if (rewriting) { onNotice('重写进行中，请稍候'); return }
     setRewriting(shot.sectionId)
     try {
-      // 重写走服务端、以磁盘上的 spec 为输入并把结果写回磁盘。本地有未落盘的改动时先保存，
-      // 不然这一趟返回的新 spec 是「基于旧版本重写的」，apply 整包替换就把手改抹了。
-      if (ed.dirty) {
-        try {
-          if (!(await ed.save())) { onNotice('重写已取消：当前内容没有可保存的素材包'); return }
-        } catch (e) {
-          onNotice(`重写已取消（先保存失败）：${e instanceof Error ? e.message : String(e)}`)
-          return
+      // 三条服务端读改写路径（重写这段 / 用新参数重渲 / 用当前编辑结果渲成片）互斥：
+      // ed.saving 只罩住 save() 的 PUT，这里紧跟着的 POST rewrite-section 不在它的窗口内，
+      // 右栏「用新参数重渲」若在这数秒的在途窗口里发出第二条读改写，两者会静默互覆盖磁盘。
+      const ran = await ed.runExclusive(async () => {
+        // 重写走服务端、以磁盘上的 spec 为输入并把结果写回磁盘。本地有未落盘的改动时先保存，
+        // 不然这一趟返回的新 spec 是「基于旧版本重写的」，apply 整包替换就把手改抹了。
+        if (ed.dirty) {
+          try {
+            if (!(await ed.save())) { onNotice('重写已取消：当前内容没有可保存的素材包'); return true }
+          } catch (e) {
+            onNotice(`重写已取消（先保存失败）：${e instanceof Error ? e.message : String(e)}`)
+            return true
+          }
         }
-      }
-      const url = `/api/projects/${slug}/specs/${videoId}/rewrite-section`
-      const post = (force: boolean) => fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sectionId: shot.sectionId, ...(force ? { force: true } : {}) }),
+        const url = `/api/projects/${slug}/specs/${videoId}/rewrite-section`
+        const post = (force: boolean) => fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sectionId: shot.sectionId, ...(force ? { force: true } : {}) }),
+        })
+        let res = await post(false)
+        if (res.status === 409) {
+          const body = await res.json().catch(() => ({})) as { affected?: string[] }
+          const list = (body.affected ?? []).join('、') || '（未知图层）'
+          if (!confirm(`该段含手工改动，重写将覆盖：${list}。继续？`)) { onNotice('已取消重写'); return true }
+          res = await post(true)
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { error?: string }
+          onNotice(`重写失败：${body.error ?? `HTTP ${res.status}`}`)
+          return true
+        }
+        const out = await res.json() as RewriteResp
+        // 整包替换进 undo 栈——用户 ⌘Z 可以撤销这次重写（磁盘上仍是新版本，再保存一次即可回退）
+        ed.apply(out.spec)
+        // 服务端已经把这份写回磁盘了：不对齐净快照的话「未保存」会立刻假亮，
+        // 用户会去按一次毫无意义的 ⌘S（而且那次 PUT 传的还是同样的内容）。
+        ed.markSaved(out.spec)
+        onSpecReplaced()
+        setDraft(null)
+        onNotice('已重写；旁白仍为旧配音，语音与画面文案可能不一致')
+        return true
       })
-      let res = await post(false)
-      if (res.status === 409) {
-        const body = await res.json().catch(() => ({})) as { affected?: string[] }
-        const list = (body.affected ?? []).join('、') || '（未知图层）'
-        if (!confirm(`该段含手工改动，重写将覆盖：${list}。继续？`)) { onNotice('已取消重写'); return }
-        res = await post(true)
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string }
-        onNotice(`重写失败：${body.error ?? `HTTP ${res.status}`}`)
-        return
-      }
-      const out = await res.json() as RewriteResp
-      // 整包替换进 undo 栈——用户 ⌘Z 可以撤销这次重写（磁盘上仍是新版本，再保存一次即可回退）
-      ed.apply(out.spec)
-      // 服务端已经把这份写回磁盘了：不对齐净快照的话「未保存」会立刻假亮，
-      // 用户会去按一次毫无意义的 ⌘S（而且那次 PUT 传的还是同样的内容）。
-      ed.markSaved(out.spec)
-      onSpecReplaced()
-      setDraft(null)
-      onNotice('已重写；旁白仍为旧配音，语音与画面文案可能不一致')
+      if (ran === undefined) onNotice('另一操作进行中，请稍候')
     } catch (e) {
       onNotice(`重写失败：${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -186,6 +193,7 @@ export default function ShotList({
               shot={shot}
               active={activeId === shot.sectionId}
               busy={rewriting === shot.sectionId}
+              locked={ed.busy}
               value={draft && draft.id === shot.sectionId && draft.base === shot.text ? draft.value : shot.text}
               onSelect={() => selectShot(shot)}
               onChange={(v) => setDraft({ id: shot.sectionId, base: shot.text, value: v })}
@@ -201,11 +209,13 @@ export default function ShotList({
 
 /** 单行分镜（§5：collapsed 底 --fc-bg / 1px 线 / padding 9,11；active 底白 / 左 3px accent / padding 11 + 操作条）。 */
 function ShotRow({
-  shot, active, busy, value, onSelect, onChange, onCommit, onRewrite,
+  shot, active, busy, locked, value, onSelect, onChange, onCommit, onRewrite,
 }: {
   shot: ShotView
   active: boolean
   busy: boolean
+  /** 另一条服务端读改写在途（跨行/跨面板，ed.busy）——不是「这一行在重写」，是「哪都别点」。 */
+  locked: boolean
   value: string
   onSelect: () => void
   onChange: (v: string) => void
@@ -263,7 +273,7 @@ function ShotRow({
         <div className="mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <button
             className={`${OUTLINE} !py-1 !text-xs`}
-            disabled={!shot.rewritable || busy}
+            disabled={!shot.rewritable || busy || locked}
             title={shot.rewritable ? '让 LLM 重写这段文案（会落盘）' : '结构化内容暂不支持重写'}
             onClick={onRewrite}
           >

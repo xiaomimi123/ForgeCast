@@ -86,6 +86,32 @@ describe('spec 读写端点', () => {
     expect(onDisk.durationSec).toBe(20)
   })
 
+  it('PUT 带未知顶层字段（如 hasOrig）→ 200，盘上剥除该字段', async () => {
+    fs.mkdirSync(path.dirname(specPath('deadbeef01')), { recursive: true })
+    fs.writeFileSync(specPath('deadbeef01'), JSON.stringify(validSpec()))
+    // hasOrig 是 GET 响应的包装字段，不属于 VideoSpec——前端若忘了摘，PUT 回来会带上它。
+    const withHasOrig = { ...validSpec(), hasOrig: true, someOtherUnknown: 'noise' }
+    const res = await app.request('/api/projects/s1/specs/deadbeef01', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(withHasOrig),
+    })
+    expect(res.status).toBe(200)
+    const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
+    expect(onDisk).not.toHaveProperty('hasOrig')
+    expect(onDisk).not.toHaveProperty('someOtherUnknown')
+  })
+
+  it('PUT 已知字段全部保留（白名单不误删合法字段）', async () => {
+    fs.mkdirSync(path.dirname(specPath('deadbeef01')), { recursive: true })
+    fs.writeFileSync(specPath('deadbeef01'), JSON.stringify(validSpec()))
+    const spec = validSpec()
+    const res = await app.request('/api/projects/s1/specs/deadbeef01', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+    })
+    expect(res.status).toBe(200)
+    const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
+    expect(onDisk).toEqual(spec)
+  })
+
   it('PUT 同 track 重叠 → 400 提到 track', async () => {
     const bad = { ...validSpec(), layers: [layer({ id: 'l1', start: 0, duration: 5, track: 1 }), layer({ id: 'l2', start: 3, duration: 5, track: 1 })] }
     const res = await app.request('/api/projects/s1/specs/deadbeef01', {

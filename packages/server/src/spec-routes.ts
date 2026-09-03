@@ -44,6 +44,28 @@ export function validateSpecPut(body: any, videoId: string): string | null {
   return null
 }
 
+/** VideoSpec 的已知顶层键。落盘前用它把 PUT body 剪成白名单——见 `pickKnownSpecFields`。 */
+const SPEC_TOP_LEVEL_KEYS = [
+  'version', 'videoId', 'slug', 'template', 'createdAt', 'semantic', 'canvas',
+  'durationSec', 'layers', 'audio', 'warnings', 'bgVariant',
+] as const
+
+/**
+ * 剥掉 PUT body 里不属于 VideoSpec 的顶层字段再落盘（未知键剥除，而不是 400 拒绝）。
+ *
+ * 典型触发：GET 响应带的 `hasOrig` 是响应包装字段（见上面 GET 路由的注释），前端 PUT 回来前
+ * 本该摘掉，但这条防线不该只钉在前端——它忘摘一次，磁盘上的 spec 就永久带一个假字段，
+ * 从此每次 dirty 的 JSON 比较都多一项、每次读盘都多一份垃圾。这里把「未知键」当协议噪声
+ * 直接剪掉，而不是拒收整个请求：用户的合法改动不该因为前端一个无关字段的疏漏而保存失败。
+ */
+export function pickKnownSpecFields(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of SPEC_TOP_LEVEL_KEYS) {
+    if (key in body) out[key] = body[key]
+  }
+  return out
+}
+
 /** 剪辑台的「保存」（GET/PUT spec）与「重置为生成结果」（POST .../reset，靠 orig 快照逐字节还原）。 */
 export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): void {
   const projExists = (slug: string) => !!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
@@ -78,7 +100,7 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): v
     if (err) return c.json({ error: err }, 400)
     const p = specAbs(slug, videoId)
     fs.mkdirSync(path.dirname(p), { recursive: true })
-    fs.writeFileSync(p, JSON.stringify(body, null, 2), 'utf8')
+    fs.writeFileSync(p, JSON.stringify(pickKnownSpecFields(body), null, 2), 'utf8')
     return c.json({ ok: true })
   })
 

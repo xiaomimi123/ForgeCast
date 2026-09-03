@@ -56,7 +56,19 @@ export interface EditorState {
    */
   hasOrig: boolean
   previewSpec: VideoSpec | null
-  reload(): void
+  /**
+   * 有没有一条**服务端读改写**在途（重写这段 / 用新参数重渲 / 用当前编辑结果渲成片）。
+   * 这三条都是「服务端读盘 → 改 → 写回」，在途时若另一条并发发出，两次读改写会乱序、
+   * 静默互覆盖磁盘上的结果——只罩住 `save()` 的 PUT 不够，问题出在 PUT 之后那次 POST 上。
+   * 调用方据此把触发按钮 `disabled` 一起罩住。
+   */
+  busy: boolean
+  /**
+   * 三条服务端读改写路径的互斥闸门：`busy` 时直接返回 `undefined`（`fn` 不会被调用），
+   * 调用方据此提示「另一操作进行中」；否则置 `busy` 执行 `fn`，`finally` 清。
+   * **只管标志，不嵌套调用自身**——`save()` 不走它，被它包裹的路径内部调 `save()` 不会死锁。
+   */
+  runExclusive<T>(fn: () => Promise<T>): Promise<T | undefined>
 }
 
 /**
@@ -75,8 +87,21 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
   const [saving, setSaving] = useState(false)
   // 最后一次与磁盘一致的序列化快照。null＝还没载入。
   const [savedJson, setSavedJson] = useState<string | null>(null)
-  const [reloadTick, setReloadTick] = useState(0)
   const [hasOrig, setHasOrig] = useState(false)
+  const [busy, setBusy] = useState(false)
+  // 用 ref 做互斥判据：两次点击之间 setState 不一定已经刷新，state 判「是否已在途」会漏拦。
+  const busyRef = useRef(false)
+  const runExclusive = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+    if (busyRef.current) return undefined
+    busyRef.current = true
+    setBusy(true)
+    try {
+      return await fn()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }, [])
   // save() 被键盘快捷键调用时闭包会捕获旧的 history；用 ref 取「此刻」的 present。
   const historyRef = useRef<History | null>(null)
   historyRef.current = history
@@ -111,7 +136,7 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
         setLoading(false)
       })
     return () => { alive = false }
-  }, [slug, videoId, reloadTick])
+  }, [slug, videoId])
 
   const spec = history?.present ?? null
 
@@ -208,6 +233,7 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
     resetToOrig,
     hasOrig,
     previewSpec,
-    reload: useCallback(() => setReloadTick((t) => t + 1), []),
+    busy,
+    runExclusive,
   }
 }

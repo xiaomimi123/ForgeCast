@@ -224,14 +224,20 @@ export default function EditorPage({
     if (!selected || !videoId) return
     if (!confirm('用当前编辑结果渲一版成片？\n旁白与字幕沿用上一版配音，改过的文字不会改配音。')) return
     try {
-      // **防御式**：渲染端点读的是磁盘上的 spec，没落盘就入队等于渲了个旧版本。保存失败必须
-      // 就地中止——继续入队会渲出一版「用户以为包含了刚才改动、其实没有」的成片，
-      // 那比直接报错难查十倍。
-      if (ed.dirty) {
-        if (!(await ed.save())) { setNotice('渲成片已取消：当前内容没有可保存的素材包'); return }
-      }
-      await enqueueRender()
-      setNotice('已入队：渲染中，进度看队列卡片')
+      // 与「重写这段」「用新参数重渲」互斥：这里也是服务端读改写（视需要先 PUT 落盘，
+      // 再 POST 入队渲染读盘），在途时若并发发出另一条会静默互覆盖磁盘。
+      const ran = await ed.runExclusive(async () => {
+        // **防御式**：渲染端点读的是磁盘上的 spec，没落盘就入队等于渲了个旧版本。保存失败必须
+        // 就地中止——继续入队会渲出一版「用户以为包含了刚才改动、其实没有」的成片，
+        // 那比直接报错难查十倍。
+        if (ed.dirty) {
+          if (!(await ed.save())) { setNotice('渲成片已取消：当前内容没有可保存的素材包'); return true }
+        }
+        await enqueueRender()
+        setNotice('已入队：渲染中，进度看队列卡片')
+        return true
+      })
+      if (ran === undefined) setNotice('另一操作进行中，请稍候')
     } catch (e) {
       setNotice(`渲成片失败：${e instanceof Error ? e.message : String(e)}`)
     }
