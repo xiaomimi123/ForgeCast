@@ -1,6 +1,6 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
 import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { deriveShots, moveLayer, resizeLayer, snapStart, type ShotView } from '@forgecast/editing'
+import { deriveShots, layoutRow, moveShotBy, resizeLayer, snapStart, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { isUnsupported } from '../../../lib/rebase'
@@ -25,45 +25,6 @@ const EDGE_PX = 8
 type Drag =
   | { mode: 'move'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number }
   | { mode: 'resize'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
-
-/**
- * 把一个分镜整体平移 delta 秒。
- *
- * 分镜是**一组图层**（文本层 + 背景层 + …），必须整组同步移动，否则一次拖拽就把同段的图层拆散了。
- * `moveLayer` 逐层钳制（不越邻居、不越片长），组内任一层被钳住时，整组都退到那个「被钳后的最小
- * 位移」重算一遍——**宁紧不重叠**：让整组少移一点，也不能出现某层挤进邻居的情况。
- */
-export function moveShotBy(base: VideoSpec, shot: ShotView, delta: number): VideoSpec {
-  const startOf = (spec: VideoSpec, id: string) => spec.layers.find((l) => l.id === id)?.start
-  // **移动顺序按位移方向排**：同 section 若有两层同 track，先移的会被还没动的同伴挡住（moveLayer
-  // 是逐层对当时的邻居钳制的），effective 塌成 0，整组一动不动。右移先移最右边那层、左移先移最左边
-  // 那层，让路总是先腾出来。今天每段恰好一层不发作，但顺序依赖的死锁不该留着等模板变复杂。
-  const order = [...shot.layerIds].sort((a, b) => {
-    const sa = startOf(base, a) ?? 0
-    const sb = startOf(base, b) ?? 0
-    return delta >= 0 ? sb - sa : sa - sb
-  })
-  const applyAll = (d: number) => {
-    let next = base
-    for (const id of order) {
-      const s0 = startOf(base, id)
-      if (s0 === undefined) continue
-      next = moveLayer(next, id, s0 + d)
-    }
-    return next
-  }
-  const first = applyAll(delta)
-  // 实际位移取组内**绝对值最小**的那个：它就是这次拖拽真正能走到的距离
-  let effective = delta
-  for (const id of order) {
-    const s0 = startOf(base, id)
-    const s1 = startOf(first, id)
-    if (s0 === undefined || s1 === undefined) continue
-    if (Math.abs(s1 - s0) < Math.abs(effective)) effective = s1 - s0
-  }
-  if (effective === delta) return first
-  return applyAll(effective)
-}
 
 /**
  * 底部时间轴（实施说明 §4/§5）。总高 186：头 32 + 刻度 20 + 分镜 46 + 字幕 30。
@@ -327,37 +288,6 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
 function preferredLayerId(spec: VideoSpec, shot: ShotView): string {
   const text = shot.layerIds.filter((id) => spec.layers.find((l) => l.id === id)?.content.kind === 'text')
   return text.length === 1 ? text[0] : shot.layerIds[0]
-}
-
-type Cell =
-  | { kind: 'gap'; key: string; weight: number }
-  | { kind: 'clip'; key: string; weight: number; shot: ShotView }
-
-/**
- * 把分镜排成一行 flex 单元：`flex: 时长×10 1 0`（§5，**不用百分比**）。
- * 分镜之间和首尾的空隙也占一个同口径的占位，否则「权重 : 时间」不再是 1:1，
- * Clip 的边缘就会和刻度、播放头对不上——那正是时间轴最不能出的错。
- */
-export function layoutRow(shots: ShotView[], duration: number): Cell[] {
-  const cells: Cell[] = []
-  const w = (sec: number) => Math.max(0, sec) * 10
-  const sorted = [...shots].sort((a, b) => a.startSec - b.startSec)
-  let cursor = 0
-  for (let i = 0; i < sorted.length; i++) {
-    const shot = sorted[i]
-    if (shot.startSec > cursor) cells.push({ kind: 'gap', key: `gap-${shot.sectionId}`, weight: w(shot.startSec - cursor) })
-    // **重叠的分镜要把权重裁掉**：分镜之间本不该重叠，但语义段的图层区间是派生出来的，撞上一次
-    // 就足以让「权重总和 > 片长×10」——flex 会把整轨等比压缩，于是**每一个** Clip 都跟刻度和
-    // 播放头对不上（错位随重叠量放大）。裁成 [max(start,cursor), min(end, 下一段 start)] 这一段，
-    // 宁可把重叠的那截画短，也不让整轨失准。
-    const next = sorted[i + 1]
-    const from = Math.max(shot.startSec, cursor)
-    const to = Math.min(shot.endSec, next ? Math.max(next.startSec, from) : Infinity)
-    cells.push({ kind: 'clip', key: shot.sectionId, weight: w(to - from), shot })
-    cursor = Math.max(cursor, to)
-  }
-  if (duration > cursor) cells.push({ kind: 'gap', key: 'gap-tail', weight: w(duration - cursor) })
-  return cells
 }
 
 /**
