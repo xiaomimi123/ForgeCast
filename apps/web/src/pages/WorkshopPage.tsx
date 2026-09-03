@@ -177,7 +177,13 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 border-b border-hairline pb-2">
-        <select className="w-48 rounded-md border border-hairline-strong bg-card p-1.5 text-sm" value={selected} onChange={(e) => setSlug(e.target.value)}>
+        <select className="w-48 rounded-md border border-hairline-strong bg-card p-1.5 text-sm" value={selected} onChange={async (e) => {
+          const next = e.target.value
+          // 切项目也是「离开剪辑台」的一种：不过闸的话未保存改动会在 setSlug 触发的
+          // 重渲染里无声蒸发（select 是受控的，闸拒绝时不 setSlug，下拉会自动回退显示原值）。
+          if (tab === 'editor' && editorLeaveGuard.current && !(await editorLeaveGuard.current())) return
+          setSlug(next)
+        }}>
           {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
         </select>
         {selected && <button onClick={() => onOpenProject(selected)} className="text-xs text-fire">查看项目详情 →</button>}

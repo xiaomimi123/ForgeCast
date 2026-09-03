@@ -30,6 +30,8 @@ export function useConfirm(): {
   confirm: (opts: ConfirmOpts) => Promise<boolean>
   confirm3: (opts: Confirm3Opts) => Promise<'save' | 'discard' | 'cancel'>
   element: ReactNode
+  /** 弹层是否开着（pending 非空）。给宿主的键盘 handler 用来在弹层开着时旁路自己的快捷键。 */
+  open: boolean
 } {
   const [pending, setPending] = useState<Pending | null>(null)
   const okRef = useRef<HTMLButtonElement>(null)
@@ -147,5 +149,5 @@ export function useConfirm(): {
     </div>
   ) : null
 
-  return { confirm, confirm3, element }
+  return { confirm, confirm3, element, open: pending !== null }
 }

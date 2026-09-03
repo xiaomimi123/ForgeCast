@@ -155,7 +155,12 @@ export default function InspectorPane({
    */
   useEffect(() => { setDraft({}) }, [current?.id, specEpoch])
 
-  const diff = useMemo(() => (spec ? paramsDiff(spec, draft) : []), [spec, draft])
+  // saved 侧的 bgmSrc 归一到曲库相对名再传给 paramsDiff：spec.audio.bgm.src 落盘是绝对路径，
+  // draft.bgmSrc 是下拉 option 的相对名，直接比较会把「选中当前正在用的那首」也判成改动。
+  const diff = useMemo(
+    () => (spec ? paramsDiff(spec, draft, relOfBgmSrc(spec.audio.bgm?.src, bgmList) ?? spec.audio.bgm?.src ?? null) : []),
+    [spec, draft, bgmList],
+  )
   const changed = (key: string) => diff.some((d) => d.key === key)
   /**
    * BGM 下拉当前应选中的值：草稿有值就用草稿（`null` 是「显式选了不加背景乐」，

@@ -98,7 +98,7 @@ export default function EditorPage({
   const videoId = specPath ? videoIdFromSpecPath(specPath) : null
 
   const ed = useEditorState(selected, videoId)
-  const { confirm, confirm3, element: confirmEl } = useConfirm()
+  const { confirm, confirm3, element: confirmEl, open: confirmOpen } = useConfirm()
   const playerRef = useRef<PlayerRef>(null)
   /** 当前播放头（秒）。Task 9 的时间轴消费；这里先存住，保证 frameupdate 接线在骨架期就是通的。 */
   const [currentSec, setCurrentSec] = useState(0)
@@ -165,6 +165,8 @@ export default function EditorPage({
   undoRef.current = ed.undo
   const redoRef = useRef(ed.redo)
   redoRef.current = ed.redo
+  const confirmOpenRef = useRef(confirmOpen)
+  confirmOpenRef.current = confirmOpen
 
   // 快捷键：Ctrl/Cmd+Z 撤销、Shift+Ctrl/Cmd+Z 重做、Ctrl/Cmd+S 保存。
   // 输入框聚焦时不抢撤销/重做——那时用户要的是输入框自己的撤销栈。
@@ -185,6 +187,9 @@ export default function EditorPage({
       }
       if (key === 'z') {
         if (inField) return
+        // confirm 弹层开着时跳过：防「弹层里撤销后点保存并继续」把撤销后的版本保存下去——
+        // 弹层通常就是在问「要不要保存/丢弃」，此时改动态不该再被键盘悄悄改动。
+        if (confirmOpenRef.current) return
         e.preventDefault()
         if (e.shiftKey) redoRef.current()
         else undoRef.current()
@@ -229,10 +234,16 @@ export default function EditorPage({
     return () => { leaveGuardRef.current = null }
   })
 
-  /** 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。 */
-  function selectItemGuarded(item: ContentItemView) {
-    if (item.id === selectedItemId) return
-    confirmLeave().then((ok) => { if (ok) onSelectItem(item) })
+  /**
+   * 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。
+   * 返回是否真的切换了——调用方（窄屏左抽屉）据此决定要不要关抽屉：取消时抽屉别关，
+   * 否则用户在弹层里点「取消」后发现抽屉已经关了，找不到刚才点的队列在哪。
+   */
+  async function selectItemGuarded(item: ContentItemView): Promise<boolean> {
+    if (item.id === selectedItemId) return true
+    const ok = await confirmLeave()
+    if (ok) onSelectItem(item)
+    return ok
   }
 
   async function doReset() {
@@ -438,7 +449,7 @@ export default function EditorPage({
               selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
               busy={busy} copyRun={copyRun} onGenerate={onGenerate}
               items={items} selectedItemId={selectedItemId}
-              onSelectItem={(item) => { setLeftDrawerOpen(false); selectItemGuarded(item) }}
+              onSelectItem={(item) => { selectItemGuarded(item).then((ok) => { if (ok) setLeftDrawerOpen(false) }) }}
               onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
             />
           </div>

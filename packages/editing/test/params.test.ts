@@ -58,4 +58,25 @@ describe('paramsDiff', () => {
       { key: 'mood', from: 'calm', to: 'upbeat' },
     ])
   })
+
+  // I2：mood 下拉「自动」选项值是 ''，saved 侧没有 mood 时是 null——语义相同，不归一的话
+  // 「选情绪又选回自动」圆点清不掉，点重渲还会以空 mood 打 pick-bgm 静默换曲重析。
+  it("mood 草稿为 ''（选回自动）与 saved 无 mood（null）不算改动", () => {
+    const bare = baseSpec()
+    expect(paramsDiff(bare, { mood: '' })).toEqual([])
+  })
+
+  it("mood 草稿为 ''、saved 有 mood 时仍算改动（回到自动 ≠ 保持原情绪）", () => {
+    expect(paramsDiff(saved, { mood: '' })).toEqual([{ key: 'mood', from: 'calm', to: null }])
+  })
+
+  // I2：saved 侧 bgmSrc 落盘是绝对路径，draft.bgmSrc 是曲库相对名——调用方（InspectorPane）
+  // 用 relOfBgmSrc 把 saved 反解成相对名后传作第三个参数，「选中当前正在用的那首」不再算改动。
+  it('bgmSrc：saved 归一到相对名后与「选回当前同一首」不算改动', () => {
+    expect(paramsDiff(saved, { bgmSrc: 'bgm/a.mp3' }, 'bgm/a.mp3')).toEqual([])
+  })
+
+  it('bgmSrc：不传第三个参数时退回未归一的 saved.audio.bgm.src（旧调用点行为不变）', () => {
+    expect(paramsDiff(saved, { bgmSrc: 'bgm/a.mp3' })).toEqual([])
+  })
 })

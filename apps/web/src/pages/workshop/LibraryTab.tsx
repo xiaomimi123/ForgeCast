@@ -273,7 +273,7 @@ export default function LibraryTab({ selected, assetsQuery, scriptAssets, conten
   onOpenInEditor: (itemId: number) => void
 }) {
   const qc = useQueryClient()
-  const { confirm, element: confirmEl } = useConfirm()
+  const { confirm, element: confirmEl, open: confirmOpen } = useConfirm()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [focusIdx, setFocusIdx] = useState(0)
@@ -289,7 +289,8 @@ export default function LibraryTab({ selected, assetsQuery, scriptAssets, conten
   const cardRefs = useRef(new Map<number, HTMLDivElement>())
   /** 弹层/批量执行中要旁路键盘；用 ref 让 window 监听器读到最新值而不必重挂 */
   const blockedRef = useRef(false)
-  blockedRef.current = helpOpen || busy
+  // confirmOpen 并入：删除弹层开着时 a/j/k/e 全不响应（?/Esc 的现有旁路逻辑不受影响，见下方 onKey）
+  blockedRef.current = helpOpen || busy || confirmOpen
 
   const videos = useMemo(() => (assetsQuery.data ?? []).filter((a) => a.type === 'video'), [assetsQuery.data])
 
