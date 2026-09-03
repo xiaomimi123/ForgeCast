@@ -236,6 +236,19 @@ export function resolveBgVariant(
 }
 
 /**
+ * spec 落盘 + orig 快照写入（renderAndRegister 与直连测试共用，抽出来是为了让「orig 只在
+ * 首次生成时写」这条守卫可以脱离整条渲染管线单独测试——mock crypto.randomUUID 拦不住具名导入，
+ * 真实重渲场景下想验证「同一 videoId 二次落盘不覆盖 orig」，直接调用本函数两次即可，不必造随机数陷阱。
+ * 只在 origAbsPath 不存在时写 orig：重渲不覆盖 orig——重置的语义是回到「第一次生成」。
+ */
+export function writeSpecFiles(specAbsPath: string, spec: VideoSpec): void {
+  fs.mkdirSync(path.dirname(specAbsPath), { recursive: true })
+  fs.writeFileSync(specAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+  const origAbsPath = specAbsPath.replace(/\.json$/, '.orig.json')
+  if (!fs.existsSync(origAbsPath)) fs.writeFileSync(origAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+}
+
+/**
  * 渲染 hf 项目并登记 video 素材（各 HyperFrames 分支收尾共用）。
  * `audioMix` 可选：渲染后调 mixAudio 把 BGM/SFX 混进成片，失败 fail-soft（保留无背景乐版本，打 ⚠，
  * 原因同时 push 进 `spec.warnings`）。
@@ -272,12 +285,7 @@ async function renderAndRegister(
   }
   const specRelPath = path.join(slug, 'specs', `${spec.videoId}.json`)
   const specAbsPath = path.join(ctx.config.paths.workspace, specRelPath)
-  fs.mkdirSync(path.dirname(specAbsPath), { recursive: true })
-  fs.writeFileSync(specAbsPath, JSON.stringify(spec, null, 2), 'utf8')
-  // orig 快照：只在第一次生成时写（重渲/重复渲染不覆盖），剪辑台「重置」端点靠它逐字节还原——
-  // 而不是重跑 lower()（lower 需要的 cues 等中间产物不在 spec 里，快照更忠实）。
-  const origAbsPath = specAbsPath.replace(/\.json$/, '.orig.json')
-  if (!fs.existsSync(origAbsPath)) fs.writeFileSync(origAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+  writeSpecFiles(specAbsPath, spec)
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings, spec_path) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(projectId, 'video', hook, relPath, JSON.stringify(spec.warnings), specRelPath)

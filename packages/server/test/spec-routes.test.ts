@@ -73,6 +73,14 @@ describe('spec 读写端点', () => {
     expect(body.error).toMatch(/track/)
   })
 
+  it('PUT 同 track 首尾相接（不重叠）→ 200（防将来 < 手滑改成 <= 把合法排布误杀）', async () => {
+    const ok = { ...validSpec(), layers: [layer({ id: 'l1', start: 0, duration: 5, track: 1 }), layer({ id: 'l2', start: 5, duration: 3, track: 1 })] }
+    const res = await app.request('/api/projects/s1/specs/deadbeef01', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ok),
+    })
+    expect(res.status).toBe(200)
+  })
+
   it('PUT version !== 1 → 400', async () => {
     const bad = { ...validSpec(), version: 2 }
     const res = await app.request('/api/projects/s1/specs/deadbeef01', {
