@@ -14,6 +14,7 @@ import TaskProgress from '../../../components/TaskProgress'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
 import { useTaskRun, type TaskRun } from '../../../useTaskRun'
 import QueuePane from './QueuePane'
+import ShotList from './ShotList'
 import { NoOrigSnapshotError, useEditorState } from './useEditorState'
 
 export const VIDEO_TPLS = [
@@ -310,13 +311,12 @@ export default function EditorPage({
             />
           </div>
 
-          {/* 分镜列表占位（Task 8） */}
-          <div className="min-h-0 overflow-y-auto">
-            <div className="flex h-[34px] items-center border-b border-[var(--fc-line)] px-3 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
-              分镜脚本
-              {ed.spec && <span className="ml-auto text-[var(--fc-faint)]">播放头 {currentSec.toFixed(1)}s</span>}
-            </div>
-            <div className="p-3 text-xs text-[var(--fc-faint)]">分镜列表由 Task 8 装配。</div>
+          {/* 分镜文案列表（Task 8）：改字即时可见 + 重写这段 */}
+          <div className="min-h-0">
+            <ShotList
+              slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
+              currentSec={currentSec} onNotice={setNotice}
+            />
           </div>
         </section>
 
