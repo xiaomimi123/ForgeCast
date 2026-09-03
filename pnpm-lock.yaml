@@ -54,6 +54,9 @@ importers:
       '@forgecast/compositions':
         specifier: workspace:*
         version: link:../../packages/compositions
+      '@forgecast/editing':
+        specifier: workspace:*
+        version: link:../../packages/editing
       '@remotion/player':
         specifier: 4.0.519
         version: 4.0.519(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

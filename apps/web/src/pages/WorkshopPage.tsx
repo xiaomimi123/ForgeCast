@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type Project } from '../api'
 import { Failure } from '../components/ui/States'
 import { useTaskRun } from '../useTaskRun'
-import EditorTransitionTab, { type VideoParams } from './workshop/EditorTransitionTab'
+import CutPlanEditor from './CutPlanEditor'
+import EditorPage, { type VideoParams } from './workshop/editor/EditorPage'
 import LibraryTab from './workshop/LibraryTab'
+import ScriptTab from './workshop/ScriptTab'
 import TemplatesTab from './workshop/TemplatesTab'
 
 // 做内容三视图（实施说明 §2 / P0-2）：旧 7 个 tab 的能力全部并进剪辑台与成片库。
@@ -167,14 +169,32 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
           onRetry={() => projects.refetch()} />
       )}
       {!projects.isError && tab === 'editor' && (
-        <EditorTransitionTab
+        <EditorPage
           selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
           busy={busy} copyRun={copyRun} videoRun={videoRun} onGenerate={() => generate()}
           vp={vp} setVp={setVp} bgmList={bgmList.data} onMakeVideo={makeVideo}
           items={contentItems} selectedItemId={selectedItemId}
           onSelectItem={(item) => setSelectedItemId(item.id)} onDeleteItem={deleteContentItem}
-          assetsQuery={assets} copyAssets={copyAssets} scriptAssets={scriptAssets}
-          onScriptBusyChange={setScriptBusy}
+          onCloseEditor={() => setSelectedItemId(null)}
+          transitionExtras={
+            /* 过渡区：旧「拍摄脚本」「卡点」两个 tab。P1 的分镜行与 P2 的时间轴接管后删除。 */
+            <>
+              <details className="card p-3">
+                <summary className="cursor-pointer select-none text-sm font-medium">拍摄脚本</summary>
+                <div className="pt-3">
+                  <ScriptTab selected={selected} copyAssets={copyAssets} scriptAssets={scriptAssets}
+                    running={busy} onRunningChange={setScriptBusy} />
+                </div>
+              </details>
+              <details className="card p-3">
+                <summary className="cursor-pointer select-none text-sm font-medium">卡点（旧版，P2 由时间轴接管）</summary>
+                <div className="pt-3">
+                  {/* key 强制切项目时重挂载，否则 CutPlanEditor 内部 plan state 会残留上一个项目的方案 */}
+                  {selected && <CutPlanEditor key={selected} slug={selected} />}
+                </div>
+              </details>
+            </>
+          }
         />
       )}
       {!projects.isError && tab === 'library' && (

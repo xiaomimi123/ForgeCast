@@ -41,3 +41,13 @@ export function videoIdFromSpecPath(specPath: string): string {
   const base = specPath.split('/').pop() ?? ''
   return base.replace(/\.json$/, '')
 }
+
+/**
+ * 这份 spec 能不能用 Player 播？
+ * 自定义模板（`custom-<id>`，见 generate.ts renderCustomTemplate）落的是 `layers: []` 的占位 spec，
+ * 只为满足 spec_path 落库契约；它的画面在 hf 目录的 index.html 里，不在图层模型里。
+ * 不拦的话：spec_path 非空 → 正常加载、时长正确、能拖动，但**画面全程空白**且零报错。
+ */
+export function isUnsupported(spec: VideoSpec): boolean {
+  return spec.template.startsWith('custom-') || spec.layers.length === 0
+}
