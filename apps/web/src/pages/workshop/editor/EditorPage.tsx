@@ -1,3 +1,8 @@
+// 深导入而非走包入口 `@forgecast/compositions`：入口带六份 CSS 的**副作用导入**，那样进来的样式
+// 是「无层」的，会压过 Tailwind v4 放在 @layer utilities 里的所有工具类（base.css 里
+// `* { margin:0;padding:0 }` 是给 1080×1920 渲染页写的，泄漏进控制台会把全站间距打平）。
+// 样式改由 index.css 用 `@import ... layer(forgecast-compositions)` 引入，见那里的注释。
+// **别顺手改回包入口**——子项目②的 Critical 就是这么来的。
 import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
@@ -107,12 +112,24 @@ export default function EditorPage({
   /** 当前播放头（秒）。Task 9 的时间轴消费；这里先存住，保证 frameupdate 接线在骨架期就是通的。 */
   const [currentSec, setCurrentSec] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
   /** 重置端点 404（这条视频生成于旧版本、没有 .orig 快照）后隐藏「重置」——服务端没有单独的探测接口 */
   const [resetUnavailable, setResetUnavailable] = useState(false)
 
   // 换内容项时复位这条内容独有的临时状态
   useEffect(() => { setCurrentSec(0); setMenuOpen(false); setNotice(null); setResetUnavailable(false) }, [videoId])
+
+  // 点菜单外面关掉它。用 mousedown 而非 click：click 要等按键抬起，期间菜单还盖在页面上，
+  // 点它下面的控件会「第一下只关菜单」。写法与 ContentCard 的「⋯」一致。
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDown(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [menuOpen])
 
   // 播放头：Player 的 frameupdate 是 imperative API，只能在 ref 就绪后订阅
   useEffect(() => {
@@ -140,8 +157,10 @@ export default function EditorPage({
       const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
       if (key === 's') {
         e.preventDefault()
+        // save() 返回 false ＝ 没有 spec、什么都没写。此时不能弹「已保存」——在「待出片」内容上
+        // 按 ⌘S 弹一句假回执，用户会以为改动落了盘。
         saveRef.current()
-          .then(() => setNotice('已保存'))
+          .then((wrote) => { if (wrote) setNotice('已保存') })
           .catch((err) => setNotice(`保存失败：${err instanceof Error ? err.message : String(err)}`))
         return
       }
@@ -157,7 +176,34 @@ export default function EditorPage({
   }, [])
 
   async function doSave() {
-    try { await ed.save(); setNotice('已保存') } catch (e) { setNotice(`保存失败：${e instanceof Error ? e.message : String(e)}`) }
+    try {
+      if (await ed.save()) setNotice('已保存')
+    } catch (e) { setNotice(`保存失败：${e instanceof Error ? e.message : String(e)}`) }
+  }
+
+  /**
+   * 离开当前内容（切队列 / 关编辑态）前的未保存改动闸门。返回 true 表示可以走。
+   * 两段 confirm：第一段问「要不要先保存」，答否再问「确定丢弃吗」——关键是**不能无声丢**。
+   * 保存失败时不放行，否则「保存了」的错觉加上改动丢失是最坏的组合。
+   */
+  async function confirmLeave(): Promise<boolean> {
+    if (!ed.dirty) return true
+    if (confirm('有未保存的改动。要先保存吗？\n\n确定＝保存并离开；取消＝进入丢弃确认')) {
+      try {
+        await ed.save()
+        return true
+      } catch (e) {
+        setNotice(`保存失败，已留在当前内容：${e instanceof Error ? e.message : String(e)}`)
+        return false
+      }
+    }
+    return confirm('丢弃这些未保存的改动并离开？此操作不可撤销。')
+  }
+
+  /** 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。 */
+  function selectItemGuarded(item: ContentItemView) {
+    if (item.id === selectedItemId) return
+    confirmLeave().then((ok) => { if (ok) onSelectItem(item) })
   }
 
   async function doReset() {
@@ -262,7 +308,7 @@ export default function EditorPage({
             )}
             {list.map((item) => (
               <div key={item.id}>
-                <ContentCard item={item} selected={item.id === selectedItemId} onOpen={onSelectItem} onDelete={onDeleteItem} />
+                <ContentCard item={item} selected={item.id === selectedItemId} onOpen={selectItemGuarded} onDelete={onDeleteItem} />
                 {item.status === 'failed' && (
                   <div className="px-1 pb-2">
                     <Failure step="渲染" error={item.error ?? ''} onRetry={() => onMakeVideo(item.copyAssetId)} />
@@ -294,9 +340,11 @@ export default function EditorPage({
               {ed.saving && <span className="font-mono text-[10px] text-[var(--fc-faint)]">保存中…</span>}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-              <button className={OUTLINE} disabled={!current} onClick={onCloseEditor} title="这版不要了：退出编辑态，回队列重做">打回重做</button>
+              <button className={OUTLINE} disabled={!current}
+                onClick={() => { confirmLeave().then((ok) => { if (ok) onCloseEditor() }) }}
+                title="这版不要了：退出编辑态，回队列重做">打回重做</button>
               <button className={SOLID} disabled={!canApprove} onClick={approve}>通过并送分发</button>
-              <div className="relative">
+              <div className="relative" ref={menuRef}>
                 <button className={OUTLINE} onClick={() => setMenuOpen((v) => !v)} aria-label="更多">⋯</button>
                 {menuOpen && (
                   <div className="absolute right-0 z-20 mt-1 w-52 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] py-1 text-sm shadow-lg">

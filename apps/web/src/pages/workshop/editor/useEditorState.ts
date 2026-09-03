@@ -26,7 +26,8 @@ export interface EditorState {
   canUndo: boolean
   canRedo: boolean
   saving: boolean
-  save(): Promise<void>
+  /** 返回是否**真的写了盘**：没有 spec（待出片内容）时静默 false，调用方据此决定弹不弹「已保存」。 */
+  save(): Promise<boolean>
   resetToOrig(): Promise<void>
   previewSpec: VideoSpec | null
   reload(): void
@@ -82,14 +83,18 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
   const spec = history?.present ?? null
 
   const apply = useCallback((next: VideoSpec) => {
-    setHistory((h) => (h ? push(h, next) : h))
+    // `@forgecast/editing` 的 op 在「这次操作什么也没改」时**刻意返回同一引用**（钳制到边界、
+    // 吸附到原位等）。不拦的话每次这样的空操作都占一格 undo 栈，用户连按几次 ⌘Z 却一动不动。
+    setHistory((h) => (h && next !== h.present ? push(h, next) : h))
   }, [])
   const undo = useCallback(() => setHistory((h) => (h ? undoH(h) : h)), [])
   const redo = useCallback(() => setHistory((h) => (h ? redoH(h) : h)), [])
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     const cur = historyRef.current?.present
-    if (!cur || !slug || !videoId) return
+    // 没有 spec 就没有可保存的东西。这里必须把「什么都没做」如实回给调用方——早先返回 void，
+    // ⌘S 的 `.then()` 照样弹「已保存」，在「待出片」内容上就是一句假回执。
+    if (!cur || !slug || !videoId) return false
     const body = JSON.stringify(cur)
     setSaving(true)
     try {
@@ -100,6 +105,7 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
       // 用发出去的那份（而不是重新序列化 present）当净快照：保存期间用户又改了的话，
       // 脏标记应当**继续亮着**，重新序列化会把那次改动误判成已保存。
       setSavedJson(body)
+      return true
     } finally {
       setSaving(false)
     }
@@ -109,9 +115,12 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
     if (!slug || !videoId) return
     const r = await fetch(`/api/projects/${slug}/specs/${videoId}/reset`, { method: 'POST' })
     if (r.status === 404) {
-      // 项目不存在也会 404。两者都让「重置」这条路走不通，文案取服务端原文更准。
+      // 同一个 404 有两种成因，**不能混**：真的没有 orig 快照（能力缺失 → 抛具名错，UI 永久隐藏
+      // 重置菜单），还是项目/spec 找不到（故障 → 普通错误，弹提示但菜单要留着，否则一次网络抖动
+      // 就把重置这条路对这条视频永久关掉了）。靠服务端文案区分：只有它说「快照」才是前者。
       const text = await r.text()
-      throw new NoOrigSnapshotError(text.includes('快照') ? '这条视频没有生成快照（生成于旧版本），无法重置' : `重置失败：${text}`)
+      if (text.includes('快照')) throw new NoOrigSnapshotError()
+      throw new Error(`重置失败：${text}`)
     }
     if (!r.ok) throw new Error(`${r.status}：${await r.text()}`)
     const fresh = (await r.json()) as VideoSpec
