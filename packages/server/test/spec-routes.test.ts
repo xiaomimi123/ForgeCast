@@ -5,6 +5,18 @@ import { createApp } from '../src/app'
 import { createTaskQueue } from '../src/tasks'
 
 let ctx: CoreCtx, app: ReturnType<typeof createApp>, root: string
+let queue: ReturnType<typeof createTaskQueue>
+
+function wait(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
+async function runTask(taskId: string) {
+  for (let i = 0; i < 200; i++) {
+    await wait(20)
+    const t = queue.get(taskId)!
+    if (t.status === 'done') return
+    if (t.status === 'failed') throw new Error(t.events.at(-1)!.message)
+  }
+  throw new Error('任务超时')
+}
 
 const layer = (over: Partial<{ id: string; start: number; duration: number; track: number }> = {}) => ({
   id: over.id ?? 'l1', kind: 'text', from: null, overridden: false,
@@ -25,7 +37,8 @@ beforeEach(() => {
   const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub' })
   ctx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
   ctx.db.prepare("INSERT INTO projects (slug) VALUES ('s1')").run()
-  app = createApp(ctx, createTaskQueue())
+  queue = createTaskQueue()
+  app = createApp(ctx, queue)
 })
 
 function specPath(videoId: string) {
@@ -141,5 +154,56 @@ describe('reset 端点', () => {
     expect(res.status).toBe(404)
     const body = await res.json() as any
     expect(body.error).toMatch(/无生成快照/)
+  })
+})
+
+describe('render 端点（剪辑台渲成片）', () => {
+  /** 重渲复用首次生成留下的 hf 素材目录，测试里手工摆一个空目录即可（stub 渲染不读内容）。 */
+  function seedSpecAndHf(videoId: string, over: Record<string, unknown> = {}) {
+    fs.mkdirSync(path.dirname(specPath(videoId)), { recursive: true })
+    fs.writeFileSync(specPath(videoId), JSON.stringify({ ...validSpec(videoId), ...over }))
+    fs.mkdirSync(path.join(root, 'workspace/s1/hf', videoId), { recursive: true })
+  }
+
+  it('videoId 非法 → 400', async () => {
+    const res = await app.request('/api/projects/s1/specs/' + encodeURIComponent('../x') + '/render', { method: 'POST' })
+    expect(res.status).toBe(400)
+  })
+
+  it('项目不存在 → 404', async () => {
+    const res = await app.request('/api/projects/nope/specs/deadbeef01/render', { method: 'POST' })
+    expect(res.status).toBe(404)
+  })
+
+  it('spec 不存在 → 404', async () => {
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/render', { method: 'POST' })
+    expect(res.status).toBe(404)
+  })
+
+  it('POST render → {taskId}，任务完成后多一条 video 行（stub）', async () => {
+    seedSpecAndHf('deadbeef01')
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/render', { method: 'POST' })
+    expect(res.status).toBe(200)
+    const { taskId } = await res.json() as any
+    expect(typeof taskId).toBe('string')
+    await runTask(taskId)
+    const rows = ctx.db.prepare("SELECT * FROM assets WHERE type = 'video'").all() as any[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].spec_path).toBe(path.join('s1', 'specs', 'deadbeef01.json'))
+  })
+
+  it('任务 meta 带 kind/slug/sourceAssetId（P0「渲染中」派生靠它）', async () => {
+    seedSpecAndHf('deadbeef02', { semantic: { hook: null, sourceAssetId: 7, sections: [] } })
+    const res = await app.request('/api/projects/s1/specs/deadbeef02/render', { method: 'POST' })
+    const { taskId } = await res.json() as any
+    expect(queue.get(taskId)!.meta).toEqual({ kind: 'video', slug: 's1', sourceAssetId: 7 })
+    await runTask(taskId)
+  })
+
+  it('自定义模板（custom-*，layers 为空）→ 400 明确拒绝', async () => {
+    seedSpecAndHf('deadbeef03', { template: 'custom-1', layers: [] })
+    const res = await app.request('/api/projects/s1/specs/deadbeef03/render', { method: 'POST' })
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toMatch(/自定义模板/)
   })
 })

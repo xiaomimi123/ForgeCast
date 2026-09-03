@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
+import { renderFromSpec } from '@forgecast/studio'
 import type { Hono } from 'hono'
 import type { TaskQueue } from './tasks'
 
@@ -44,7 +45,7 @@ export function validateSpecPut(body: any, videoId: string): string | null {
 }
 
 /** 剪辑台的「保存」（GET/PUT spec）与「重置为生成结果」（POST .../reset，靠 orig 快照逐字节还原）。 */
-export function registerSpecRoutes(app: Hono, ctx: CoreCtx, _queue: TaskQueue): void {
+export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): void {
   const projExists = (slug: string) => !!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
   const specAbs = (slug: string, videoId: string) => path.join(ctx.config.paths.workspace, slug, 'specs', `${videoId}.json`)
   const origAbs = (slug: string, videoId: string) => path.join(ctx.config.paths.workspace, slug, 'specs', `${videoId}.orig.json`)
@@ -84,5 +85,27 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, _queue: TaskQueue): 
     fs.mkdirSync(path.dirname(specAbs(slug, videoId)), { recursive: true })
     fs.writeFileSync(specAbs(slug, videoId), content, 'utf8')
     try { return c.json(JSON.parse(content)) } catch { return c.json({ error: 'orig 快照文件损坏' }, 500) }
+  })
+
+  /** 「渲成片」：渲当前编辑态的 spec（renderFromSpec），不重跑全管线——重跑会重新 lower，
+   *  把用户在剪辑台上的手工改动覆盖掉。meta 照 POST /video 的形状给全，P0 的「渲染中」派生直接生效。 */
+  app.post('/api/projects/:slug/specs/:videoId/render', (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const p = specAbs(slug, videoId)
+    if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
+    let spec: any
+    try { spec = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+    // custom-* 的 spec 是「空 layers 的占位」（HTML 由 LLM 产出、不走 Layer 模型，见 generate.ts
+    // renderCustomTemplate 注释）——从剪辑台按 spec 重渲只会得到一片空白，明确拒绝而不是渲出废片。
+    if (String(spec.template ?? '').startsWith('custom-') || !Array.isArray(spec.layers) || spec.layers.length === 0) {
+      return c.json({ error: '自定义模板暂不支持从剪辑台重渲' }, 400)
+    }
+    const taskId = queue.enqueue((log) => renderFromSpec(ctx, slug, videoId, log), {
+      kind: 'video', slug, sourceAssetId: spec.semantic?.sourceAssetId ?? undefined,
+    })
+    return c.json({ taskId })
   })
 }

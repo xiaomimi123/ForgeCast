@@ -295,6 +295,56 @@ async function renderAndRegister(
 }
 
 /**
+ * 剪辑台「渲成片」：渲**当前编辑态的 spec**，不重跑 文案→TTS→buildSemantic→lower
+ * （那条路会用生成结果覆盖用户在剪辑台上的手工改动，正是本函数要绕开的事）。
+ *
+ * 复用首次生成留下的两份产物：
+ * - `workspace/<slug>/specs/<videoId>.json`：图层真相（用户改的就是它）；
+ * - `workspace/<slug>/hf/<videoId>/`：素材目录（旁白 wav、截图、字体），做 Remotion 的 publicDir。
+ *
+ * BGM 从 `spec.audio` 重建 AudioMix（AudioMix 是渲染期参数、不落 spec，spec 里只留 bgm.src 与
+ * beatGrid）。`bgm.src` 存的是 **绝对路径**（见 selectBgm / cutplan 分支对 audioMix.bgmPath 的赋值，
+ * 以及 audioSpec.bgm.src = audioMix.bgmPath），故这里直接 existsSync 判断；文件没了就 fail-soft：
+ * 不混背景乐 + 进 warnings，绝不让「换过机器/删过曲子」把重渲整个卡死。
+ *
+ * 产出一条**新的** video asset 行（版本语义与 P0 聚合一致：同 spec_path 的多行 = 多个版本）；
+ * orig 快照因 writeSpecFiles 的 exists 守卫不被覆盖——「重置」永远回到第一次生成。
+ */
+export async function renderFromSpec(
+  ctx: CoreCtx, slug: string, videoId: string, onProgress: (m: string) => void = () => {},
+): Promise<GeneratedVideo> {
+  const project: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug)
+  if (!project) throw new Error(`项目不存在: ${slug}`)
+  const specAbs = path.join(ctx.config.paths.workspace, slug, 'specs', `${videoId}.json`)
+  if (!fs.existsSync(specAbs)) throw new Error(`spec 不存在，无法重渲: ${videoId}`)
+  const spec: VideoSpec = JSON.parse(fs.readFileSync(specAbs, 'utf8'))
+  const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
+  if (!fs.existsSync(hfDir)) throw new Error(`素材目录缺失，无法重渲: ${path.join(slug, 'hf', videoId)}`)
+
+  if (!Array.isArray(spec.warnings)) spec.warnings = []
+  let audioMix: AudioMix | undefined
+  const bgmSrc = spec.audio?.bgm?.src
+  if (bgmSrc) {
+    if (fs.existsSync(bgmSrc)) {
+      audioMix = {
+        bgmPath: bgmSrc,
+        sfxPath: pickBgm(path.join(ctx.config.paths.templates, 'sfx')),
+        strongBeats: spec.audio.beatGrid?.strongBeats ?? [],
+        durationSec: spec.durationSec,
+      }
+    } else {
+      const msg = 'BGM 文件缺失，本次无背景乐'
+      onProgress(`⚠ ${msg}`)
+      // 去重：同一条 spec 可能被反复重渲，warnings 不该无限增长
+      if (!spec.warnings.includes(msg)) spec.warnings.push(msg)
+    }
+  }
+
+  return renderAndRegister(ctx, hfDir, slug, spec.template, spec.semantic.hook, project.id, onProgress, spec, audioMix,
+    { engine: 'remotion', bgVariant: spec.bgVariant })
+}
+
+/**
  * 自定义模板渲染：TTS→BGM 流程与统一管线一致，差异只在按拆解节奏比例填 N 个动态分段占位符——
  * 模板 HTML 由 LLM/固定 fixture 产出（见 props.ts generateCustomTemplate），不经过 buildSemantic/
  * lower/renderSpecToHtml 那套 Layer 模型，故这里独立落一份「空 layers」的 VideoSpec，
