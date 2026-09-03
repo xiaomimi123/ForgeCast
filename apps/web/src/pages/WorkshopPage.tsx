@@ -108,10 +108,6 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
   const copyAssets = (assets.data ?? []).filter((a) => a.type === 'copy')
   const scriptAssets = (assets.data ?? []).filter((a) => a.type === 'script')
 
-  function setAssetStatus(id: number) {
-    api(`/api/assets/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }) })
-      .then(invalidateProjectData)
-  }
   function deleteAsset(id: number) {
     api(`/api/assets/${id}`, { method: 'DELETE' })
       .then(invalidateProjectData)
@@ -199,7 +195,8 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
       )}
       {!projects.isError && tab === 'library' && (
         <LibraryTab selected={selected} assetsQuery={assets} scriptAssets={scriptAssets}
-          onStatus={setAssetStatus} onDelete={deleteAsset} />
+          contentItems={contentItems.data ?? []} onDelete={deleteAsset}
+          onOpenInEditor={(itemId) => { setSelectedItemId(itemId); setTab('editor') }} />
       )}
       {!projects.isError && tab === 'templates' && <TemplatesTab />}
 
