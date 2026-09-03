@@ -20,7 +20,11 @@ describe('GET /api/bgm', () => {
   it('曲库目录不存在 → root/byMood 都为空，不报错', async () => {
     const res = await app.request('/api/bgm')
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ root: [], byMood: {} })
+    const body = await res.json() as any
+    expect(body.root).toEqual([])
+    expect(body.byMood).toEqual({})
+    // dir 是曲库根绝对路径：剪辑台改 BGM 时要靠它拼 spec.audio.bgm.src（绝对路径）
+    expect(body.dir).toBe(path.join(root, 'templates/bgm'))
   })
   it('有根目录曲子 + 情绪子目录曲子 → 分别列出，非音频文件被过滤', async () => {
     const bgmDir = path.join(root, 'templates/bgm')

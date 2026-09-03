@@ -659,7 +659,10 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       const files = listDir(path.join(bgmDir, mood))
       if (files.length) byMood[mood] = files
     }
-    return c.json({ root, byMood })
+    // `dir`：曲库根的**绝对路径**。剪辑台改 BGM 时要写的是 `spec.audio.bgm.src`，而那个字段存的是
+    // 绝对路径（见 generate.ts rebuildAudioMix 的注释：`existsSync(src)`，不做任何前缀拼接）。
+    // 浏览器端拼不出服务端的绝对路径，只能由这里给出根，前端拼 `dir + '/' + 相对名`。
+    return c.json({ root, byMood, dir: bgmDir })
   })
 
   // —— 卡点方案（cutplan）——

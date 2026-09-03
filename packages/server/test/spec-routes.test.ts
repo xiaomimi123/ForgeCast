@@ -61,6 +61,16 @@ describe('spec 读写端点', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.videoId).toBe('deadbeef01')
+    // 没写过 .orig.json → hasOrig false，剪辑台据此**进场即隐藏**「重置为生成结果」
+    expect(body.hasOrig).toBe(false)
+  })
+
+  it('GET 带 hasOrig：有 .orig.json 快照时为 true', async () => {
+    fs.mkdirSync(path.dirname(specPath('deadbeef01')), { recursive: true })
+    fs.writeFileSync(specPath('deadbeef01'), JSON.stringify(validSpec()))
+    fs.writeFileSync(origPath('deadbeef01'), JSON.stringify(validSpec()))
+    const body = await (await app.request('/api/projects/s1/specs/deadbeef01')).json() as any
+    expect(body.hasOrig).toBe(true)
   })
 
   it('PUT 合法 spec → 200 且文件内容更新', async () => {

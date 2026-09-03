@@ -26,8 +26,12 @@ export interface Asset {
   /** workspace 相对路径 `<slug>/specs/<videoId>.json`；历史视频（改造前生成）没有素材包，为 null */
   spec_path: string | null
 }
-/** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
-export interface BgmList { root: string[]; byMood: Record<string, string[]> }
+/**
+ * GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key）。
+ * `dir` 是曲库根的**绝对路径**——`spec.audio.bgm.src` 存的就是绝对路径（渲染时直接 existsSync，
+ * 不拼前缀），剪辑台换曲要靠 `dir + '/' + 相对名` 拼出来。
+ */
+export interface BgmList { root: string[]; byMood: Record<string, string[]>; dir: string }
 export interface CustomTemplate {
   id: number; name: string; aspect_ratio: 'portrait' | 'landscape'
   segment_count: number; style_note: string | null; created_at: string

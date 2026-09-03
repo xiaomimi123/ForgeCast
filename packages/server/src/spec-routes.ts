@@ -57,7 +57,15 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): v
     if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
     const p = specAbs(slug, videoId)
     if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
-    try { return c.json(JSON.parse(fs.readFileSync(p, 'utf8'))) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+    try {
+      const spec = JSON.parse(fs.readFileSync(p, 'utf8'))
+      // `hasOrig`：这条视频有没有 `.orig.json` 生成快照，即「重置为生成结果」能不能用。
+      // 加在 GET 响应里而不是另开探测端点，是为了让剪辑台**进场即知**——否则只能等用户点了
+      // 重置、吃一个 404 才把按钮藏起来，那是「先让用户撞墙再告诉他没有门」。
+      // ⚠️ 这是**响应包装字段，不属于 VideoSpec**：客户端 PUT 回来之前必须把它摘掉
+      //（见 apps/web useEditorState 的解构），否则会被原样写进磁盘上的 spec。
+      return c.json({ ...spec, hasOrig: fs.existsSync(origAbs(slug, videoId)) })
+    } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
   })
 
   app.put('/api/projects/:slug/specs/:videoId', async (c) => {
