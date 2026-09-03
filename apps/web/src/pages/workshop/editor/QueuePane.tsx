@@ -5,7 +5,7 @@ import ContentCard from '../../../components/ContentCard'
 import TaskProgress from '../../../components/TaskProgress'
 import { Empty, Failure, Skeleton } from '../../../components/ui/States'
 import type { TaskRun } from '../../../useTaskRun'
-import { OUTLINE, SOLID } from './EditorPage'
+import { OUTLINE } from './EditorPage'
 
 /** 钩子枚举（旧「文案」tab 生成面板常量，正式迁到左栏——生成 popover 与筛选 chip 组共用）。 */
 export const HOOKS = [
@@ -99,8 +99,10 @@ export default function QueuePane({
                 className="h-7 w-16 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface)] px-2 text-sm"
                 value={n} onChange={(e) => setN(Number(e.target.value))}
               />
-              {/* popover 打开时视作当前主操作面：这一个「生成」可以实心，见实施说明 §7 与 task-7-brief */}
-              <button type="button" className={`ml-auto ${SOLID}`} disabled={!selected || busy} onClick={onGenerate}>
+              {/* 描边，非实心：popover 锚在左栏 300px 内，遮不到中栏 toolbar 的「通过并送分发」——
+                  选中 review 态内容时后者本就是实心，两个同屏就撞 §7「唯一常驻实心」。
+                  不做「popover 打开时抑制 toolbar 实心」的状态联动，复杂度不值，直接从简保持描边。 */}
+              <button type="button" className={`ml-auto ${OUTLINE}`} disabled={!selected || busy} onClick={onGenerate}>
                 {copyRun.running ? '生成中…' : '生成'}
               </button>
             </div>
