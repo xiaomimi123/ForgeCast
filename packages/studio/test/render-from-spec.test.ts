@@ -2,8 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { copyFixtures, createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { generateVideo, renderFromSpec } from '../src/generate'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as remotionRender from '../src/remotion-render'
+import { generateVideo, rebuildAudioMix, renderFromSpec } from '../src/generate'
 import type { VideoSpec } from '../src/videospec'
 
 /** 剪辑台「渲成片」：渲**当前编辑态的 spec**，不重跑文案/TTS/lower（那会覆盖手工改动）。 */
@@ -85,5 +86,105 @@ describe('renderFromSpec (stub)', () => {
     expect(readSpec(specAbs).semantic.sourceAssetId).toBe(1)
     await renderFromSpec(ctx, 'demo', videoId, () => {})
     expect(readSpec(specAbs).semantic.sourceAssetId).toBe(1)
+  })
+})
+
+/** AudioMix 不落 spec、stub 模式又不跑 mixAudio——四个字段写错在端到端测试里是**静默**的
+ *  （评审变异实测：同时把 sfxPath 置 null、durationSec 置 0、去掉 bgVariant，端到端 6/6 仍全绿）。
+ *  故对纯函数逐字段断言，把重建规则钉死。 */
+describe('rebuildAudioMix（重建规则逐字段钉死）', () => {
+  const baseSpec = (over: Record<string, unknown> = {}): VideoSpec => ({
+    version: 1, videoId: 'v1', slug: 'demo', template: 'flash', createdAt: '',
+    semantic: { hook: null, sourceAssetId: null, sections: [] },
+    canvas: { width: 1080, height: 1920 }, durationSec: 17,
+    layers: [],
+    audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false },
+    warnings: [],
+    ...over,
+  } as VideoSpec)
+
+  /** 摆一个带 bgm/sfx 的假 templates 目录，返回 { templatesDir, bgmAbs, sfxAbs }。 */
+  function seedTemplates(): { templatesDir: string; bgmAbs: string; sfxAbs: string } {
+    const templatesDir = path.join(root, 'tpl-fixture')
+    fs.mkdirSync(path.join(templatesDir, 'bgm'), { recursive: true })
+    fs.mkdirSync(path.join(templatesDir, 'sfx'), { recursive: true })
+    const bgmAbs = path.join(templatesDir, 'bgm', 'a.mp3')
+    const sfxAbs = path.join(templatesDir, 'sfx', 'hit.mp3')
+    fs.writeFileSync(bgmAbs, 'x'); fs.writeFileSync(sfxAbs, 'x')
+    return { templatesDir, bgmAbs, sfxAbs }
+  }
+
+  it('四个字段：bgmPath 原样 / sfxPath 来自 templates/sfx / strongBeats 同源 / durationSec = spec.durationSec', () => {
+    const { templatesDir, bgmAbs, sfxAbs } = seedTemplates()
+    const spec = baseSpec({
+      audio: {
+        narration: null, bgm: { src: bgmAbs, mood: 'tech' },
+        beatGrid: { t0: 0.5, T: 0.5, bpm: 120, strongBeats: [1, 2, 3] }, captionsEnabled: true,
+      },
+    })
+    const { audioMix, missing } = rebuildAudioMix(spec, templatesDir)
+    expect(missing).toBe(false)
+    expect(audioMix).toEqual({ bgmPath: bgmAbs, sfxPath: sfxAbs, strongBeats: [1, 2, 3], durationSec: 17 })
+  })
+
+  it('无 beatGrid → strongBeats 退化为空数组（不是 undefined，mixAudio 要数组）', () => {
+    const { templatesDir, bgmAbs } = seedTemplates()
+    const spec = baseSpec({ audio: { narration: null, bgm: { src: bgmAbs, mood: null }, beatGrid: null, captionsEnabled: false } })
+    expect(rebuildAudioMix(spec, templatesDir).audioMix!.strongBeats).toEqual([])
+  })
+
+  it('spec 本就无 BGM → undefined 且 missing=false（不该报「文件缺失」）', () => {
+    const { templatesDir } = seedTemplates()
+    expect(rebuildAudioMix(baseSpec(), templatesDir)).toEqual({ audioMix: undefined, missing: false })
+  })
+
+  it('bgm.src 文件不在 → undefined 且 missing=true（调用方据此 fail-soft）', () => {
+    const { templatesDir } = seedTemplates()
+    const spec = baseSpec({ audio: { narration: null, bgm: { src: path.join(root, 'gone.mp3'), mood: null }, beatGrid: null, captionsEnabled: false } })
+    expect(rebuildAudioMix(spec, templatesDir)).toEqual({ audioMix: undefined, missing: true })
+  })
+})
+
+describe('renderFromSpec 的透传与继承', () => {
+  it('bgVariant 从 spec 透传进 renderRemotion（丢了会让重渲版背景与首渲版不一致）', async () => {
+    const { videoId, specAbs } = await seed()
+    const spec = readSpec(specAbs)
+    spec.bgVariant = 'grid'
+    writeSpec(specAbs, spec)
+    const spy = vi.spyOn(remotionRender, 'renderRemotion').mockImplementation(async (_s: any, outAbs: string) => {
+      fs.mkdirSync(path.dirname(outAbs), { recursive: true }); fs.writeFileSync(outAbs, 'stub')
+    })
+    try {
+      await renderFromSpec(ctx, 'demo', videoId, () => {})
+      expect(spy).toHaveBeenCalledTimes(1)
+      const [passedSpec, , opts] = spy.mock.calls[0] as any[]
+      expect(opts.bgVariant).toBe('grid')
+      expect(opts.publicDir).toBe(path.join(ctx.config.paths.workspace, 'demo', 'hf', videoId))
+      expect(passedSpec.videoId).toBe(videoId)
+    } finally { spy.mockRestore() }
+  })
+
+  it('spec.semantic.hook 为 null → 按 sourceAssetId 回查文案行的 hook 落新行（不退化成 NULL）', async () => {
+    const { videoId, specAbs } = await seed()
+    const spec = readSpec(specAbs)
+    expect(spec.semantic.hook).toBeNull()   // 现状：buildSemantic 取不到 hook
+    expect(spec.semantic.sourceAssetId).toBe(1)
+    writeSpec(specAbs, spec)
+    const out = await renderFromSpec(ctx, 'demo', videoId, () => {})
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    expect(row.hook).toBe('pain')
+    expect(out.filePath).toMatch(/flash-pain-/)
+  })
+
+  it('上一轮的渲染期 warnings 不跟着新行堆叠（含变量的混音失败消息也清得掉）', async () => {
+    const { videoId, specAbs } = await seed()
+    const spec = readSpec(specAbs)
+    spec.warnings = ['TTS 降级：接口超时', 'BGM 混音失败，保留无背景乐版本：ffmpeg exit 1', 'BGM 文件缺失，本次无背景乐']
+    writeSpec(specAbs, spec)
+    const out = await renderFromSpec(ctx, 'demo', videoId, () => {})
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const warnings = JSON.parse(row.warnings)
+    expect(warnings).toEqual(['TTS 降级：接口超时'])   // 生成期的保留，渲染期的清掉
+    expect(readSpec(specAbs).warnings).toEqual(['TTS 降级：接口超时'])
   })
 })

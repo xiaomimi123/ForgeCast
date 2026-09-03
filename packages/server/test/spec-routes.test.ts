@@ -200,10 +200,17 @@ describe('render 端点（剪辑台渲成片）', () => {
     await runTask(taskId)
   })
 
-  it('自定义模板（custom-*，layers 为空）→ 400 明确拒绝', async () => {
+  it('自定义模板（custom-*）→ 400，文案指向「换模板」', async () => {
     seedSpecAndHf('deadbeef03', { template: 'custom-1', layers: [] })
     const res = await app.request('/api/projects/s1/specs/deadbeef03/render', { method: 'POST' })
     expect(res.status).toBe(400)
-    expect((await res.json() as any).error).toMatch(/自定义模板/)
+    expect((await res.json() as any).error).toBe('自定义模板暂不支持从剪辑台重渲')
+  })
+
+  it('普通模板但 layers 被删空 → 400，文案指向「加回图层」（与 custom 分开）', async () => {
+    seedSpecAndHf('deadbeef04', { layers: [] })
+    const res = await app.request('/api/projects/s1/specs/deadbeef04/render', { method: 'POST' })
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toBe('图层为空，无可渲染内容')
   })
 })

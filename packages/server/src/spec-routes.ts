@@ -98,10 +98,14 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): v
     if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
     let spec: any
     try { spec = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+    // 两类都渲不出东西，但成因不同，文案分开——用户看到的提示要指向他能做的事：
     // custom-* 的 spec 是「空 layers 的占位」（HTML 由 LLM 产出、不走 Layer 模型，见 generate.ts
-    // renderCustomTemplate 注释）——从剪辑台按 spec 重渲只会得到一片空白，明确拒绝而不是渲出废片。
-    if (String(spec.template ?? '').startsWith('custom-') || !Array.isArray(spec.layers) || spec.layers.length === 0) {
+    // renderCustomTemplate 注释），换模板才行；普通模板被删空图层，则是加回图层的事。
+    if (String(spec.template ?? '').startsWith('custom-')) {
       return c.json({ error: '自定义模板暂不支持从剪辑台重渲' }, 400)
+    }
+    if (!Array.isArray(spec.layers) || spec.layers.length === 0) {
+      return c.json({ error: '图层为空，无可渲染内容' }, 400)
     }
     const taskId = queue.enqueue((log) => renderFromSpec(ctx, slug, videoId, log), {
       kind: 'video', slug, sourceAssetId: spec.semantic?.sourceAssetId ?? undefined,
