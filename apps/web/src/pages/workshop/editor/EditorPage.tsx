@@ -29,12 +29,20 @@ const TOOLBAR_H = 46
 const MAT_H = 300
 const MAT_PAD = 18
 const TIMELINE_H = 186
+/** <1040 时间轴降到的高度（§4：只留分镜+卡点两轨）。见 TimelinePane 的 `compact` 注释。 */
+const TIMELINE_H_COMPACT = 148
 /**
  * 右栏收抽屉的阈值（§4 窄屏表：<1240 右栏收成抽屉，toolbar 出现「参数」按钮）。
  * 三栏一起摆下时中栏最小宽必须是 **560 而不是 620**：300 + 620 + 320 + 两道 8 的 gap = 1256 > 1240，
  * 于是 1240–1256 这一段窗口宽度里整块网格比视口宽，横向滚动条从页面底部冒出来。
  */
 const NARROW_PX = 1240
+/**
+ * 左栏收抽屉的阈值（§4：<1040 左栏也收成抽屉，时间轴同时降到 148 只留分镜+卡点两轨）。
+ * 两栏摆下（中栏+右栏）时同理要留够最小宽：620 + 320 + 一道 8 的 gap = 948 < 1040，够宽松，
+ * 不像 NARROW_PX 那样需要为了消灭中间那段横向滚动条把 MID_MIN 从 620 压到 560。
+ */
+const NARROW_LEFT_PX = 1040
 const MID_MIN = 560
 /** 9:16 画布：高度由 mat 高减上下留白得出，宽 = 高 × 0.5625 */
 const CANVAS_H = MAT_H - MAT_PAD * 2
@@ -106,12 +114,24 @@ export default function EditorPage({
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
   /** 窄屏（<1240）时右栏收成抽屉；这个 state 是抽屉的开合。 */
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /** 窄屏（<1040）时左栏（队列）也收成抽屉；与右栏抽屉互斥（见 `toggleLeftDrawer`/`toggleRightDrawer`）。 */
+  const [leftDrawerOpen, setLeftDrawerOpen] = useState(false)
   /**
    * spec 被**整包换掉**的次数（重置为生成结果 / 重写这段）。右栏的参数草稿是「相对当前 spec 的
    * 改动」，spec 换了草稿就无所指——但这两条路径都不换内容项，光靠 `current.id` 察觉不到。
    */
   const [specEpoch, setSpecEpoch] = useState(0)
   const wide = useViewportAtLeast(NARROW_PX)
+  /** 左栏是否常驻（>=1040）。§4：<1040 左栏也收成抽屉，此时 `wide` 必然也是 false（1040<1240）。 */
+  const leftWide = useViewportAtLeast(NARROW_LEFT_PX)
+
+  /** 两个抽屉互斥：开一个先关掉另一个——两个都开时中栏会被两层浮层夹成一条缝。 */
+  function toggleRightDrawer() {
+    setDrawerOpen((v) => { if (!v) setLeftDrawerOpen(false); return !v })
+  }
+  function toggleLeftDrawer() {
+    setLeftDrawerOpen((v) => { if (!v) setDrawerOpen(false); return !v })
+  }
 
   // 换内容项时复位这条内容独有的临时状态
   useEffect(() => {
@@ -280,21 +300,27 @@ export default function EditorPage({
       <div
         className="grid gap-2"
         style={{
-          // 窄屏（<1240）右栏收进抽屉，网格只剩两列——时间轴的 col-span 也跟着变，否则它会
-          // 多占一列、把整块网格撑宽。
-          gridTemplateColumns: wide ? `300px minmax(${MID_MIN}px,1fr) 320px` : `300px minmax(${MID_MIN}px,1fr)`,
-          gridTemplateRows: `minmax(0,1fr) ${TIMELINE_H}px`,
+          // 窄屏右栏（<1240）/ 左栏（<1040）依次收进抽屉，网格列数跟着少——时间轴的 col-span
+          // 也跟着变，否则它会多占一列、把整块网格撑宽。
+          gridTemplateColumns: wide
+            ? `300px minmax(${MID_MIN}px,1fr) 320px`
+            : leftWide
+              ? `300px minmax(${MID_MIN}px,1fr)`
+              : `minmax(${MID_MIN}px,1fr)`,
+          gridTemplateRows: `minmax(0,1fr) ${leftWide ? TIMELINE_H : TIMELINE_H_COMPACT}px`,
           height: 'calc(100vh - 190px)',
           minHeight: 620,
         }}
       >
-        {/* ── 左栏 300：内容队列（QueuePane，实施说明 §4）── */}
-        <QueuePane
-          selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
-          busy={busy} copyRun={copyRun} onGenerate={onGenerate}
-          items={items} selectedItemId={selectedItemId}
-          onSelectItem={selectItemGuarded} onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
-        />
+        {/* ── 左栏 300：内容队列（QueuePane，实施说明 §4）。<1040 时移到下面的左抽屉 ── */}
+        {leftWide && (
+          <QueuePane
+            selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
+            busy={busy} copyRun={copyRun} onGenerate={onGenerate}
+            items={items} selectedItemId={selectedItemId}
+            onSelectItem={selectItemGuarded} onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
+          />
+        )}
 
         {/* ── 中栏 Stage：toolbar 46 / preview mat 300 / 分镜列表 1fr ── */}
         <section
@@ -303,6 +329,10 @@ export default function EditorPage({
         >
           {/* toolbar */}
           <div className="flex items-center gap-2 border-b border-[var(--fc-line)] px-3">
+            {/* 窄屏（<1040）才出「队列」：左端，与右端「参数」对称——宽屏左栏一直在，多一个按钮只是噪声 */}
+            {!leftWide && (
+              <button className={OUTLINE} onClick={toggleLeftDrawer} title="打开左栏内容队列">队列</button>
+            )}
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-medium text-[var(--fc-ink)]">
                 {current ? `#${current.seq} ${current.title}` : '未选中内容'}
@@ -322,7 +352,7 @@ export default function EditorPage({
                 title="这版不要了：退出编辑态，回队列重做">打回重做</button>
               {/* 窄屏才出「参数」：宽屏右栏一直在，多一个按钮只是噪声 */}
               {!wide && (
-                <button className={OUTLINE} onClick={() => setDrawerOpen((v) => !v)}
+                <button className={OUTLINE} onClick={toggleRightDrawer}
                   title="打开右栏参数检查器">参数</button>
               )}
               <button className={SOLID} disabled={!canApprove} onClick={approve}>通过并送分发</button>
@@ -371,17 +401,18 @@ export default function EditorPage({
           />
         )}
 
-        {/* ── 时间轴 186 整宽（刻度 / 分镜 / 字幕 / BGM / 卡点 五轨）── */}
+        {/* ── 时间轴（刻度 / 分镜 / 字幕 / BGM / 卡点 五轨；<1040 降到 148 只留分镜+卡点两轨）── */}
         <TimelinePane
-          className={wide ? 'col-span-3' : 'col-span-2'}
+          className={wide ? 'col-span-3' : leftWide ? 'col-span-2' : 'col-span-1'}
           slug={selected} videoId={videoId}
           ed={ed} playerRef={playerRef} currentSec={currentSec}
           selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
           onNotice={setNotice} confirm={confirm}
+          compact={!leftWide}
         />
       </div>
 
-      {/* 窄屏抽屉：右栏原样搬进来，宽度仍是 320——参数控件的排布是按这个宽度调的 */}
+      {/* 窄屏右抽屉：右栏原样搬进来，宽度仍是 320——参数控件的排布是按这个宽度调的 */}
       {!wide && drawerOpen && (
         <div className="fixed inset-0 z-30 flex justify-end bg-black/25" onClick={() => setDrawerOpen(false)}>
           <div className="h-full w-[320px] bg-[var(--fc-surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -393,6 +424,22 @@ export default function EditorPage({
               vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
               specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 窄屏左抽屉（<1040）：队列原样搬进来，宽度仍是 300，与右抽屉互斥（见 toggleLeftDrawer） */}
+      {!leftWide && leftDrawerOpen && (
+        <div className="fixed inset-0 z-30 flex justify-start bg-black/25" onClick={() => setLeftDrawerOpen(false)}>
+          <div className="h-full w-[300px] bg-[var(--fc-surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <QueuePane
+              className="h-full"
+              selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
+              busy={busy} copyRun={copyRun} onGenerate={onGenerate}
+              items={items} selectedItemId={selectedItemId}
+              onSelectItem={(item) => { setLeftDrawerOpen(false); selectItemGuarded(item) }}
+              onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
             />
           </div>
         </div>

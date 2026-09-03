@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type Project } from '../api'
 import { Failure } from '../components/ui/States'
 import { useTaskRun } from '../useTaskRun'
-import CutPlanEditor from './CutPlanEditor'
 import EditorPage, { type VideoParams } from './workshop/editor/EditorPage'
 import LibraryTab from './workshop/LibraryTab'
 import ScriptTab from './workshop/ScriptTab'
@@ -205,23 +204,15 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
           onCloseEditor={() => setSelectedItemId(null)}
           leaveGuardRef={editorLeaveGuard}
           transitionExtras={
-            /* 过渡区：旧「拍摄脚本」「卡点」两个 tab。P1 的分镜行与 P2 的时间轴接管后删除。 */
-            <>
-              <details className="card p-3">
-                <summary className="cursor-pointer select-none text-sm font-medium">拍摄脚本</summary>
-                <div className="pt-3">
-                  <ScriptTab selected={selected} copyAssets={copyAssets} scriptAssets={scriptAssets}
-                    running={busy} onRunningChange={setScriptBusy} />
-                </div>
-              </details>
-              <details className="card p-3">
-                <summary className="cursor-pointer select-none text-sm font-medium">卡点（旧版，P2 由时间轴接管）</summary>
-                <div className="pt-3">
-                  {/* key 强制切项目时重挂载，否则 CutPlanEditor 内部 plan state 会残留上一个项目的方案 */}
-                  {selected && <CutPlanEditor key={selected} slug={selected} />}
-                </div>
-              </details>
-            </>
+            /* 过渡区：旧「拍摄脚本」tab。旧「卡点」折叠区（CutPlanEditor 入口）已随 P2 时间轴
+               接管退役——组件文件与 `/api/projects/:slug/cutplan` 端点原样保留，老项目数据不丢。 */
+            <details className="card p-3">
+              <summary className="cursor-pointer select-none text-sm font-medium">拍摄脚本</summary>
+              <div className="pt-3">
+                <ScriptTab selected={selected} copyAssets={copyAssets} scriptAssets={scriptAssets}
+                  running={busy} onRunningChange={setScriptBusy} />
+              </div>
+            </details>
           }
         />
       )}

@@ -12,15 +12,19 @@ import { fmtTimecode } from './ShotList'
 import type { useEditorState } from './useEditorState'
 
 /** §4 尺寸表。五条轨道的高度是**唯一**来源：轨道名列与轨道行都从这个数组渲，才不会各写各的。
- *  20+46+30+30+26 = 152，加头 32 = 184 ≤ 186（容器高度不变）。 */
+ *  20+46+30+30+26 = 152，加头 32 = 184 ≤ 186（容器高度不变）。
+ *
+ * `compact:false` 的轨（字幕 / BGM）在 <1040 时不渲染——§4 原文「只留分镜+卡点两轨」，这里把
+ * 刻度轨也留下：它是播放头定位/scrub 的基础设施而非可编辑内容轨，且 20px 很薄，不留它反而让
+ * 分镜/卡点轨没有时间参照物。留它之后 compact 高度 = 头32 + 刻度20 + 分镜46 + 卡点26 = 124 ≤ 148。 */
 const HEAD_H = 32
 const NAME_W = 104
-const TRACKS = [
-  { key: 'ruler', name: '刻度', h: 20 },
-  { key: 'shots', name: '分镜', h: 46 },
-  { key: 'caption', name: '字幕', h: 30 },
-  { key: 'bgm', name: 'BGM', h: 30 },
-  { key: 'beats', name: '卡点', h: 26 },
+const TRACKS_ALL = [
+  { key: 'ruler', name: '刻度', h: 20, compact: true },
+  { key: 'shots', name: '分镜', h: 46, compact: true },
+  { key: 'caption', name: '字幕', h: 30, compact: false },
+  { key: 'bgm', name: 'BGM', h: 30, compact: false },
+  { key: 'beats', name: '卡点', h: 26, compact: true },
 ] as const
 /** Clip 高 38 = 轨 46 减上下 padding 4（§5）。 */
 const CLIP_H = 38
@@ -38,6 +42,7 @@ type Drag =
 
 /**
  * 底部时间轴（实施说明 §4/§5）。容器 186：头 32 + 刻度 20 + 分镜 46 + 字幕 30 + BGM 30 + 卡点 26 = 184。
+ * `compact`（<1040）时容器降到 148：字幕/BGM 两轨隐藏，头 32 + 刻度 20 + 分镜 46 + 卡点 26 = 124。
  *
  * - **对齐是硬验收**（§9：1440/1280/1100 三宽度轨道名列与轨道行不错位）：轨道名列与轨道行共用
  *   同一份 `TRACKS` 高度，且**两边都 `box-sizing:border-box`**——不然每行的 1px 下边框会被算在
@@ -49,7 +54,7 @@ type Drag =
  * - 字幕轨只显示与点选。字幕时间来自 TTS 的 cues，拖了就和语音错位，P1 不给拖。
  */
 export default function TimelinePane({
-  slug, videoId, ed, playerRef, currentSec, selectedLayerId, onSelectLayer, onNotice, confirm, className,
+  slug, videoId, ed, playerRef, currentSec, selectedLayerId, onSelectLayer, onNotice, confirm, className, compact,
 }: {
   /** 波形端点要项目 slug + videoId；两者缺一就只显示「无背景乐 / 波形不可用」，不发请求。 */
   slug: string
@@ -63,7 +68,12 @@ export default function TimelinePane({
   /** 与 EditorPage 共享的 in-app 确认（删手动卡点用轻确认）。 */
   confirm: (opts: ConfirmOpts) => Promise<boolean>
   className?: string
+  /** <1040（§4）：字幕/BGM 两轨隐藏，容器降到 148。EditorPage 按 matchMedia 传入。 */
+  compact?: boolean
 }) {
+  const TRACKS = compact ? TRACKS_ALL.filter((t) => t.compact) : TRACKS_ALL
+  const trackH = (key: (typeof TRACKS_ALL)[number]['key']) => TRACKS_ALL.find((t) => t.key === key)!.h
+  const containerH = compact ? 148 : 186
   const spec = ed.spec
   const usable = spec && !isUnsupported(spec) ? spec : null
   const shots = useMemo(() => (usable ? deriveShots(usable) : []), [usable])
@@ -251,7 +261,7 @@ export default function TimelinePane({
   return (
     <section
       className={`overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)] ${className ?? ''}`}
-      style={{ height: 186, boxSizing: 'border-box' }}
+      style={{ height: containerH, boxSizing: 'border-box' }}
     >
       <div
         className="flex items-center gap-3 border-b border-[var(--fc-line)] px-3"
@@ -295,7 +305,7 @@ export default function TimelinePane({
             {/* 刻度轨 20 */}
             <div
               className="relative border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[0].h, boxSizing: 'border-box' }}
+              style={{ height: trackH('ruler'), boxSizing: 'border-box' }}
             >
               {Array.from({ length: Math.floor(duration) + 1 }, (_, s) => (
                 <div key={s} className="absolute bottom-0" style={{ left: pct(s) }}>
@@ -310,7 +320,7 @@ export default function TimelinePane({
             {/* 分镜轨 46：Clip 高 38，宽用 flex 比例（§5），空隙用同口径的占位撑开 */}
             <div
               className="flex items-center border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[1].h, boxSizing: 'border-box', padding: '4px 0' }}
+              style={{ height: trackH('shots'), boxSizing: 'border-box', padding: '4px 0' }}
             >
               {layoutRow(shots, duration).map((cell) => (
                 cell.kind === 'gap' ? (
@@ -331,62 +341,66 @@ export default function TimelinePane({
               ))}
             </div>
 
-            {/* 字幕轨 30：细条，只显示 + 点选，不可拖 */}
-            <div
-              className="relative border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[2].h, boxSizing: 'border-box' }}
-            >
-              {captions.map((l) => (
-                <div
-                  key={l.id}
-                  title="字幕跟随旁白，不可拖"
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    onSelectLayer(l.id)
-                    seekToSec(l.start)
-                  }}
-                  className={`absolute cursor-pointer overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
-                    selectedLayerId === l.id
-                      ? 'bg-[var(--fc-accent-tint)] text-[var(--fc-accent-deep)]'
-                      : 'bg-[var(--fc-sunken)] text-[var(--fc-muted)]'
-                  }`}
-                  style={{
-                    left: pct(l.start), width: pct(l.duration), top: 8, height: 14,
-                    boxSizing: 'border-box',
-                    border: selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
-                  }}
-                >
-                  {l.content.kind === 'caption' ? l.content.text : ''}
-                </div>
-              ))}
-              {captions.length === 0 && (
-                <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">这条视频没有字幕图层</span>
-              )}
-            </div>
+            {/* 字幕轨 30：细条，只显示 + 点选，不可拖。<1040 隐藏（§4：只留分镜+卡点两轨） */}
+            {!compact && (
+              <div
+                className="relative border-b border-[var(--fc-track)]"
+                style={{ height: trackH('caption'), boxSizing: 'border-box' }}
+              >
+                {captions.map((l) => (
+                  <div
+                    key={l.id}
+                    title="字幕跟随旁白，不可拖"
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      onSelectLayer(l.id)
+                      seekToSec(l.start)
+                    }}
+                    className={`absolute cursor-pointer overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
+                      selectedLayerId === l.id
+                        ? 'bg-[var(--fc-accent-tint)] text-[var(--fc-accent-deep)]'
+                        : 'bg-[var(--fc-sunken)] text-[var(--fc-muted)]'
+                    }`}
+                    style={{
+                      left: pct(l.start), width: pct(l.duration), top: 8, height: 14,
+                      boxSizing: 'border-box',
+                      border: selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
+                    }}
+                  >
+                    {l.content.kind === 'caption' ? l.content.text : ''}
+                  </div>
+                ))}
+                {captions.length === 0 && (
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">这条视频没有字幕图层</span>
+                )}
+              </div>
+            )}
 
-            {/* BGM 轨 30：波形柱状图。无 bgm / 波形取不到都只是灰字，不挡任何编辑动作 */}
-            <div
-              className="relative border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[3].h, boxSizing: 'border-box' }}
-            >
-              {!bgmSrc ? (
-                <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">无背景乐</span>
-              ) : wave.status === 'loading' || wave.status === 'idle' ? (
-                // idle 只是「effect 还没跑」的那一帧（bgm 已存在），与 loading 同样显示占位
-                <div className="absolute inset-x-2 top-2">
-                  <div className="h-3.5 animate-pulse rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)]" />
-                </div>
-              ) : wave.status === 'error' ? (
-                <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">波形不可用</span>
-              ) : (
-                <WaveformCanvas peaks={wave.peaks} height={TRACKS[3].h} />
-              )}
-            </div>
+            {/* BGM 轨 30：波形柱状图。无 bgm / 波形取不到都只是灰字，不挡任何编辑动作。<1040 隐藏 */}
+            {!compact && (
+              <div
+                className="relative border-b border-[var(--fc-track)]"
+                style={{ height: trackH('bgm'), boxSizing: 'border-box' }}
+              >
+                {!bgmSrc ? (
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">无背景乐</span>
+                ) : wave.status === 'loading' || wave.status === 'idle' ? (
+                  // idle 只是「effect 还没跑」的那一帧（bgm 已存在），与 loading 同样显示占位
+                  <div className="absolute inset-x-2 top-2">
+                    <div className="h-3.5 animate-pulse rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)]" />
+                  </div>
+                ) : wave.status === 'error' ? (
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">波形不可用</span>
+                ) : (
+                  <WaveformCanvas peaks={wave.peaks} height={trackH('bgm')} />
+                )}
+              </div>
+            )}
 
             {/* 卡点轨 26：三态菱形 + 空白双击加点 */}
             <div
               className="relative border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[4].h, boxSizing: 'border-box' }}
+              style={{ height: trackH('beats'), boxSizing: 'border-box' }}
               onPointerDown={onBeatTrackPointerDown}
               title="双击空白处加一个手动卡点"
             >
@@ -400,7 +414,7 @@ export default function TimelinePane({
                   key={`${b.kind}-${b.t}`}
                   beat={b}
                   left={pct(b.t)}
-                  trackH={TRACKS[4].h}
+                  trackH={trackH('beats')}
                   onActivate={() => {
                     if (b.kind === 'derived') cutShotAt(b.t)
                     else if (b.kind === 'manual') void removeBeatAt(b.t)

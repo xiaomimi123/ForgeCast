@@ -25,7 +25,7 @@ export const HOOKS = [
  */
 export default function QueuePane({
   selected, hook, setHook, n, setN, busy, copyRun, onGenerate,
-  items, selectedItemId, onSelectItem, onDeleteItem, onMakeVideo,
+  items, selectedItemId, onSelectItem, onDeleteItem, onMakeVideo, className,
 }: {
   selected: string
   hook: string
@@ -42,6 +42,9 @@ export default function QueuePane({
   onDeleteItem: (item: ContentItemView) => void
   /** 失败卡片「重试」用：重新入队渲染 */
   onMakeVideo: (assetId: number) => void
+  /** 窄屏（<1040）抽屉内挂载时传 `h-full`——否则内部 `overflow-y-auto` 的列表算不出「超出」，
+   *  与 InspectorPane 的抽屉写法一致（见 EditorPage 里那条注释）。 */
+  className?: string
 }) {
   const [genOpen, setGenOpen] = useState(false)
   const genRef = useRef<HTMLDivElement>(null)
@@ -65,7 +68,7 @@ export default function QueuePane({
 
   return (
     <section
-      className="flex min-h-0 flex-col overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)]"
+      className={`flex min-h-0 flex-col overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)] ${className ?? ''}`}
       style={{ boxSizing: 'border-box' }}
     >
       {/* 工具条 42 */}
