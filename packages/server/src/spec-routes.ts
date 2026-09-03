@@ -1,7 +1,8 @@
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
-import { renderFromSpec, RewriteUnsupportedError, rewriteSection } from '@forgecast/studio'
+import { analyzeBeats, chooseBgmPath, renderFromSpec, RewriteUnsupportedError, rewriteSection } from '@forgecast/studio'
 import type { Hono } from 'hono'
 import type { TaskQueue } from './tasks'
 
@@ -64,6 +65,41 @@ export function pickKnownSpecFields(body: Record<string, unknown>): Record<strin
     if (key in body) out[key] = body[key]
   }
   return out
+}
+
+/** 波形分辨率：ffmpeg 重采样到 200Hz 单声道，再分桶到最多 1000 个 peak（时间轴像素级够用）。 */
+const WAVEFORM_RATE = 200
+const WAVEFORM_MAX_PEAKS = 1000
+
+/** 按 `src + mtimeMs` 缓存波形——同一首曲子不重复 spawn ffmpeg（进程内，重启即失效，够了）。 */
+const waveformCache = new Map<string, { peaks: number[]; durationSec: number }>()
+
+/** spawn `ffmpeg -i src -ac 1 -ar 200 -f s16le -` 收 stdout。失败（spawn 错/非零退出）→ null。 */
+function decodeMono(src: string): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    const p = spawn('ffmpeg', ['-v', 'error', '-i', src, '-ac', '1', '-ar', String(WAVEFORM_RATE), '-f', 's16le', '-acodec', 'pcm_s16le', '-'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const chunks: Buffer[] = []
+    p.stdout.on('data', (d) => chunks.push(d as Buffer))
+    p.stderr.on('data', () => {}) // 排空，避免管道写满把 ffmpeg 卡死
+    p.on('error', () => resolve(null))
+    p.on('close', (code) => resolve(code === 0 ? Buffer.concat(chunks) : null))
+  })
+}
+
+/** s16le 单声道 → 每样本 |s|/32768 归一，按 ceil(n/1000) 分桶取 max。纯函数，可测。 */
+export function bucketPeaks(pcm: Buffer): { peaks: number[]; durationSec: number } {
+  const n = Math.floor(pcm.length / 2)
+  const step = Math.max(1, Math.ceil(n / WAVEFORM_MAX_PEAKS))
+  const peaks: number[] = []
+  for (let i = 0; i < n; i += step) {
+    let max = 0
+    for (let j = i; j < Math.min(i + step, n); j++) {
+      const v = Math.abs(pcm.readInt16LE(j * 2)) / 32768
+      if (v > max) max = v
+    }
+    peaks.push(+max.toFixed(4))
+  }
+  return { peaks, durationSec: +(n / WAVEFORM_RATE).toFixed(3) }
 }
 
 /** 剪辑台的「保存」（GET/PUT spec）与「重置为生成结果」（POST .../reset，靠 orig 快照逐字节还原）。 */
@@ -172,5 +208,82 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): v
       if (err instanceof RewriteUnsupportedError) return c.json({ error: err.message }, 400)
       throw err
     }
+  })
+
+  // bgm 相对名必须落在 templates/bgm 内（防 ../ 穿越读到曲库外文件）。同 app.ts cutplan 的 bgmInside。
+  const bgmInside = (rel: string) => {
+    const bgmRoot = path.resolve(ctx.config.paths.templates, 'bgm')
+    const abs = path.resolve(bgmRoot, rel)
+    return abs === bgmRoot ? false : abs.startsWith(bgmRoot + path.sep)
+  }
+
+  /**
+   * 「换 BGM」：选曲 + 节拍重分析一体。分析失败**仍换曲**（fail-soft，同 cutplan analyze 的降级思路），
+   * 只是没网格可吸附 → 打 warning。
+   *
+   * ⚠️ 关键不变量：`manualBeats`（用户手点的卡点）在任何分支都不能丢——它是手工劳动，
+   * 自动重分析只该覆盖自动出来的 t0/T/bpm/strongBeats。所以失败分支不是简单 `beatGrid = null`：
+   * 有手动卡点时退化成 `{t0:0,T:0,bpm:0,strongBeats:[],manualBeats}`（T=0 表示无网格仅手动点，
+   * editing 的 allBeats 对 T<=0 跳过外推），只有本来就没手动卡点时才真的置 null。
+   */
+  app.post('/api/projects/:slug/specs/:videoId/pick-bgm', async (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const p = specAbs(slug, videoId)
+    if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
+    let spec: any
+    try { spec = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+    const body = await c.req.json().catch(() => ({} as any)) ?? {}
+    if (typeof body.bgm === 'string' && body.bgm && body.bgm !== 'none' && !bgmInside(body.bgm)) {
+      return c.json({ error: 'bgm 路径非法' }, 400)
+    }
+
+    const bgmDir = path.join(ctx.config.paths.templates, 'bgm')
+    const bgmPath = chooseBgmPath(bgmDir, {
+      bgm: body.bgm ?? '', mood: body.mood ?? '', hook: spec.semantic?.hook ?? '',
+    }, Math.random)
+    if (!bgmPath) return c.json({ error: '曲库为空或无匹配（templates/bgm）' }, 400)
+
+    const manualBeats: number[] | undefined = spec.audio?.beatGrid?.manualBeats
+    const grid = await analyzeBeats(bgmPath, ctx.config.video.beatPython)
+    spec.audio = { ...(spec.audio ?? {}), bgm: { src: bgmPath, mood: body.mood ?? null } }
+    if (grid) {
+      spec.audio.beatGrid = { t0: grid.t0, T: grid.T, bpm: grid.bpm, strongBeats: grid.strongBeats, ...(manualBeats ? { manualBeats } : {}) }
+    } else {
+      spec.audio.beatGrid = manualBeats ? { t0: 0, T: 0, bpm: 0, strongBeats: [], manualBeats } : null
+      spec.warnings = Array.isArray(spec.warnings) ? spec.warnings : []
+      if (!spec.warnings.includes('节拍分析失败，卡点吸附不可用')) spec.warnings.push('节拍分析失败，卡点吸附不可用')
+    }
+
+    const out = pickKnownSpecFields(spec)
+    fs.mkdirSync(path.dirname(p), { recursive: true })
+    fs.writeFileSync(p, JSON.stringify(out, null, 2), 'utf8')
+    return c.json(out)
+  })
+
+  /** BGM 波形（时间轴画卡点背景用）：≤1000 个 0..1 的 peak + 时长。ffmpeg 不可用 → 503（不是 500，
+   *  这是「环境缺件、稍后/换机可用」而非请求错误；剪辑台据此只隐藏波形层，其它照常）。 */
+  app.get('/api/projects/:slug/specs/:videoId/waveform', async (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const p = specAbs(slug, videoId)
+    if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
+    let spec: any
+    try { spec = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+    const src = spec.audio?.bgm?.src
+    if (typeof src !== 'string' || !src || !fs.existsSync(src)) return c.json({ error: '此视频没有可用的 BGM 音频' }, 404)
+
+    const key = `${src}:${fs.statSync(src).mtimeMs}`
+    const hit = waveformCache.get(key)
+    if (hit) return c.json(hit)
+    const pcm = await decodeMono(src)
+    if (!pcm || pcm.length < 2) return c.json({ error: '波形不可用（ffmpeg 解码失败）' }, 503)
+    const out = bucketPeaks(pcm)
+    waveformCache.set(key, out)
+    return c.json(out)
   })
 }

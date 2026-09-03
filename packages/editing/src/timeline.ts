@@ -81,11 +81,10 @@ export function layoutRow(shots: ShotView[], duration: number): Cell[] {
 }
 
 /**
- * spec.audio.beatGrid 的运行时形状（正式字段由 Task 2 落进 videospec.ts）。
- * manualBeats 先用交叉类型标注，结构与 videospec.ts 里 AudioSpec.beatGrid 兼容。
+ * spec.audio.beatGrid 的运行时形状。manualBeats 已是 videospec.ts 里 AudioSpec.beatGrid
+ * 的正式可选字段（P2 Task 2），故这里不再需要 Task 1 的 `BeatGrid` 交叉类型过渡。
  */
-export type BeatGrid = { t0: number; T: number; bpm: number; strongBeats: number[] }
-export type BeatGridWithManual = BeatGrid & { manualBeats?: number[] }
+export type BeatGrid = { t0: number; T: number; bpm: number; strongBeats: number[]; manualBeats?: number[] }
 
 export interface Beat {
   t: number
@@ -99,7 +98,7 @@ const BEAT_EPS = 0.01
  * 汇总一条时间轴上全部可吸附拍点：strongBeats（strong）+ t0+n·T 网格外推里不在 strongBeats
  * 的位置（derived）+ manualBeats（manual）。T<=0 时（如仅手动点、无网格）跳过外推。
  */
-export function allBeats(grid: BeatGridWithManual | null, durationSec: number): Beat[] {
+export function allBeats(grid: BeatGrid | null, durationSec: number): Beat[] {
   const raw: Beat[] = []
   if (grid) {
     for (const t of grid.strongBeats) raw.push({ t, kind: 'strong' })
@@ -128,8 +127,8 @@ export function allBeats(grid: BeatGridWithManual | null, durationSec: number): 
   return result.sort((a, b) => a.t - b.t)
 }
 
-function withManualBeats(spec: VideoSpec, grid: BeatGridWithManual | null, manualBeats: number[]): VideoSpec {
-  const nextGrid: BeatGridWithManual = grid ? { ...grid, manualBeats } : { t0: 0, T: 0, bpm: 0, strongBeats: [], manualBeats }
+function withManualBeats(spec: VideoSpec, grid: BeatGrid | null, manualBeats: number[]): VideoSpec {
+  const nextGrid: BeatGrid = grid ? { ...grid, manualBeats } : { t0: 0, T: 0, bpm: 0, strongBeats: [], manualBeats }
   return { ...spec, audio: { ...spec.audio, beatGrid: nextGrid } }
 }
 
@@ -138,7 +137,7 @@ function withManualBeats(spec: VideoSpec, grid: BeatGridWithManual | null, manua
  * T=0 表示无网格仅手动点，`allBeats` 对 T<=0 跳过外推。不可变；重复 t（±0.01s）幂等。
  */
 export function addManualBeat(spec: VideoSpec, tSec: number): VideoSpec {
-  const grid = spec.audio.beatGrid as BeatGridWithManual | null
+  const grid = spec.audio.beatGrid
   const existing = grid?.manualBeats ?? []
   if (existing.some((t) => round3(Math.abs(t - tSec)) <= BEAT_EPS)) return spec
   return withManualBeats(spec, grid, [...existing, round3(tSec)])
@@ -146,7 +145,7 @@ export function addManualBeat(spec: VideoSpec, tSec: number): VideoSpec {
 
 /** 删一个手动拍点（±0.01s 匹配）。没有网格或没匹配到时原样返回。 */
 export function removeManualBeat(spec: VideoSpec, tSec: number): VideoSpec {
-  const grid = spec.audio.beatGrid as BeatGridWithManual | null
+  const grid = spec.audio.beatGrid
   const existing = grid?.manualBeats ?? []
   const next = existing.filter((t) => round3(Math.abs(t - tSec)) > BEAT_EPS)
   if (next.length === existing.length) return spec

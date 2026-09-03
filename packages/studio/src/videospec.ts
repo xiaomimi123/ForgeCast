@@ -92,7 +92,8 @@ export interface Effect {
 export interface AudioSpec {
   narration: { src: string; degraded: string | null } | null
   bgm: { src: string; mood: string | null } | null
-  beatGrid: { t0: number; T: number; bpm: number; strongBeats: number[] } | null
+  /** manualBeats：手动卡点（剪辑台加的）；自动重分析不覆盖——P2。 */
+  beatGrid: { t0: number; T: number; bpm: number; strongBeats: number[]; manualBeats?: number[] } | null
   captionsEnabled: boolean
 }
 
