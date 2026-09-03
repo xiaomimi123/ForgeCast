@@ -80,6 +80,25 @@ export interface EditorState {
  * - `previewSpec` 是喂 Player 的那份（资源路径改成 `/files/...` 基准），**不入历史、不落盘**：
  *   它只是同一份 spec 的显示投影，写回磁盘会把绝对 URL 固化进素材包。
  */
+/**
+ * 载入时的**最小形状校验**：磁盘上的 spec 是可以被手改坏的（也可能是老版本/别的工具写的），
+ * 而剪辑台全链路（`rebaseSpecForPreview` 取 `l.content.kind`、`deriveShots`、`spec.audio.beatGrid`）
+ * 都假定了 `VideoSpec` 的形状——不合格的 spec 会在渲染期抛 TypeError，整页白屏，比「读取失败」
+ * 难懂得多。这里只查最小必要项（layers 是数组且每层有 content.kind；audio 是对象），
+ * 不合格就 throw 走同一条 `.catch` → `loadError` 失败态（EditorPage 已有重试/查看日志）。
+ * 不做完整校验：那是服务端 `validateSpecPut` 的活，这里只负责「不白屏」。
+ */
+function assertSpecShape(spec: unknown): void {
+  const s = spec as { layers?: unknown; audio?: unknown }
+  if (!Array.isArray(s.layers)) throw new Error('spec 缺少 layers 数组')
+  if (!s.audio || typeof s.audio !== 'object') throw new Error('spec 缺少 audio')
+  const bad = s.layers.findIndex((l) => {
+    const c = (l as { content?: { kind?: unknown } } | null)?.content
+    return !c || typeof c.kind !== 'string'
+  })
+  if (bad >= 0) throw new Error(`第 ${bad + 1} 个图层缺少 content.kind`)
+}
+
 export function useEditorState(slug: string, videoId: string | null): EditorState {
   const [history, setHistory] = useState<History | null>(null)
   const [loading, setLoading] = useState(false)
@@ -125,6 +144,7 @@ export function useEditorState(slug: string, videoId: string | null): EditorStat
         // 它会跟着 PUT 一起写回磁盘（服务端 validateSpecPut 不拒未知字段），从此每份 spec 都带一个
         // 假字段，还会让 dirty 的 JSON 比较凭空多一项。
         const { hasOrig: orig = false, ...spec } = body
+        assertSpecShape(spec)
         setHasOrig(orig)
         setHistory(init(spec as VideoSpec))
         setSavedJson(JSON.stringify(spec))
