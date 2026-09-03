@@ -4,7 +4,7 @@ import { deriveShots, updateLayerText, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useState, type RefObject } from 'react'
 import { isUnsupported } from '../../../lib/rebase'
-import { OUTLINE } from './EditorPage'
+import { OUTLINE } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /**

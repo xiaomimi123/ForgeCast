@@ -128,7 +128,7 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
     setDragId(shot.sectionId)
     // 捕获挂在**轨道区**（move/up 的监听者）而不是 Clip 自己：Clip 只出 pointerdown，
     // 后续事件靠冒泡回到轨道区处理，避免同一次移动被两处各算一遍。
-    areaRef.current?.setPointerCapture(e.pointerId)
+    capture(e.pointerId)
   }
 
   function onDragMove(e: ReactPointerEvent) {
@@ -154,16 +154,21 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
     ed.commit()
     releaseArea(e.pointerId)
   }
+  /** 指针捕获的成败**不能影响拖拽本身**：某些浏览器/合成事件下 setPointerCapture 会抛
+   *  NotFoundError，让它冒出去就会把已经开始的拖拽卡在半途（dragRef 留着、再也收不了尾）。 */
+  function capture(pointerId: number) {
+    try { areaRef.current?.setPointerCapture(pointerId) } catch { /* 捕获失败就退回冒泡，行为不变 */ }
+  }
   function releaseArea(pointerId: number) {
     const a = areaRef.current
-    if (a?.hasPointerCapture(pointerId)) a.releasePointerCapture(pointerId)
+    try { if (a?.hasPointerCapture(pointerId)) a.releasePointerCapture(pointerId) } catch { /* 同上 */ }
   }
 
   /** 轨道空白（含刻度轨、播放头）按下 = 定位播放头，按住拖 = scrub。 */
   function onAreaPointerDown(e: ReactPointerEvent) {
     if (!usable || dragRef.current) return
     setScrubbing(true)
-    areaRef.current?.setPointerCapture(e.pointerId)
+    capture(e.pointerId)
     seekToSec(secAtClientX(e.clientX))
   }
   function onAreaPointerMove(e: ReactPointerEvent) {
@@ -338,8 +343,16 @@ export function layoutRow(shots: ShotView[], duration: number): Cell[] {
   return cells
 }
 
-/** §5 `Clip`：高 38；default / current（accent 描边 + tint 底）/ dragging（虚线 + 阴影 + 时间码）。 */
-function Clip({ shot, weight, current, dragging, ...handlers }: {
+/**
+ * §5 `Clip`：高 38；default / current（accent 描边 + tint 底）/ dragging（虚线 + 阴影 + 时间码）。
+ *
+ * **外层只负责 flex 比例，边框/内边距全在内层**。这不是洁癖：`flex-basis: 0` 在 border-box 下
+ * 会被**下限抬到 padding+border**（盒子的内容宽不能是负的），于是每个 Clip 都比自己那份多出
+ * 14px，而空隙占位没有边框、一点不多——「权重 : 时间」当场就不是 1:1 了，Clip 的边缘和刻度、
+ * 播放头对不上（实测 4s 的片段画成了 4.86s 宽）。内层用绝对定位铺满，外层零 padding 零 border，
+ * base size 才真是 0。
+ */
+function Clip({ shot, weight, current, dragging, onPointerDown }: {
   shot: ShotView
   weight: number
   current: boolean
@@ -347,31 +360,31 @@ function Clip({ shot, weight, current, dragging, ...handlers }: {
   onPointerDown: (e: ReactPointerEvent) => void
 }) {
   return (
-    <div
-      {...handlers}
-      title={`${shot.text.slice(0, 40)}｜拖动移动，拖右缘改时长`}
-      className="relative flex min-w-0 cursor-grab items-center overflow-hidden px-1.5 text-[10px]"
-      style={{
-        flex: `${weight} 1 0`,
-        height: CLIP_H,
-        boxSizing: 'border-box',
-        borderRadius: 'var(--fc-r-sm)',
-        border: dragging
-          ? '1px dashed var(--fc-accent)'
-          : current ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line-2)',
-        background: dragging || current ? 'var(--fc-accent-tint)' : 'var(--fc-bg)',
-        boxShadow: dragging ? '0 2px 6px rgba(0,0,0,.18)' : undefined,
-        color: current || dragging ? 'var(--fc-accent-deep)' : 'var(--fc-muted)',
-      }}
-    >
-      <span className="min-w-0 flex-1 truncate">
-        {dragging ? `${fmtTimecode(shot.startSec)} → ${(shot.endSec - shot.startSec).toFixed(1)}s` : shot.text || '（空）'}
-      </span>
-      {/* 右缘热区：视觉上一条细把手，命中判定在 startDrag 里按 EDGE_PX 算 */}
-      <span
-        className="absolute right-0 top-0 h-full cursor-ew-resize"
-        style={{ width: EDGE_PX, borderRight: '2px solid var(--fc-line-2)', boxSizing: 'border-box' }}
-      />
+    <div style={{ flex: `${weight} 1 0`, height: CLIP_H, position: 'relative', minWidth: 0 }}>
+      <div
+        onPointerDown={onPointerDown}
+        title={`${shot.text.slice(0, 40)}｜拖动移动，拖右缘改时长`}
+        className="absolute inset-0 flex cursor-grab items-center overflow-hidden px-1.5 text-[10px]"
+        style={{
+          boxSizing: 'border-box',
+          borderRadius: 'var(--fc-r-sm)',
+          border: dragging
+            ? '1px dashed var(--fc-accent)'
+            : current ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line-2)',
+          background: dragging || current ? 'var(--fc-accent-tint)' : 'var(--fc-bg)',
+          boxShadow: dragging ? '0 2px 6px rgba(0,0,0,.18)' : undefined,
+          color: current || dragging ? 'var(--fc-accent-deep)' : 'var(--fc-muted)',
+        }}
+      >
+        <span className="min-w-0 flex-1 truncate">
+          {dragging ? `${fmtTimecode(shot.startSec)} → ${(shot.endSec - shot.startSec).toFixed(1)}s` : shot.text || '（空）'}
+        </span>
+        {/* 右缘热区：视觉上一条细把手，命中判定在 startDrag 里按 EDGE_PX 算 */}
+        <span
+          className="absolute right-0 top-0 h-full cursor-ew-resize"
+          style={{ width: EDGE_PX, borderRight: '2px solid var(--fc-line-2)', boxSizing: 'border-box' }}
+        />
+      </div>
     </div>
   )
 }

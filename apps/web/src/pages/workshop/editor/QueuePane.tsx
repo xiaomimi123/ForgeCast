@@ -5,7 +5,7 @@ import ContentCard from '../../../components/ContentCard'
 import TaskProgress from '../../../components/TaskProgress'
 import { Empty, Failure, Skeleton } from '../../../components/ui/States'
 import type { TaskRun } from '../../../useTaskRun'
-import { OUTLINE } from './EditorPage'
+import { OUTLINE } from './ui'
 
 /** 钩子枚举（旧「文案」tab 生成面板常量，正式迁到左栏——生成 popover 与筛选 chip 组共用）。 */
 export const HOOKS = [

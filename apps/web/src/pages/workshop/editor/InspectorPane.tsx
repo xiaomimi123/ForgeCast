@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
 import TaskProgress from '../../../components/TaskProgress'
 import type { TaskRun } from '../../../useTaskRun'
-import { BGS, MOODS, OUTLINE, VIDEO_TPLS, type VideoParams } from './EditorPage'
+import { BGS, MOODS, OUTLINE, VIDEO_TPLS, type VideoParams } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /** §10 可改集的暂存草稿。键缺席＝没编辑过（paramsDiff 就是按这条口径跳过的）。 */
@@ -239,7 +239,12 @@ export default function InspectorPane({
 function BgmOptions({ list, current }: { list: BgmList | undefined; current: string | null }) {
   const dir = list?.dir
   const abs = (rel: string) => (dir ? `${dir}/${rel}` : rel)
-  const known = new Set([...(list?.root ?? []).map(abs), ...Object.values(list?.byMood ?? {}).flat().map(abs)])
+  // 情绪子目录的曲子在 spec 里是 `<dir>/<mood>/<file>`——「在不在曲库」的比对必须带上 mood 段，
+  // 否则每一支情绪曲都被判成「不在曲库」，下拉里凭空多一条重复项。
+  const known = new Set([
+    ...(list?.root ?? []).map(abs),
+    ...Object.entries(list?.byMood ?? {}).flatMap(([m, files]) => files.map((f) => abs(`${m}/${f}`))),
+  ])
   return (
     <>
       {current && !known.has(current) && (
