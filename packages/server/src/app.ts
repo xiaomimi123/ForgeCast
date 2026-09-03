@@ -20,6 +20,7 @@ import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
 import { buildContentItems } from './content-items'
 import { readAutoScoutCfg } from './scheduler'
+import { registerSpecRoutes } from './spec-routes'
 
 // 可通过 PATCH 修改的项目字段白名单
 const PATCHABLE = ['brand_name', 'target_buyer', 'demo_url', 'price_deploy', 'price_custom', 'stage'] as const
@@ -253,6 +254,10 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       },
     }))
   })
+
+  // 剪辑台：spec 读写 + orig 快照重置。必须在 SPA `/*` 兜底之前挂载（本仓出过注册在兜底后
+  // Docker 下全 404 的事故），跟 content-items 挂在一起。
+  registerSpecRoutes(app, ctx, queue)
 
   function assetAbsPath(id: string): { row: any; abs: string } | null {
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(id)
@@ -654,7 +659,10 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       const files = listDir(path.join(bgmDir, mood))
       if (files.length) byMood[mood] = files
     }
-    return c.json({ root, byMood })
+    // `dir`：曲库根的**绝对路径**。剪辑台改 BGM 时要写的是 `spec.audio.bgm.src`，而那个字段存的是
+    // 绝对路径（见 generate.ts rebuildAudioMix 的注释：`existsSync(src)`，不做任何前缀拼接）。
+    // 浏览器端拼不出服务端的绝对路径，只能由这里给出根，前端拼 `dir + '/' + 相对名`。
+    return c.json({ root, byMood, dir: bgmDir })
   })
 
   // —— 卡点方案（cutplan）——

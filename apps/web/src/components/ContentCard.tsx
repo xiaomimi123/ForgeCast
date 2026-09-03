@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { HOOK_LABEL, STATUS_LABEL, type ContentItemView } from '../api'
 
 /** StatusTag：高 20，Mono 10，永远不可点（span 非 button）。五态样式见 docs/剪辑台-实施说明.md §5。 */
-function StatusTag({ status, progress }: { status: ContentItemView['status']; progress: number | null }) {
+export function StatusTag({ status, progress }: { status: ContentItemView['status']; progress: number | null }) {
   const base = 'inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-[var(--fc-r-xs)] px-1.5 font-mono text-[10px]'
   if (status === 'approved') {
     return <span className={`${base} bg-[var(--fc-ink)] text-white`}>✓ {STATUS_LABEL[status]}</span>

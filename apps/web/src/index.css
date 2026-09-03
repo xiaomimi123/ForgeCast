@@ -128,51 +128,6 @@ body {
   color: var(--color-faint);
 }
 
-/* 顶部工位流水线导航 */
-.rail {
-  border: 1px solid var(--color-hairline-strong);
-  background: var(--color-card);
-  border-radius: 4px;
-  display: flex;
-  overflow: hidden;
-}
-.station {
-  position: relative;
-  background: transparent;
-  border: 0;
-  border-right: 1px solid var(--color-hairline);
-  padding: 13px 16px 11px;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-.station:last-child { border-right: 0; }
-.station .no {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.62rem;
-  color: var(--color-faint);
-  letter-spacing: 0.12em;
-}
-.station .nm {
-  font-family: "Noto Serif SC", serif;
-  font-weight: 700;
-  font-size: 1.02rem;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.station .ct {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.7rem;
-  color: var(--color-sub);
-}
-.station[aria-selected="true"] { background: var(--color-ink); color: var(--color-paper); }
-.station[aria-selected="true"] .no, .station[aria-selected="true"] .ct { color: var(--color-hairline-strong); }
-.station.spur { border-left: 1px dashed var(--color-hairline-strong); flex: 0 0 auto; min-width: 140px; }
-.station:hover:not([aria-selected="true"]) { background: var(--color-hairline); }
-
 /* design tokens（docs/剪辑台-实施说明.md §3，逐字复制，P1 新组件用变量，存量渐进迁移） */
 :root {
   /* 面 */

@@ -26,8 +26,12 @@ export interface Asset {
   /** workspace 相对路径 `<slug>/specs/<videoId>.json`；历史视频（改造前生成）没有素材包，为 null */
   spec_path: string | null
 }
-/** GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key） */
-export interface BgmList { root: string[]; byMood: Record<string, string[]> }
+/**
+ * GET /api/bgm：曲库列表，根目录 + 情绪子目录（tense/upbeat/tech/warm，存在才有 key）。
+ * `dir` 是曲库根的**绝对路径**——`spec.audio.bgm.src` 存的就是绝对路径（渲染时直接 existsSync，
+ * 不拼前缀），剪辑台换曲要靠 `dir + '/' + 相对名` 拼出来。
+ */
+export interface BgmList { root: string[]; byMood: Record<string, string[]>; dir: string }
 export interface CustomTemplate {
   id: number; name: string; aspect_ratio: 'portrait' | 'landscape'
   segment_count: number; style_note: string | null; created_at: string
@@ -152,7 +156,7 @@ export interface ContentItemView {
   progress: number | null; error: string | null; warnings: string[]
 }
 
-/** 钩子枚举展示映射——键用库内真实枚举（见 EditorTransitionTab.HOOKS / TopicsPage.HOOK_LABEL），不要在组件里硬编码中文 */
+/** 钩子枚举展示映射——键用库内真实枚举（见 workshop/editor/QueuePane.HOOKS / TopicsPage.HOOK_LABEL），不要在组件里硬编码中文 */
 export const HOOK_LABEL: Record<string, string> = {
   pain: '行业痛点', sideline: '副业', infogap: '信息差', story: '接单故事', fun: '趣味',
 }

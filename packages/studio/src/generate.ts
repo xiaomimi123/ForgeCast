@@ -236,6 +236,19 @@ export function resolveBgVariant(
 }
 
 /**
+ * spec 落盘 + orig 快照写入（renderAndRegister 与直连测试共用，抽出来是为了让「orig 只在
+ * 首次生成时写」这条守卫可以脱离整条渲染管线单独测试——mock crypto.randomUUID 拦不住具名导入，
+ * 真实重渲场景下想验证「同一 videoId 二次落盘不覆盖 orig」，直接调用本函数两次即可，不必造随机数陷阱。
+ * 只在 origAbsPath 不存在时写 orig：重渲不覆盖 orig——重置的语义是回到「第一次生成」。
+ */
+export function writeSpecFiles(specAbsPath: string, spec: VideoSpec): void {
+  fs.mkdirSync(path.dirname(specAbsPath), { recursive: true })
+  fs.writeFileSync(specAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+  const origAbsPath = specAbsPath.replace(/\.json$/, '.orig.json')
+  if (!fs.existsSync(origAbsPath)) fs.writeFileSync(origAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+}
+
+/**
  * 渲染 hf 项目并登记 video 素材（各 HyperFrames 分支收尾共用）。
  * `audioMix` 可选：渲染后调 mixAudio 把 BGM/SFX 混进成片，失败 fail-soft（保留无背景乐版本，打 ⚠，
  * 原因同时 push 进 `spec.warnings`）。
@@ -272,14 +285,95 @@ async function renderAndRegister(
   }
   const specRelPath = path.join(slug, 'specs', `${spec.videoId}.json`)
   const specAbsPath = path.join(ctx.config.paths.workspace, specRelPath)
-  fs.mkdirSync(path.dirname(specAbsPath), { recursive: true })
-  fs.writeFileSync(specAbsPath, JSON.stringify(spec, null, 2), 'utf8')
+  writeSpecFiles(specAbsPath, spec)
   const info = ctx.db.prepare(
     'INSERT INTO assets (project_id, type, hook, file_path, warnings, spec_path) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(projectId, 'video', hook, relPath, JSON.stringify(spec.warnings), specRelPath)
   advanceStage(ctx.db, projectId, 'producing')
   onProgress(`视频完成: ${relPath}`)
   return { assetId: Number(info.lastInsertRowid), filePath: relPath }
+}
+
+/** 渲染期 warnings 的前缀白名单：这两类由「本轮渲染」产生，重渲时必须先清掉上一轮的，
+ *  否则上次的 BGM 失败会一路跟着每个新版本落库（且含变量的消息用 includes 去重也盖不住）。
+ *  生成期 warnings（TTS 降级、节拍分析失败等）属于「这条稿子的历史」，保留不动。 */
+const RENDER_WARNING_PREFIXES = ['BGM 混音失败', 'BGM 文件缺失']
+const BGM_MISSING_WARNING = 'BGM 文件缺失，本次无背景乐'
+
+/**
+ * 从落盘的 spec 重建渲染期的 AudioMix（AudioMix 本身不落 spec，spec 只留 bgm.src 与 beatGrid）。
+ *
+ * `bgm.src` 存的是**绝对路径**——见 selectBgm 的 `bgmPath = chooseBgmPath(绝对 bgmDir, …)`、
+ * demo cutplan 分支的 `path.join(templates,'bgm',cutPlan.bgm)`，以及落盘处 `src: audioMix.bgmPath`。
+ * 故这里直接 existsSync，不做任何前缀拼接。
+ *
+ * 返回 undefined 有两种含义（调用方据 `missing` 区分）：spec 本就没 BGM，或曲子文件没了（fail-soft）。
+ * 抽成纯函数是为了让四个字段能被直接断言——stub 模式不跑 mixAudio，字段写错在端到端测试里是静默的。
+ */
+export function rebuildAudioMix(
+  spec: VideoSpec, templatesDir: string,
+): { audioMix: AudioMix | undefined; missing: boolean } {
+  const src = spec.audio?.bgm?.src
+  if (!src) return { audioMix: undefined, missing: false }
+  if (!fs.existsSync(src)) return { audioMix: undefined, missing: true }
+  return {
+    audioMix: {
+      bgmPath: src,
+      // 与 selectBgm 同一条规则：取 sfx 目录第一个（不分情绪），保证重渲与首渲的音效一致
+      sfxPath: pickBgm(path.join(templatesDir, 'sfx')),
+      strongBeats: spec.audio.beatGrid?.strongBeats ?? [],
+      durationSec: spec.durationSec,
+    },
+    missing: false,
+  }
+}
+
+/**
+ * 剪辑台「渲成片」：渲**当前编辑态的 spec**，不重跑 文案→TTS→buildSemantic→lower
+ * （那条路会用生成结果覆盖用户在剪辑台上的手工改动，正是本函数要绕开的事）。
+ *
+ * 复用首次生成留下的两份产物：
+ * - `workspace/<slug>/specs/<videoId>.json`：图层真相（用户改的就是它）；
+ * - `workspace/<slug>/hf/<videoId>/`：素材目录（旁白 wav、截图、字体），做 Remotion 的 publicDir。
+ *
+ * **调用方须自行拒绝 custom-* 与空 layers**：本函数照 spec 渲，custom-* 的 spec 是空 layers 的占位
+ * （HTML 由 LLM 产出、不走 Layer 模型），走 Remotion 只会渲出一片空白（见 spec-routes 的 400 分支）。
+ *
+ * 产出一条**新的** video asset 行（版本语义与 P0 聚合一致：同 spec_path 的多行 = 多个版本）；
+ * orig 快照因 writeSpecFiles 的 exists 守卫不被覆盖——「重置」永远回到第一次生成。
+ */
+export async function renderFromSpec(
+  ctx: CoreCtx, slug: string, videoId: string, onProgress: (m: string) => void = () => {},
+): Promise<GeneratedVideo> {
+  const project: any = ctx.db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug)
+  if (!project) throw new Error(`项目不存在: ${slug}`)
+  const specAbs = path.join(ctx.config.paths.workspace, slug, 'specs', `${videoId}.json`)
+  if (!fs.existsSync(specAbs)) throw new Error(`spec 不存在，无法重渲: ${videoId}`)
+  const spec: VideoSpec = JSON.parse(fs.readFileSync(specAbs, 'utf8'))
+  const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
+  if (!fs.existsSync(hfDir)) throw new Error(`素材目录缺失，无法重渲: ${path.join(slug, 'hf', videoId)}`)
+
+  // 先清上一轮的渲染期 warnings，本轮真发生再 push（见 RENDER_WARNING_PREFIXES 注释）
+  spec.warnings = (Array.isArray(spec.warnings) ? spec.warnings : [])
+    .filter((w) => !RENDER_WARNING_PREFIXES.some((p) => String(w).startsWith(p)))
+
+  const { audioMix, missing } = rebuildAudioMix(spec, ctx.config.paths.templates)
+  if (missing) {
+    onProgress(`⚠ ${BGM_MISSING_WARNING}`)
+    spec.warnings.push(BGM_MISSING_WARNING)
+  }
+
+  // hook 回退：spec.semantic.hook 目前恒为 null（buildSemantic 读的 doc.hook 在 CopyDoc 里不存在，
+  // 那条取值链属于子项目①，另行记账）。这里按 sourceAssetId 回查文案行的 hook，
+  // 免得重渲行 assets.hook=NULL、文件名退化成 `flash-flash-…`，与 v1 在成片库里看着不像一家。
+  let hook: string | null = spec.semantic?.hook ?? null
+  if (!hook && spec.semantic?.sourceAssetId != null) {
+    const copy: any = ctx.db.prepare("SELECT hook FROM assets WHERE id = ? AND type = 'copy'").get(spec.semantic.sourceAssetId)
+    hook = copy?.hook ?? null
+  }
+
+  return renderAndRegister(ctx, hfDir, slug, spec.template, hook, project.id, onProgress, spec, audioMix,
+    { engine: 'remotion', bgVariant: spec.bgVariant })
 }
 
 /**
