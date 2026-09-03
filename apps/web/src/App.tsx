@@ -22,10 +22,20 @@ export default function App() {
    */
   const workshopLeaveGuard = useRef<(() => Promise<boolean>) | null>(null)
 
+  /**
+   * 离开做内容工位是否放行：当前不在工位或没挂守卫 → 直接放行；挂了守卫则问它
+   * （确认丢弃/已保存 → true，取消 → false）。switchSection 和 openProject/openTailor
+   * 共用这一条闸——后两者虽不是「切工位」触发的，但一样会把工位卸载，改动照样蒸发。
+   */
+  async function canLeaveWorkshop() {
+    if (activeSection !== 'workshop' || !workshopLeaveGuard.current) return true
+    return workshopLeaveGuard.current()
+  }
+
   /** 切工位：只有从做内容工位离开时才查闸，其它工位互切一律直通。 */
   async function switchSection(next: SectionKey) {
     if (next === activeSection) return
-    if (activeSection === 'workshop' && workshopLeaveGuard.current && !(await workshopLeaveGuard.current())) return
+    if (!(await canLeaveWorkshop())) return
     setActiveSection(next)
   }
   const [selectedProjectSlug, setSelectedProjectSlug] = useState<string | null>(null)
@@ -34,9 +44,18 @@ export default function App() {
   const [topicsOpen, setTopicsOpen] = useState(false)
 
   // 原路由行为：NavLink 到 /projects、/tailor 对 /projects/:slug、/tailor/:id 前缀匹配也会高亮——
-  // 打开对应抽屉时一并切到该工位，保持"打开详情=进入该板块"的原有观感
-  const openProject = (slug: string) => { setSelectedProjectSlug(slug); setActiveSection('projects') }
-  const openTailor = (id: number) => { setSelectedTailorId(id); setActiveSection('tailor') }
+  // 打开对应抽屉时一并切到该工位，保持"打开详情=进入该板块"的原有观感。
+  // 同样要过 canLeaveWorkshop 这道闸：取消时不改抽屉 state，也不切工位，原地留着。
+  const openProject = async (slug: string) => {
+    if (!(await canLeaveWorkshop())) return
+    setSelectedProjectSlug(slug)
+    setActiveSection('projects')
+  }
+  const openTailor = async (id: number) => {
+    if (!(await canLeaveWorkshop())) return
+    setSelectedTailorId(id)
+    setActiveSection('tailor')
+  }
 
   return (
     <div className="min-h-screen bg-paper text-ink">
