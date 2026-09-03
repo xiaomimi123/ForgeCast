@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type Project } from '../api'
 import { Failure } from '../components/ui/States'
 import { useTaskRun } from '../useTaskRun'
@@ -17,7 +17,15 @@ const TABS = [
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
-export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
+export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
+  onOpenProject: (slug: string) => void
+  /**
+   * 「离开做内容工位」的守卫出口（App 传进来）：工位同样是条件渲染，点面包屑切走 = 本组件连同
+   * EditorPage 一起卸载 = 剪辑台未保存改动蒸发。这里把 tab 内的闸再向上转一层：当前在剪辑台
+   * 且剪辑台挂了闸就转调它，否则（在成片库/模板库，或剪辑台没挂）直接放行。
+   */
+  leaveGuardRef?: MutableRefObject<(() => Promise<boolean>) | null>
+}) {
   const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('editor')
   /**
@@ -26,6 +34,16 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
    * 组件内部的 confirmLeave 根本没机会跑。所以闸只能架在这一层的 tab 切换上。
    */
   const editorLeaveGuard = useRef<(() => Promise<boolean>) | null>(null)
+
+  // 向 App 转出「离开工位」守卫：每次渲染重挂（要读到最新的 tab 与 editorLeaveGuard），卸载清空。
+  useEffect(() => {
+    if (!leaveGuardRef) return
+    leaveGuardRef.current = async () => {
+      if (tab !== 'editor' || !editorLeaveGuard.current) return true
+      return editorLeaveGuard.current()
+    }
+    return () => { leaveGuardRef.current = null }
+  })
 
   /** 切 tab：从剪辑台走开时先过未保存闸门（用户选保存/丢弃/取消）。 */
   async function switchTab(next: TabKey) {
