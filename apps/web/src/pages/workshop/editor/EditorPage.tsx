@@ -356,11 +356,13 @@ export default function EditorPage({
           />
         )}
 
-        {/* ── 时间轴 186 整宽（刻度 / 分镜 / 字幕 三轨）── */}
+        {/* ── 时间轴 186 整宽（刻度 / 分镜 / 字幕 / BGM / 卡点 五轨）── */}
         <TimelinePane
           className={wide ? 'col-span-3' : 'col-span-2'}
+          slug={selected} videoId={videoId}
           ed={ed} playerRef={playerRef} currentSec={currentSec}
           selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+          onNotice={setNotice} confirm={confirm}
         />
       </div>
 
