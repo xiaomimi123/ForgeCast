@@ -33,6 +33,8 @@ export function useConfirm(): {
 } {
   const [pending, setPending] = useState<Pending | null>(null)
   const okRef = useRef<HTMLButtonElement>(null)
+  const pendingRef = useRef<Pending | null>(null)
+  pendingRef.current = pending
 
   const confirm = useCallback((opts: ConfirmOpts) => new Promise<boolean>((resolve) => {
     setPending((prev) => {
@@ -76,6 +78,16 @@ export function useConfirm(): {
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending])
+
+  // 卸载兜底：调用方（比如切页）在弹层未决时把这个组件树卸载掉，若不在这里 resolve，
+  // 挂在外面的 `await confirm(...)` 就永远悬挂。用 ref 拿卸载那一刻的最新 pending
+  // （不能直接依赖闭包里的 pending——effect 只在挂载/卸载时跑一次）。
+  useEffect(() => () => {
+    const p = pendingRef.current
+    if (!p) return
+    if (p.kind === 'simple') p.resolve(false)
+    else p.resolve('cancel')
+  }, [])
 
   const element = pending ? (
     <div

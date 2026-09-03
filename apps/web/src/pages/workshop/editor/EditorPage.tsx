@@ -201,7 +201,7 @@ export default function EditorPage({
   }
 
   async function doReset() {
-    if (!(await confirm({ title: '重置为生成结果？', body: '剪辑台里的手工改动会全部丢弃，且不可撤销。' }))) return
+    if (!(await confirm({ title: '重置为生成结果？', body: '剪辑台里的手工改动会全部丢弃，且不可撤销。', danger: true }))) return
     try {
       await ed.resetToOrig()
       bumpSpecEpoch()
