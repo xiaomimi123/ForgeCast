@@ -11,12 +11,14 @@ import type { useEditorState } from './useEditorState'
 /**
  * 暂存草稿。键缺席＝没编辑过（paramsDiff 就是按这条口径跳过的）。
  *
- * **只有 bg 与 bgm 两项**。`mood` 虽然在 §10 的可改集里，但它在整条链路上**只写不读**——
- * `renderFromSpec` 用的是 `bgm.src` 这个具体文件，没有任何一处会按 mood 重新挑曲。
- * 让它可改，用户改完会看到「用新参数重渲（1 项）」，点下去白烧几分钟 CPU 渲出一份逐字节相同的新版本，
- * 按钮就是在撒谎。故降进只读档，等 P2 的「按情绪自动选曲」接上再放开。
+ * §10 可改集三项全在这（P2）：
+ * - `bgVariant` 是纯本地字段，直接并进 spec，走「用新参数重渲」PUT。
+ * - `bgmSrc` / `mood` **不再本地写 spec**——任一项被改动，提交时先 `POST …/pick-bgm`
+ *   让服务端选曲 + 重析节拍 + 落盘，返回的 spec 才是这两项的真相（见 `applyParams`）。
+ *   `bgmSrc` 存的是**曲库相对名**（如 `tense/foo.wav`），不是绝对路径——绝对路径只有服务端拼得出
+ *   （曲库根在服务端文件系统上，见 pick-bgm 的 `bgmInside` 校验）；`null` 表示显式选了「不加背景乐」。
  */
-export interface ParamsDraft { bgVariant?: string; bgmSrc?: string | null }
+export interface ParamsDraft { bgVariant?: string; bgmSrc?: string | null; mood?: string }
 
 /** 六种特效（Effect['type'] 的全集）与它们的人话名。新增类型时这里要跟着加。 */
 const EFFECTS: Array<{ type: Effect['type']; label: string }> = [
@@ -62,30 +64,44 @@ function Field({ label, changed, hint, children }: {
   )
 }
 
-/** 曲库文件的展示名（去掉曲库根前缀）。src 存的是绝对路径，整条铺在下拉里没法看。 */
-function bgmLabel(src: string, dir: string | undefined): string {
-  if (dir && src.startsWith(dir)) return src.slice(dir.length).replace(/^[/\\]/, '')
-  return src.split(/[/\\]/).pop() ?? src
+/**
+ * 曲库相对名（如 `tense/foo.wav`）在下拉/角标里的展示名——去掉情绪子目录段，只留文件名。
+ * 不再依赖 `/api/bgm` 的 `dir`（已 deprecated，见 app.ts）：相对名本身就是自解释的。
+ */
+function bgmLabel(rel: string): string {
+  return rel.split(/[/\\]/).pop() ?? rel
 }
 
 /**
- * 把暂存草稿并进 spec。**只动 §10 的三项**，其余字段逐层浅拷贝原样带过。
- * - `bgVariant: 'none'` 是合法值（`Background` 见到 'none' 就不渲染），不是「删掉字段」，
- *   所以直接写进去；与「字段本就不存在」在渲染结果上等价，但在 diff 上诚实地算一次改动。
- * - bgm 的 src 与 mood 同住一个对象：改任一项都要把另一项从当前值里带过来，否则会把它抹成 null。
+ * 把 spec 上的 `audio.bgm.src`（绝对路径）反解成曲库相对名，用来在下拉里选中「当前这首」。
+ * 做法是拿曲库清单（root + byMood 的每个相对名）逐个跟 `src` 做后缀匹配——不依赖 `dir`：
+ * 绝对路径不管服务端曲库根挂在哪，末尾一段一定是 `<mood>/<file>` 或 `<file>`，后缀能稳定命中。
+ * 一个都不命中（曲库被挪过 / 曲子被删）→ null，调用方据此把 src 整个当「不在曲库」的当前值处理。
+ */
+function relOfBgmSrc(src: string | null | undefined, list: BgmList | undefined): string | null {
+  if (!src) return null
+  const candidates = [
+    ...(list?.root ?? []),
+    ...Object.entries(list?.byMood ?? {}).flatMap(([m, files]) => files.map((f) => `${m}/${f}`)),
+  ]
+  return candidates.find((rel) => src === rel || src.endsWith(`/${rel}`) || src.endsWith(`\\${rel}`)) ?? null
+}
+
+/**
+ * 把暂存草稿并进 spec。**只并 `bgVariant` 一项**——它是纯本地字段（Background 组件按它挑背景），
+ * 没有任何服务端状态要同步，PUT 落盘就是全部真相。
+ *
+ * `bgmSrc` / `mood` **不在这里处理**：P1 时它们曾直接写 `spec.audio.bgm`（前端拼绝对路径），
+ * P2 起换成服务端 `POST …/pick-bgm` 选曲 + 重析节拍一体完成——那次请求返回的 spec 才是真相，
+ * 调用方（`applyParams`）拿到它直接 `ed.apply` + `ed.markSaved`，不经过这个函数。
+ * `bgVariant: 'none'` 是合法值（`Background` 见到 'none' 就不渲染），不是「删掉字段」，
+ * 所以直接写进去；与「字段本就不存在」在渲染结果上等价，但在 diff 上诚实地算一次改动。
  */
 export function mergeParamsDraft(spec: VideoSpec, draft: ParamsDraft): VideoSpec {
-  let next: VideoSpec = spec
   if (draft.bgVariant !== undefined && draft.bgVariant !== spec.bgVariant) {
-    next = { ...next, bgVariant: draft.bgVariant }
+    return { ...spec, bgVariant: draft.bgVariant }
   }
-  if (draft.bgmSrc !== undefined) {
-    // mood 不可改（见 ParamsDraft 注释），但换曲时要**带着原来的 mood 一起写回**：
-    // bgm 是一个对象，只写 src 会把 mood 抹成 null。
-    const mood = spec.audio.bgm?.mood ?? null
-    next = { ...next, audio: { ...next.audio, bgm: draft.bgmSrc ? { src: draft.bgmSrc, mood } : null } }
-  }
-  return next
+  return spec
 }
 
 /**
@@ -102,7 +118,7 @@ export function mergeParamsDraft(spec: VideoSpec, draft: ParamsDraft): VideoSpec
  */
 export default function InspectorPane({
   ed, current, bgmList, selectedLayerId, vp, setVp, busy, videoRun, onMakeVideo, onNotice, onEnqueueRender, onRenderFromSpec,
-  specEpoch, className,
+  specEpoch, slug, videoId, onSpecReplaced, className,
 }: {
   ed: ReturnType<typeof useEditorState>
   current: ContentItemView | null
@@ -120,6 +136,11 @@ export default function InspectorPane({
   onRenderFromSpec: () => void
   /** spec 被**整包换掉**的次数（重置 / 重写）。草稿是「相对当前 spec 的改动」，换了就得清。 */
   specEpoch: number
+  /** 拼 `POST …/pick-bgm` 的路径用——同 ShotList/TimelinePane 已在用的这一对。 */
+  slug: string
+  videoId: string | null
+  /** spec 被服务端整包换掉后回调（bump specEpoch），同 ShotList 的 doRewrite 成功分支。 */
+  onSpecReplaced: () => void
   className?: string
 }) {
   const spec = ed.spec
@@ -136,20 +157,58 @@ export default function InspectorPane({
 
   const diff = useMemo(() => (spec ? paramsDiff(spec, draft) : []), [spec, draft])
   const changed = (key: string) => diff.some((d) => d.key === key)
+  /**
+   * BGM 下拉当前应选中的值：草稿有值就用草稿（`null` 是「显式选了不加背景乐」，
+   * 下拉里对应空字符串那个 option）；否则把 spec 里的绝对路径反解成曲库相对名，
+   * 反解不出来（曲库被挪过 / 曲子被删）就原样把绝对路径当值——`BgmOptions` 会给它单列一条。
+   */
+  const bgmCurrent = draft.bgmSrc !== undefined
+    ? draft.bgmSrc
+    : (relOfBgmSrc(spec?.audio.bgm?.src, bgmList) ?? spec?.audio.bgm?.src ?? null)
 
   async function applyParams() {
-    if (!spec || diff.length === 0 || applying) return
+    if (!spec || diff.length === 0 || applying || !slug || !videoId) return
     setApplying(true)
     try {
-      // 与「重写这段」互斥：这里也是一次服务端读改写（PUT 落盘 + POST 入队重渲读盘），
-      // 在途时若中栏「重写这段」并发发出另一条读改写，两者会静默互覆盖磁盘。
+      // 与「重写这段」/「渲成片」互斥：这里也是一到两次服务端读改写（PUT 落盘
+      // [+ POST pick-bgm 选曲重析再落盘] + POST 入队重渲读盘），在途时若中栏「重写这段」
+      // 并发发出另一条读改写，两者会静默互覆盖磁盘。
       const ran = await ed.runExclusive(async () => {
-        const next = mergeParamsDraft(spec, draft)
-        // 先进历史（这次参数改动可撤销），再落盘。**save 必须收到显式的 next**：
-        // `apply` 的 setState 还没刷新，save 内部从 ref 取 present 会拿到改动前那一份，
-        // 于是「保存了旧值 → 渲了旧值」，而 UI 上参数明明已经变了。
-        ed.apply(next)
-        if (!(await ed.save(next))) { onNotice('重渲已取消：当前内容没有可保存的素材包'); return true }
+        const withBgVariant = mergeParamsDraft(spec, draft)
+        const bgmTouched = changed('bgmSrc') || changed('mood')
+        if (bgmTouched) {
+          // pick-bgm 是「服务端读盘 → 选曲 → 重析节拍 → 写回」，输入必须是磁盘上的最新版本：
+          // 先把本地的 bgVariant 改动落盘，不然这一趟拿旧盘面重写，会把 bgVariant 悄悄冲掉。
+          // **save 必须收到显式的 withBgVariant**：apply 的 setState 还没刷新，save 内部从
+          // ref 取 present 会拿到改动前那一份。
+          ed.apply(withBgVariant)
+          if (!(await ed.save(withBgVariant))) { onNotice('重渲已取消：当前内容没有可保存的素材包'); return true }
+          // bgmSrc 未提及＝用户没碰这项，交给服务端按 mood 重选（chooseBgmPath 的选曲优先级：
+          // bgm 具体名 > mood 情绪目录随机 > 根目录随机，见 studio/hyperframes.ts）；
+          // null＝显式选了「不加背景乐」（'none'）；字符串＝曲库相对名，指定这首。
+          const bgm = draft.bgmSrc === undefined ? '' : draft.bgmSrc === null ? 'none' : draft.bgmSrc
+          const mood = draft.mood ?? spec.audio.bgm?.mood ?? ''
+          const res = await fetch(`/api/projects/${slug}/specs/${videoId}/pick-bgm`, {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bgm, mood }),
+          })
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({})) as { error?: string }
+            onNotice(`换曲失败：${body.error ?? `HTTP ${res.status}`}`)
+            return true
+          }
+          const out = await res.json() as VideoSpec
+          // 服务端已经把这份写回磁盘：apply 整包替换进 undo 栈（⌘Z 可回退），markSaved 对齐
+          // 净快照——不对齐的话「未保存」会立刻假亮，用户会去按一次毫无意义的 ⌘S（照抄
+          // ShotList doRewrite 成功分支的先例）。卡点轨/波形轨据此自然刷新，手动卡点由
+          // pick-bgm 自己保留（见 spec-routes.ts pick-bgm 注释），不用剪辑台再管一次。
+          ed.apply(out)
+          ed.markSaved(out)
+          onSpecReplaced()
+        } else {
+          // 只改了 bgVariant：本地并入 + PUT 落盘，不用麻烦 pick-bgm。
+          ed.apply(withBgVariant)
+          if (!(await ed.save(withBgVariant))) { onNotice('重渲已取消：当前内容没有可保存的素材包'); return true }
+        }
         setDraft({})
         if (await onEnqueueRender()) onNotice('已按新参数入队重渲，进度看队列卡片')
         return true
@@ -203,18 +262,21 @@ export default function InspectorPane({
                     {BG_OPTIONS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
                   </select>
                 </Field>
-                <Field label="BGM" changed={changed('bgmSrc')}
-                  hint="换曲只换音轨；卡点网格仍是上一支曲子分析出来的，节奏可能对不上">
-                  <select className={CTRL} value={draft.bgmSrc ?? spec.audio.bgm?.src ?? ''}
+                <Field label="BGM" changed={changed('bgmSrc')}>
+                  <select className={CTRL} value={bgmCurrent ?? ''}
                     onChange={(e) => setDraft({ ...draft, bgmSrc: e.target.value || null })}>
                     <option value="">不加背景乐</option>
-                    <BgmOptions list={bgmList} current={draft.bgmSrc ?? spec.audio.bgm?.src ?? null} />
+                    <BgmOptions list={bgmList} current={bgmCurrent} />
                   </select>
                 </Field>
-                <Field label="情绪" hint="按情绪自动选曲 P2 接入；现在它只是标注，改了不影响成片">
-                  <div className={CTRL_RO}>
-                    {MOODS.find((m) => m.value === (spec.audio.bgm?.mood ?? ''))?.label ?? spec.audio.bgm?.mood}
-                  </div>
+                <Field label="情绪" changed={changed('mood')} hint="换情绪将重选曲并重析节拍">
+                  <select className={CTRL} value={draft.mood ?? spec.audio.bgm?.mood ?? ''}
+                    onChange={(e) => setDraft({ ...draft, mood: e.target.value })}>
+                    <option value="">自动（按钩子情绪）</option>
+                    {Object.keys(bgmList?.byMood ?? {}).map((m) => (
+                      <option key={m} value={m}>{MOODS.find((x) => x.value === m)?.label ?? m}</option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="模板" hint="重新生成才可改"><div className={CTRL_RO}>{spec.template}</div></Field>
                 <Field label="比例" hint="重新生成才可改">
@@ -224,7 +286,7 @@ export default function InspectorPane({
                   <div className={CTRL_RO}>{spec.audio.captionsEnabled ? '已烧录' : '未烧录'}</div>
                 </Field>
                 <p className="text-[11px] leading-relaxed text-[var(--fc-faint)]">
-                  灰显四项在剪辑台里改不了：模板 / 比例 / 字幕决定画面怎么搭出来，要整条重跑；情绪等 P2 的自动选曲接上再放开。
+                  灰显三项在剪辑台里改不了：模板 / 比例 / 字幕决定画面怎么搭出来，要整条重跑；换 BGM / 情绪会连带重选曲、重析节拍并保留手动卡点。
                 </p>
 
                 <button
@@ -257,24 +319,25 @@ export default function InspectorPane({
 
 /** BGM 下拉的选项。当前曲子不在曲库里（曲库被挪过 / 曲子被删）时，把它单列一条，否则下拉会
  *  静默跳到「不加背景乐」——用户会以为这条视频本来就没有 BGM。 */
+/**
+ * 选项值全是**曲库相对名**（`pick-bgm` 的 `body.bgm` 期望的形状，见 spec-routes.ts
+ * `chooseBgmPath`/`pickBgm`：拿 `bgmDir + name` 去 `existsSync`，name 就是这个相对名）——
+ * 不再拼绝对路径，`/api/bgm` 的 `dir` 字段这里已用不上。
+ */
 function BgmOptions({ list, current }: { list: BgmList | undefined; current: string | null }) {
-  const dir = list?.dir
-  const abs = (rel: string) => (dir ? `${dir}/${rel}` : rel)
-  // 情绪子目录的曲子在 spec 里是 `<dir>/<mood>/<file>`——「在不在曲库」的比对必须带上 mood 段，
-  // 否则每一支情绪曲都被判成「不在曲库」，下拉里凭空多一条重复项。
   const known = new Set([
-    ...(list?.root ?? []).map(abs),
-    ...Object.entries(list?.byMood ?? {}).flatMap(([m, files]) => files.map((f) => abs(`${m}/${f}`))),
+    ...(list?.root ?? []),
+    ...Object.entries(list?.byMood ?? {}).flatMap(([m, files]) => files.map((f) => `${m}/${f}`)),
   ])
   return (
     <>
       {current && !known.has(current) && (
-        <option value={current}>{bgmLabel(current, dir)}（当前 · 不在曲库）</option>
+        <option value={current}>{bgmLabel(current)}（当前 · 不在曲库）</option>
       )}
-      {(list?.root ?? []).map((f) => <option key={f} value={abs(f)}>{f}</option>)}
+      {(list?.root ?? []).map((f) => <option key={f} value={f}>{f}</option>)}
       {Object.entries(list?.byMood ?? {}).map(([m, files]) => (
         <optgroup key={m} label={m}>
-          {files.map((f) => <option key={f} value={abs(`${m}/${f}`)}>{f}</option>)}
+          {files.map((f) => <option key={`${m}/${f}`} value={`${m}/${f}`}>{f}</option>)}
         </optgroup>
       ))}
     </>

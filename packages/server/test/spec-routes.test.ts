@@ -495,6 +495,49 @@ describe('waveform 波形 peaks', () => {
     expect(res.status).toBe(503)
     expect((await res.json() as any).error).toContain('波形不可用')
   })
+
+  it('bgm.src 落在 templates/workspace 之外（如 /etc/hosts）→ 400，不 spawn ffmpeg', async () => {
+    seedSpecWithBgm('deadbeef01', '/etc/hosts')
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toContain('路径非法')
+  })
+
+  it('bgm.src 用 ../ 试图逃出 templates 子树 → 400', async () => {
+    // templates/bgm/../../../etc/hosts 解析出去就落在两棵子树之外
+    const escaped = path.join(root, 'templates/bgm/../../../etc/hosts')
+    seedSpecWithBgm('deadbeef01', escaped)
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toContain('路径非法')
+  })
+
+  it('bgm.src 落在 workspace 子树内（非 templates）也放行——两棵子树都认', async () => {
+    const wav = writeWav(path.join(root, 'workspace/s1/uploads/tone.wav'), 3)
+    seedSpecWithBgm('deadbeef01', wav)
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('decodeMono 超时', () => {
+  it('DECODE_TIMEOUT_MS 已接线为 30s', async () => {
+    const { DECODE_TIMEOUT_MS } = await import('../src/spec-routes')
+    expect(DECODE_TIMEOUT_MS).toBe(30_000)
+  })
+
+  it('ffmpeg 卡住不返回时，timeoutMs 到点 kill 子进程并 resolve(\'timeout\')', async () => {
+    // 命名管道（FIFO）：open() 供 ffmpeg 读取会一直阻塞到有写端连上——我们不写，制造一次
+    // 真实的「读不完」，而不是伪造。用极小的 timeoutMs（30ms）避免这条用例拖慢整个套件。
+    const { execFileSync } = await import('node:child_process')
+    const { decodeMono } = await import('../src/spec-routes')
+    const fifo = path.join(root, 'stuck.fifo')
+    execFileSync('mkfifo', [fifo])
+    const start = Date.now()
+    const result = await decodeMono(fifo, 30)
+    expect(result).toBe('timeout')
+    expect(Date.now() - start).toBeLessThan(5000) // 确实是超时触发的，不是巧合地跑完了
+  })
 })
 
 describe('PUT 保留内层 manualBeats', () => {

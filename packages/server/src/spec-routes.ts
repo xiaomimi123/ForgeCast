@@ -74,15 +74,31 @@ const WAVEFORM_MAX_PEAKS = 1000
 /** 按 `src + mtimeMs` 缓存波形——同一首曲子不重复 spawn ffmpeg（进程内，重启即失效，够了）。 */
 const waveformCache = new Map<string, { peaks: number[]; durationSec: number }>()
 
-/** spawn `ffmpeg -i src -ac 1 -ar 200 -f s16le -` 收 stdout。失败（spawn 错/非零退出）→ null。 */
-function decodeMono(src: string): Promise<Buffer | null> {
+/** decodeMono 的超时上限：畸形/超大音频文件让 ffmpeg 卡住时，别让请求（连带这条 worker）一直挂着。 */
+export const DECODE_TIMEOUT_MS = 30_000
+
+/** spawn `ffmpeg -i src -ac 1 -ar 200 -f s16le -` 收 stdout。
+ *  失败（spawn 错/非零退出）→ null；`timeoutMs` 内未 close → kill 子进程并返回 `'timeout'`。 */
+export function decodeMono(src: string, timeoutMs = DECODE_TIMEOUT_MS): Promise<Buffer | null | 'timeout'> {
   return new Promise((resolve) => {
     const p = spawn('ffmpeg', ['-v', 'error', '-i', src, '-ac', '1', '-ar', String(WAVEFORM_RATE), '-f', 's16le', '-acodec', 'pcm_s16le', '-'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      p.kill('SIGKILL')
+      resolve('timeout')
+    }, timeoutMs)
     const chunks: Buffer[] = []
     p.stdout.on('data', (d) => chunks.push(d as Buffer))
     p.stderr.on('data', () => {}) // 排空，避免管道写满把 ffmpeg 卡死
-    p.on('error', () => resolve(null))
-    p.on('close', (code) => resolve(code === 0 ? Buffer.concat(chunks) : null))
+    p.on('error', () => { if (settled) return; settled = true; clearTimeout(timer); resolve(null) })
+    p.on('close', (code) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(code === 0 ? Buffer.concat(chunks) : null)
+    })
   })
 }
 
@@ -275,12 +291,25 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): v
     let spec: any
     try { spec = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
     const src = spec.audio?.bgm?.src
-    if (typeof src !== 'string' || !src || !fs.existsSync(src)) return c.json({ error: '此视频没有可用的 BGM 音频' }, 404)
+    if (typeof src !== 'string' || !src) return c.json({ error: '此视频没有可用的 BGM 音频' }, 404)
+    // 子树限制（照 cutplan 的 bgmInside 先例）：spec.audio.bgm.src 来自磁盘上的 spec 文件，
+    // 理论上可被手工改成任意路径（如 /etc/hosts）——这里 spawn ffmpeg 读它，必须先圈定范围，
+    // 只认 templates（曲库）与 workspace（各项目产物）两棵子树。
+    const abs = path.resolve(src)
+    const inside = (root: string) => {
+      const r = path.resolve(root)
+      return abs === r || abs.startsWith(r + path.sep)
+    }
+    if (!inside(ctx.config.paths.templates) && !inside(ctx.config.paths.workspace)) {
+      return c.json({ error: 'BGM 路径非法' }, 400)
+    }
+    if (!fs.existsSync(abs)) return c.json({ error: '此视频没有可用的 BGM 音频' }, 404)
 
-    const key = `${src}:${fs.statSync(src).mtimeMs}`
+    const key = `${abs}:${fs.statSync(abs).mtimeMs}`
     const hit = waveformCache.get(key)
     if (hit) return c.json(hit)
-    const pcm = await decodeMono(src)
+    const pcm = await decodeMono(abs)
+    if (pcm === 'timeout') return c.json({ error: '波形解码超时' }, 503)
     if (!pcm || pcm.length < 2) return c.json({ error: '波形不可用（ffmpeg 解码失败）' }, 503)
     const out = bucketPeaks(pcm)
     waveformCache.set(key, out)

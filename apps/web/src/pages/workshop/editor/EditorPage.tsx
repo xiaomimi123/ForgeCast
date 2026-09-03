@@ -352,7 +352,7 @@ export default function EditorPage({
             ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
             vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
             onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
-            specEpoch={specEpoch}
+            specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
           />
         )}
 
@@ -377,7 +377,7 @@ export default function EditorPage({
               ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
               vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
-              specEpoch={specEpoch}
+              specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
             />
           </div>
         </div>

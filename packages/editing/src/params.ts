@@ -3,13 +3,14 @@ import type { VideoSpec } from '@forgecast/studio'
 
 export function paramsDiff(
   saved: VideoSpec,
-  // mood 编辑随 P2 自动选曲一起放开（见 spec §10）：链路上只写不读，可改集暂时只有这两项。
-  draft: { bgVariant?: string; bgmSrc?: string | null },
+  // mood 回到可改集（P2）：换情绪走服务端 pick-bgm 重选曲 + 重析节拍，不再是只写不读。
+  draft: { bgVariant?: string; bgmSrc?: string | null; mood?: string },
 ): Array<{ key: string; from: unknown; to: unknown }> {
   const out: Array<{ key: string; from: unknown; to: unknown }> = []
   const savedValues: Array<[key: string, from: unknown]> = [
     ['bgVariant', saved.bgVariant],
     ['bgmSrc', saved.audio.bgm?.src ?? null],
+    ['mood', saved.audio.bgm?.mood ?? null],
   ]
   for (const [key, from] of savedValues) {
     // draft 里没有这个键 = 用户没编辑过它，不是「改成了 undefined」
