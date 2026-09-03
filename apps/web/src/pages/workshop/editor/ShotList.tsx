@@ -21,11 +21,17 @@ export const ROLE_LABEL: Record<string, string> = {
   brand: '品牌',
 }
 
-/** 时间码 mm:ss.s（Mono 显示）。 */
+/**
+ * 时间码 mm:ss.s（Mono 显示）。
+ *
+ * **先取整到 0.1s 再拆分钟**：直接 `Math.floor(sec/60)` 后 `toFixed(1)` 的话，
+ * 59.95～60 之间会被 toFixed 进位成 `01:60.0`。这里换算成「十分之一秒」的整数再拆，
+ * 既躲掉那一格越界，也顺带躲掉浮点尾数。
+ */
 export function fmtTimecode(sec: number): string {
-  const s = Math.max(0, sec)
-  const m = Math.floor(s / 60)
-  const rest = s - m * 60
+  const tenths = Math.round(Math.max(0, sec) * 10)
+  const m = Math.floor(tenths / 600)
+  const rest = (tenths - m * 600) / 10
   return `${String(m).padStart(2, '0')}:${rest.toFixed(1).padStart(4, '0')}`
 }
 
@@ -102,18 +108,22 @@ export default function ShotList({
 
   async function doRewrite(shot: ShotView) {
     if (!slug || !videoId || !spec) return
-    // 重写走服务端、以磁盘上的 spec 为输入并把结果写回磁盘。本地有未落盘的改动时先保存，
-    // 不然这一趟返回的新 spec 是「基于旧版本重写的」，apply 整包替换就把手改抹了。
-    if (ed.dirty) {
-      try {
-        if (!(await ed.save())) { onNotice('重写已取消：当前内容没有可保存的素材包'); return }
-      } catch (e) {
-        onNotice(`重写已取消（先保存失败）：${e instanceof Error ? e.message : String(e)}`)
-        return
-      }
-    }
+    // **上锁必须在第一个 await 之前**：下面的 save 也是异步的，锁若等到 save 之后再上，
+    // 保存在途那段时间按钮还是可点的，双击 = 两次 save + 两次不带 force 的 POST，
+    // 响应乱序时后到的旧结果会盖掉新结果，还连压两格 undo。
+    if (rewriting) return
     setRewriting(shot.sectionId)
     try {
+      // 重写走服务端、以磁盘上的 spec 为输入并把结果写回磁盘。本地有未落盘的改动时先保存，
+      // 不然这一趟返回的新 spec 是「基于旧版本重写的」，apply 整包替换就把手改抹了。
+      if (ed.dirty) {
+        try {
+          if (!(await ed.save())) { onNotice('重写已取消：当前内容没有可保存的素材包'); return }
+        } catch (e) {
+          onNotice(`重写已取消（先保存失败）：${e instanceof Error ? e.message : String(e)}`)
+          return
+        }
+      }
       const url = `/api/projects/${slug}/specs/${videoId}/rewrite-section`
       const post = (force: boolean) => fetch(url, {
         method: 'POST',
