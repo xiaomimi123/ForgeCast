@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, type TopicPattern, type TopicSource } from '../api'
 import TaskProgress from '../components/TaskProgress'
+import { useConfirm } from '../components/ui/Confirm'
 import { useTaskRun } from '../useTaskRun'
 
 const HOOK_LABEL: Record<TopicPattern['hook_type'], string> = {
@@ -11,6 +12,7 @@ const HOOK_ORDER: TopicPattern['hook_type'][] = ['pain', 'sideline', 'infogap', 
 
 export default function TopicsPage() {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const sources = useQuery({ queryKey: ['topics', 'sources'], queryFn: () => api<TopicSource[]>('/api/topics/sources') })
   const patterns = useQuery({ queryKey: ['topics', 'patterns'], queryFn: () => api<TopicPattern[]>('/api/topics/patterns') })
 
@@ -29,7 +31,7 @@ export default function TopicsPage() {
     onError: (e) => alert(e instanceof Error ? e.message : String(e)),
   })
   async function removeSource(id: number) {
-    if (!window.confirm('删除该目标账号？（已导入的笔记数据不会一并删除）')) return
+    if (!(await confirm({ title: '删除该目标账号？', body: '已导入的笔记数据不会一并删除', danger: true, okLabel: '删除' }))) return
     try {
       await api(`/api/topics/sources/${id}`, { method: 'DELETE' })
       qc.invalidateQueries({ queryKey: ['topics', 'sources'] })
@@ -129,6 +131,7 @@ export default function TopicsPage() {
           ))}
         </div>
       </div>
+      {confirmEl}
     </div>
   )
 }

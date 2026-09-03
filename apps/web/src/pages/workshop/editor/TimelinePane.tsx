@@ -1,19 +1,30 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
 import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { deriveShots, moveLayer, resizeLayer, snapStart, type ShotView } from '@forgecast/editing'
+import {
+  addManualBeat, allBeats, deriveShots, layoutRow, moveShotBy, removeManualBeat, resizeLayer,
+  snapToBeats, type Beat, type ShotView,
+} from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
 import { fmtTimecode } from './ShotList'
 import type { useEditorState } from './useEditorState'
 
-/** §4 尺寸表。三条轨道的高度是**唯一**来源：轨道名列与轨道行都从这个数组渲，才不会各写各的。 */
+/** §4 尺寸表。五条轨道的高度是**唯一**来源：轨道名列与轨道行都从这个数组渲，才不会各写各的。
+ *  20+46+30+30+26 = 152，加头 32 = 184 ≤ 186（容器高度不变）。
+ *
+ * `compact:false` 的轨（字幕 / BGM）在 <1040 时不渲染——§4 原文「只留分镜+卡点两轨」，这里把
+ * 刻度轨也留下：它是播放头定位/scrub 的基础设施而非可编辑内容轨，且 20px 很薄，不留它反而让
+ * 分镜/卡点轨没有时间参照物。留它之后 compact 高度 = 头32 + 刻度20 + 分镜46 + 卡点26 = 124 ≤ 148。 */
 const HEAD_H = 32
 const NAME_W = 104
-const TRACKS = [
-  { key: 'ruler', name: '刻度', h: 20 },
-  { key: 'shots', name: '分镜', h: 46 },
-  { key: 'caption', name: '字幕', h: 30 },
+const TRACKS_ALL = [
+  { key: 'ruler', name: '刻度', h: 20, compact: true },
+  { key: 'shots', name: '分镜', h: 46, compact: true },
+  { key: 'caption', name: '字幕', h: 30, compact: false },
+  { key: 'bgm', name: 'BGM', h: 30, compact: false },
+  { key: 'beats', name: '卡点', h: 26, compact: true },
 ] as const
 /** Clip 高 38 = 轨 46 减上下 padding 4（§5）。 */
 const CLIP_H = 38
@@ -23,50 +34,15 @@ const SNAP_SEC = 0.15
 const EDGE_PX = 8
 
 type Drag =
-  | { mode: 'move'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number }
+  /** `beats`：按下那一刻的吸附候选（含手动点）。**在 dragstart 算一次**而不是每帧重算——
+   *  拖拽期间 spec 每帧都在 applyTransient 里换新对象，每帧重跑网格外推是白烧 CPU；
+   *  而拍点本身不会因为移分镜而变，一次算好即可。 */
+  | { mode: 'move'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number; beats: number[] }
   | { mode: 'resize'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
 
 /**
- * 把一个分镜整体平移 delta 秒。
- *
- * 分镜是**一组图层**（文本层 + 背景层 + …），必须整组同步移动，否则一次拖拽就把同段的图层拆散了。
- * `moveLayer` 逐层钳制（不越邻居、不越片长），组内任一层被钳住时，整组都退到那个「被钳后的最小
- * 位移」重算一遍——**宁紧不重叠**：让整组少移一点，也不能出现某层挤进邻居的情况。
- */
-export function moveShotBy(base: VideoSpec, shot: ShotView, delta: number): VideoSpec {
-  const startOf = (spec: VideoSpec, id: string) => spec.layers.find((l) => l.id === id)?.start
-  // **移动顺序按位移方向排**：同 section 若有两层同 track，先移的会被还没动的同伴挡住（moveLayer
-  // 是逐层对当时的邻居钳制的），effective 塌成 0，整组一动不动。右移先移最右边那层、左移先移最左边
-  // 那层，让路总是先腾出来。今天每段恰好一层不发作，但顺序依赖的死锁不该留着等模板变复杂。
-  const order = [...shot.layerIds].sort((a, b) => {
-    const sa = startOf(base, a) ?? 0
-    const sb = startOf(base, b) ?? 0
-    return delta >= 0 ? sb - sa : sa - sb
-  })
-  const applyAll = (d: number) => {
-    let next = base
-    for (const id of order) {
-      const s0 = startOf(base, id)
-      if (s0 === undefined) continue
-      next = moveLayer(next, id, s0 + d)
-    }
-    return next
-  }
-  const first = applyAll(delta)
-  // 实际位移取组内**绝对值最小**的那个：它就是这次拖拽真正能走到的距离
-  let effective = delta
-  for (const id of order) {
-    const s0 = startOf(base, id)
-    const s1 = startOf(first, id)
-    if (s0 === undefined || s1 === undefined) continue
-    if (Math.abs(s1 - s0) < Math.abs(effective)) effective = s1 - s0
-  }
-  if (effective === delta) return first
-  return applyAll(effective)
-}
-
-/**
- * 底部时间轴（实施说明 §4/§5）。总高 186：头 32 + 刻度 20 + 分镜 46 + 字幕 30。
+ * 底部时间轴（实施说明 §4/§5）。容器 186：头 32 + 刻度 20 + 分镜 46 + 字幕 30 + BGM 30 + 卡点 26 = 184。
+ * `compact`（<1040）时容器降到 148：字幕/BGM 两轨隐藏，头 32 + 刻度 20 + 分镜 46 + 卡点 26 = 124。
  *
  * - **对齐是硬验收**（§9：1440/1280/1100 三宽度轨道名列与轨道行不错位）：轨道名列与轨道行共用
  *   同一份 `TRACKS` 高度，且**两边都 `box-sizing:border-box`**——不然每行的 1px 下边框会被算在
@@ -77,14 +53,27 @@ export function moveShotBy(base: VideoSpec, shot: ShotView, delta: number): Vide
  *   每一帧都从「按下那一刻的 base」重算，不做增量累加，中途松手/回拖都不会漂。
  * - 字幕轨只显示与点选。字幕时间来自 TTS 的 cues，拖了就和语音错位，P1 不给拖。
  */
-export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerId, onSelectLayer, className }: {
+export default function TimelinePane({
+  slug, videoId, ed, playerRef, currentSec, selectedLayerId, onSelectLayer, onNotice, confirm, className, compact,
+}: {
+  /** 波形端点要项目 slug + videoId；两者缺一就只显示「无背景乐 / 波形不可用」，不发请求。 */
+  slug: string
+  videoId: string | null
   ed: ReturnType<typeof useEditorState>
   playerRef: RefObject<PlayerRef>
   currentSec: number
   selectedLayerId: string | null
   onSelectLayer: (layerId: string | null) => void
+  onNotice: (msg: string) => void
+  /** 与 EditorPage 共享的 in-app 确认（删手动卡点用轻确认）。 */
+  confirm: (opts: ConfirmOpts) => Promise<boolean>
   className?: string
+  /** <1040（§4）：字幕/BGM 两轨隐藏，容器降到 148。EditorPage 按 matchMedia 传入。 */
+  compact?: boolean
 }) {
+  const TRACKS = compact ? TRACKS_ALL.filter((t) => t.compact) : TRACKS_ALL
+  const trackH = (key: (typeof TRACKS_ALL)[number]['key']) => TRACKS_ALL.find((t) => t.key === key)!.h
+  const containerH = compact ? 148 : 186
   const spec = ed.spec
   const usable = spec && !isUnsupported(spec) ? spec : null
   const shots = useMemo(() => (usable ? deriveShots(usable) : []), [usable])
@@ -93,10 +82,16 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
     [usable],
   )
   const duration = usable?.durationSec ?? 0
+  const beatGrid = usable?.audio.beatGrid ?? null
+  const beats = useMemo(() => allBeats(beatGrid, duration), [beatGrid, duration])
+  const bgmSrc = usable?.audio.bgm?.src ?? null
+  const wave = useWaveform(slug, videoId, bgmSrc)
   const areaRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [scrubbing, setScrubbing] = useState(false)
+  /** 卡点轨上一次按下的时刻与位置——自己判定「双击」，见 `onBeatTrackPointerDown`。 */
+  const lastTapRef = useRef<{ t: number; x: number } | null>(null)
 
   function seekToSec(sec: number) {
     if (!usable) return
@@ -131,7 +126,10 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
       const baseDuration = usable.layers.find((l) => l.id === layerId)!.duration
       dragRef.current = { mode, shot, base: usable, startX: e.clientX, pxPerSec, layerId, baseDuration }
     } else {
-      dragRef.current = { mode, shot, base: usable, startX: e.clientX, pxPerSec }
+      dragRef.current = {
+        mode, shot, base: usable, startX: e.clientX, pxPerSec,
+        beats: allBeats(usable.audio.beatGrid, usable.durationSec).map((b) => b.t),
+      }
     }
     setDragId(shot.sectionId)
     // 捕获挂在**轨道区**（move/up 的监听者）而不是 Clip 自己：Clip 只出 pointerdown，
@@ -147,7 +145,9 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
       const raw = Math.max(0, d.shot.startSec + deltaSec)
       // 吸附**先于**钳制：先把「用户想放的位置」吸到拍点，再由 moveLayer 去撞邻居。
       // 反过来（先钳后吸）会把刚钳到邻居边上的位置又吸走，重新叠进邻居。
-      const snapped = snapStart(d.base, d.shot.layerIds[0], raw, SNAP_SEC)
+      // 候选是 `allBeats` 的**全部** t（P1 的 snapStart 只读 t0+n·T 网格）：手动加的卡点
+      // 若不进候选，用户在时间轴上亲手标的那一刀反而吸不上，是最反直觉的一种失灵。
+      const snapped = snapToBeats(d.beats, raw, SNAP_SEC)
       ed.applyTransient(moveShotBy(d.base, d.shot, snapped - d.shot.startSec))
     } else {
       ed.applyTransient(resizeLayer(d.base, d.layerId, d.baseDuration + deltaSec))
@@ -189,12 +189,79 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
     releaseArea(e.pointerId)
   }
 
+  /**
+   * 「检出未用」的拍点点一下 = **切分镜**（§5）。
+   *
+   * 语义与手动拖拽**同一函数**：找 `startSec` 距该拍最近的分镜，把它整组平移到该拍
+   * （`moveShotBy(spec, shot, t - shot.startSec)`）——即「把最近的一条分镜边界吸到这一拍」。
+   * 不新建分镜、不切断图层：spec 的分镜是语义段派生的，凭一个拍点造不出新段，
+   * 「切」在这里只能是「把已有的那一刀挪到拍上」。
+   * `moveShotBy` 会被邻居/片长钳住，钳成 0 位移时给提示而不是压一格空 undo。
+   */
+  function cutShotAt(t: number) {
+    if (!usable || shots.length === 0) return
+    const shot = shots.reduce((a, b) => (Math.abs(b.startSec - t) < Math.abs(a.startSec - t) ? b : a))
+    const next = moveShotBy(usable, shot, t - shot.startSec)
+    const id = shot.layerIds[0]
+    const before = usable.layers.find((l) => l.id === id)?.start
+    const after = next.layers.find((l) => l.id === id)?.start
+    if (before === after) { onNotice('该拍点处放不下分镜边界（被相邻分镜或片长挡住了）'); return }
+    ed.commit()
+    ed.apply(next)
+    onSelectLayer(preferredLayerId(usable, shot))
+    onNotice(`已把这一镜的入点移到 ${fmtTimecode(t)}`)
+  }
+
+  async function removeBeatAt(t: number) {
+    if (!usable) return
+    if (!(await confirm({ title: '删除此手动卡点？', body: `${fmtTimecode(t)} 处的手动卡点将被移除（可 ⌘/Ctrl+Z 撤销）。`, danger: true }))) return
+    // await 期间用户可能已经切了内容项/改了 spec：重新从 ed.spec 取，别用捕获的旧 usable
+    const cur = ed.spec
+    if (!cur || isUnsupported(cur)) return
+    const next = removeManualBeat(cur, t)
+    if (next === cur) { onNotice('这个卡点已经不在了'); return }
+    ed.commit()
+    ed.apply(next)
+    onNotice('已删除手动卡点')
+  }
+
+  /**
+   * 卡点轨空白**双击** = 加一个手动卡点。
+   *
+   * 不用 `onDoubleClick`：轨道区在 pointerdown 时会 `setPointerCapture`（scrub 用），
+   * Chrome 于是把随后的 click/dblclick 打到**捕获元素（轨道区）**上——卡点轨是它的子节点，
+   * 事件不会向下冒到这里，`ondblclick` 一次都不会触发（实测就是不响应）。
+   * 所以在自己的 pointerdown 里按「350ms 内、位移 <6px」判定双击，这条路不受捕获影响。
+   */
+  const DBL_MS = 350
+  const DBL_PX = 6
+  function onBeatTrackPointerDown(e: ReactPointerEvent) {
+    const now = e.timeStamp || Date.now()
+    const prev = lastTapRef.current
+    if (prev && now - prev.t <= DBL_MS && Math.abs(e.clientX - prev.x) <= DBL_PX) {
+      lastTapRef.current = null
+      addBeatAtClientX(e.clientX)
+      return
+    }
+    lastTapRef.current = { t: now, x: e.clientX }
+  }
+
+  function addBeatAtClientX(clientX: number) {
+    if (!usable) return
+    const t = Math.min(Math.max(0, secAtClientX(clientX)), duration)
+    const next = addManualBeat(usable, t)
+    if (next === usable) { onNotice('这里已经有卡点了'); return }
+    ed.commit()
+    ed.apply(next)
+    onNotice(`已在 ${fmtTimecode(t)} 加卡点`)
+  }
+
   const pct = (sec: number) => (duration > 0 ? `${(sec / duration) * 100}%` : '0%')
 
   return (
     <section
       className={`overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)] ${className ?? ''}`}
-      style={{ height: 186, boxSizing: 'border-box' }}
+      style={{ height: containerH, boxSizing: 'border-box' }}
     >
       <div
         className="flex items-center gap-3 border-b border-[var(--fc-line)] px-3"
@@ -238,7 +305,7 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
             {/* 刻度轨 20 */}
             <div
               className="relative border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[0].h, boxSizing: 'border-box' }}
+              style={{ height: trackH('ruler'), boxSizing: 'border-box' }}
             >
               {Array.from({ length: Math.floor(duration) + 1 }, (_, s) => (
                 <div key={s} className="absolute bottom-0" style={{ left: pct(s) }}>
@@ -253,7 +320,7 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
             {/* 分镜轨 46：Clip 高 38，宽用 flex 比例（§5），空隙用同口径的占位撑开 */}
             <div
               className="flex items-center border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[1].h, boxSizing: 'border-box', padding: '4px 0' }}
+              style={{ height: trackH('shots'), boxSizing: 'border-box', padding: '4px 0' }}
             >
               {layoutRow(shots, duration).map((cell) => (
                 cell.kind === 'gap' ? (
@@ -274,40 +341,90 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
               ))}
             </div>
 
-            {/* 字幕轨 30：细条，只显示 + 点选，不可拖 */}
+            {/* 字幕轨 30：细条，只显示 + 点选，不可拖。<1040 隐藏（§4：只留分镜+卡点两轨） */}
+            {!compact && (
+              <div
+                className="relative border-b border-[var(--fc-track)]"
+                style={{ height: trackH('caption'), boxSizing: 'border-box' }}
+              >
+                {captions.map((l) => (
+                  <div
+                    key={l.id}
+                    title="字幕跟随旁白，不可拖"
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      onSelectLayer(l.id)
+                      seekToSec(l.start)
+                    }}
+                    className={`absolute cursor-pointer overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
+                      selectedLayerId === l.id
+                        ? 'bg-[var(--fc-accent-tint)] text-[var(--fc-accent-deep)]'
+                        : 'bg-[var(--fc-sunken)] text-[var(--fc-muted)]'
+                    }`}
+                    style={{
+                      left: pct(l.start), width: pct(l.duration), top: 8, height: 14,
+                      boxSizing: 'border-box',
+                      border: selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
+                    }}
+                  >
+                    {l.content.kind === 'caption' ? l.content.text : ''}
+                  </div>
+                ))}
+                {captions.length === 0 && (
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">这条视频没有字幕图层</span>
+                )}
+              </div>
+            )}
+
+            {/* BGM 轨 30：波形柱状图。无 bgm / 波形取不到都只是灰字，不挡任何编辑动作。<1040 隐藏 */}
+            {!compact && (
+              <div
+                className="relative border-b border-[var(--fc-track)]"
+                style={{ height: trackH('bgm'), boxSizing: 'border-box' }}
+              >
+                {!bgmSrc ? (
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">无背景乐</span>
+                ) : wave.status === 'loading' || wave.status === 'idle' ? (
+                  // idle 只是「effect 还没跑」的那一帧（bgm 已存在），与 loading 同样显示占位
+                  <div className="absolute inset-x-2 top-2">
+                    <div className="h-3.5 animate-pulse rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)]" />
+                  </div>
+                ) : wave.status === 'error' ? (
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">波形不可用</span>
+                ) : (
+                  <WaveformCanvas peaks={wave.peaks} height={trackH('bgm')} />
+                )}
+              </div>
+            )}
+
+            {/* 卡点轨 26：三态菱形 + 空白双击加点 */}
             <div
               className="relative border-b border-[var(--fc-track)]"
-              style={{ height: TRACKS[2].h, boxSizing: 'border-box' }}
+              style={{ height: trackH('beats'), boxSizing: 'border-box' }}
+              onPointerDown={onBeatTrackPointerDown}
+              title="双击空白处加一个手动卡点"
             >
-              {captions.map((l) => (
-                <div
-                  key={l.id}
-                  title="字幕跟随旁白，不可拖"
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    onSelectLayer(l.id)
-                    seekToSec(l.start)
-                  }}
-                  className={`absolute cursor-pointer overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
-                    selectedLayerId === l.id
-                      ? 'bg-[var(--fc-accent-tint)] text-[var(--fc-accent-deep)]'
-                      : 'bg-[var(--fc-sunken)] text-[var(--fc-muted)]'
-                  }`}
-                  style={{
-                    left: pct(l.start), width: pct(l.duration), top: 8, height: 14,
-                    boxSizing: 'border-box',
-                    border: selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
-                  }}
-                >
-                  {l.content.kind === 'caption' ? l.content.text : ''}
-                </div>
-              ))}
-              {captions.length === 0 && (
-                <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">这条视频没有字幕图层</span>
+              {!beatGrid && (
+                <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">
+                  无节拍数据——换曲或重新分析后可用
+                </span>
               )}
+              {beats.map((b) => (
+                <BeatMarker
+                  key={`${b.kind}-${b.t}`}
+                  beat={b}
+                  left={pct(b.t)}
+                  trackH={trackH('beats')}
+                  onActivate={() => {
+                    if (b.kind === 'derived') cutShotAt(b.t)
+                    else if (b.kind === 'manual') void removeBeatAt(b.t)
+                    else seekToSec(b.t)
+                  }}
+                />
+              ))}
             </div>
 
-            {/* 播放头：accent 竖线贯穿三轨。pointer-events:none，否则它会挡住底下 Clip 的拖拽 */}
+            {/* 播放头：accent 竖线贯穿全部轨道。pointer-events:none，否则它会挡住底下 Clip 的拖拽 */}
             <div
               className="pointer-events-none absolute top-0"
               style={{
@@ -327,37 +444,6 @@ export default function TimelinePane({ ed, playerRef, currentSec, selectedLayerI
 function preferredLayerId(spec: VideoSpec, shot: ShotView): string {
   const text = shot.layerIds.filter((id) => spec.layers.find((l) => l.id === id)?.content.kind === 'text')
   return text.length === 1 ? text[0] : shot.layerIds[0]
-}
-
-type Cell =
-  | { kind: 'gap'; key: string; weight: number }
-  | { kind: 'clip'; key: string; weight: number; shot: ShotView }
-
-/**
- * 把分镜排成一行 flex 单元：`flex: 时长×10 1 0`（§5，**不用百分比**）。
- * 分镜之间和首尾的空隙也占一个同口径的占位，否则「权重 : 时间」不再是 1:1，
- * Clip 的边缘就会和刻度、播放头对不上——那正是时间轴最不能出的错。
- */
-export function layoutRow(shots: ShotView[], duration: number): Cell[] {
-  const cells: Cell[] = []
-  const w = (sec: number) => Math.max(0, sec) * 10
-  const sorted = [...shots].sort((a, b) => a.startSec - b.startSec)
-  let cursor = 0
-  for (let i = 0; i < sorted.length; i++) {
-    const shot = sorted[i]
-    if (shot.startSec > cursor) cells.push({ kind: 'gap', key: `gap-${shot.sectionId}`, weight: w(shot.startSec - cursor) })
-    // **重叠的分镜要把权重裁掉**：分镜之间本不该重叠，但语义段的图层区间是派生出来的，撞上一次
-    // 就足以让「权重总和 > 片长×10」——flex 会把整轨等比压缩，于是**每一个** Clip 都跟刻度和
-    // 播放头对不上（错位随重叠量放大）。裁成 [max(start,cursor), min(end, 下一段 start)] 这一段，
-    // 宁可把重叠的那截画短，也不让整轨失准。
-    const next = sorted[i + 1]
-    const from = Math.max(shot.startSec, cursor)
-    const to = Math.min(shot.endSec, next ? Math.max(next.startSec, from) : Infinity)
-    cells.push({ kind: 'clip', key: shot.sectionId, weight: w(to - from), shot })
-    cursor = Math.max(cursor, to)
-  }
-  if (duration > cursor) cells.push({ kind: 'gap', key: 'gap-tail', weight: w(duration - cursor) })
-  return cells
 }
 
 /**
@@ -403,5 +489,144 @@ function Clip({ shot, weight, current, dragging, onPointerDown }: {
         />
       </div>
     </div>
+  )
+}
+
+type WaveState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ok'; peaks: number[] }
+
+/**
+ * BGM 波形（`GET /specs/:videoId/waveform`，≤1000 个 0..1 的 peak）。
+ *
+ * **按 `videoId + bgm.src` 缓存在组件外的 Map 里**：换曲（src 变）才重取，来回切内容项、
+ * 或 spec 每次编辑导致的重渲都不再打服务端——波形只跟音频文件有关，跟剪辑改动无关。
+ * 失败（404 无 bgm / 503 ffmpeg 不可用）**不进缓存**：那多半是环境态（换机、装好 ffmpeg
+ * 就好了），缓存下来会让「一次失败＝这条内容这辈子都没波形」。
+ */
+const waveCache = new Map<string, number[]>()
+
+function useWaveform(slug: string, videoId: string | null, bgmSrc: string | null): WaveState {
+  const [state, setState] = useState<WaveState>({ status: 'idle' })
+  useEffect(() => {
+    if (!slug || !videoId || !bgmSrc) { setState({ status: 'idle' }); return }
+    const key = `${slug}|${videoId}|${bgmSrc}`
+    const hit = waveCache.get(key)
+    if (hit) { setState({ status: 'ok', peaks: hit }); return }
+    let alive = true
+    setState({ status: 'loading' })
+    fetch(`/api/projects/${slug}/specs/${videoId}/waveform`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return (await r.json()) as { peaks: number[]; durationSec: number }
+      })
+      .then((body) => {
+        const peaks = Array.isArray(body.peaks) ? body.peaks : []
+        if (peaks.length === 0) throw new Error('空波形')
+        waveCache.set(key, peaks)
+        if (alive) setState({ status: 'ok', peaks })
+      })
+      .catch(() => { if (alive) setState({ status: 'error' }) })
+    return () => { alive = false }
+  }, [slug, videoId, bgmSrc])
+  return state
+}
+
+/**
+ * 波形柱状图。
+ *
+ * 画在 `<canvas>` 而不是几百个 div：一千根柱子的 DOM 会把整条时间轴的每次重渲都拖慢。
+ * **宽度靠 ResizeObserver 重画**：canvas 的位图尺寸不会跟着 CSS 宽度走，只设 `style.width`
+ * 会把图横向拉伸成一团；这里每次容器宽变就按 devicePixelRatio 重设位图并重画。
+ */
+function WaveformCanvas({ peaks, height }: { peaks: number[]; height: number }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const wrap = wrapRef.current
+    const canvas = canvasRef.current
+    if (!wrap || !canvas) return
+    function draw() {
+      const w = Math.max(1, Math.floor(wrap!.clientWidth))
+      const dpr = window.devicePixelRatio || 1
+      canvas!.width = Math.floor(w * dpr)
+      canvas!.height = Math.floor(height * dpr)
+      const ctx = canvas!.getContext('2d')
+      if (!ctx) return
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, w, height)
+      // 线色取自 CSS 变量：主题换了波形也跟着换，不硬编码颜色
+      ctx.fillStyle = getComputedStyle(canvas!).getPropertyValue('--fc-line-2').trim() || '#c9ccc2'
+      const mid = height / 2
+      const maxH = height - 4
+      // 一根柱子 2px（1px 柱 + 1px 缝）：柱数由**像素宽**定，peaks 多于柱数时取区间最大值，
+      // 少于柱数时按比例重复——两种方向都不能让波形被裁掉一截。
+      const bars = Math.max(1, Math.floor(w / 2))
+      for (let i = 0; i < bars; i++) {
+        const from = Math.floor((i / bars) * peaks.length)
+        const to = Math.max(from + 1, Math.floor(((i + 1) / bars) * peaks.length))
+        let peak = 0
+        for (let k = from; k < to && k < peaks.length; k++) peak = Math.max(peak, peaks[k] ?? 0)
+        const h = Math.max(1, peak * maxH)
+        ctx.fillRect(i * 2, mid - h / 2, 1, h)
+      }
+    }
+    draw()
+    const ro = new ResizeObserver(draw)
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [peaks, height])
+
+  return (
+    <div ref={wrapRef} className="absolute inset-0">
+      <canvas ref={canvasRef} style={{ width: '100%', height }} />
+    </div>
+  )
+}
+
+/**
+ * §5 `BeatMarker`：11×11 菱形（8×8 方块转 45°，对角线正好 ≈11.3px），`left` 用百分比。
+ *
+ * 三态：`strong`＝已用（实心 accent，点＝定位播放头）/ `derived`＝检出未用（实心灰，
+ * **点一下切分镜**）/ `manual`＝手动加的（描边墨色，点＝删除，重新分析不覆盖）。
+ *
+ * `pointerdown` 必须 `stopPropagation`：轨道区的 pointerdown 是「定位播放头 + 开始 scrub」，
+ * 不拦的话点一颗菱形会顺手把播放头挪走；同时它也把卡点轨的双击判定挡在外面——
+ * 连点两下一颗菱形不会在原地又补一个手动点。
+ */
+function BeatMarker({ beat, left, trackH, onActivate }: {
+  beat: Beat
+  left: string
+  trackH: number
+  onActivate: () => void
+}) {
+  const size = 8
+  const style: CSSProperties = {
+    position: 'absolute',
+    left,
+    top: (trackH - size) / 2,
+    width: size,
+    height: size,
+    boxSizing: 'border-box',
+    transform: 'translateX(-50%) rotate(45deg)',
+    background: beat.kind === 'strong' ? 'var(--fc-accent)' : beat.kind === 'derived' ? 'var(--fc-line-2)' : 'transparent',
+    border: beat.kind === 'manual' ? '1px solid var(--fc-ink)' : undefined,
+    cursor: 'pointer',
+  }
+  const title = beat.kind === 'strong'
+    ? `${fmtTimecode(beat.t)} 重音拍（已用）——点击定位播放头`
+    : beat.kind === 'derived'
+      ? `${fmtTimecode(beat.t)} 检出未用——点一下把最近的分镜入点移到这一拍`
+      : `${fmtTimecode(beat.t)} 手动卡点——点击删除`
+  return (
+    <div
+      style={style}
+      title={title}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onActivate() }}
+    />
   )
 }

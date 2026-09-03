@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { HOOK_LABEL, STATUS_LABEL, type ContentItemView } from '../api'
+import { useConfirm } from './ui/Confirm'
 
 /** StatusTag：高 20，Mono 10，永远不可点（span 非 button）。五态样式见 docs/剪辑台-实施说明.md §5。 */
 export function StatusTag({ status, progress }: { status: ContentItemView['status']; progress: number | null }) {
@@ -50,6 +51,7 @@ export default function ContentCard({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { confirm, element: confirmEl } = useConfirm()
 
   useEffect(() => {
     if (!menuOpen) return
@@ -128,7 +130,8 @@ export default function ContentCard({
               className="block w-full px-3 py-1.5 text-left text-xs text-[var(--fc-accent)] hover:bg-[var(--fc-accent-tint)]"
               onClick={() => {
                 setMenuOpen(false)
-                if (window.confirm('删除这条内容及其封面/视频素材（含历史版本）？不可恢复')) onDelete(item)
+                confirm({ title: '删除这条内容？', body: '及其封面/视频素材（含历史版本）一并删除，不可恢复', danger: true, okLabel: '删除' })
+                  .then((ok) => { if (ok) onDelete(item) })
               }}
             >
               删除
@@ -136,6 +139,7 @@ export default function ContentCard({
           </div>
         )}
       </div>
+      {confirmEl}
     </div>
   )
 }

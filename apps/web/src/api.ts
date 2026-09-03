@@ -167,3 +167,8 @@ export const STATUS_LABEL: Record<ContentStatus, string> = {
 export const ASSET_STATUS_LABEL: Record<string, string> = {
   draft: '待审', approved: '已通过', published: '已发布',
 }
+
+/** assets.platform 的展示映射（发布工位写入的平台键）——同 ASSET_STATUS_LABEL，不在组件里硬编码枚举 */
+export const PLATFORM_LABEL: Record<string, string> = {
+  douyin: '抖音', xiaohongshu: '小红书', xhs: '小红书', bilibili: 'B 站', wechat: '视频号', kuaishou: '快手',
+}

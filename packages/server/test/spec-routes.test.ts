@@ -344,3 +344,217 @@ describe('rewrite-section 端点', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('pick-bgm 换曲 + 节拍重分析', () => {
+  const BGM_REL = 'tense/a.mp3'
+  function seedBgm() {
+    fs.mkdirSync(path.join(root, 'templates/bgm/tense'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'templates/bgm/tense/a.mp3'), 'fake')
+    return path.join(root, 'templates/bgm', BGM_REL)
+  }
+  /** analyzeBeats 先读 `<bgm>.beats.json` 缓存（见 hyperframes.ts）——测试就用它当成功替身，不 spawn python。 */
+  function seedBeatCache(bgmAbs: string) {
+    fs.writeFileSync(`${bgmAbs}.beats.json`, JSON.stringify({
+      t0: 0.25, T: 0.5, bpm: 120, beats: [0.25, 0.75, 1.25], strongBeats: [0.25, 2.25], duration: 24,
+    }))
+  }
+  function seedSpec(videoId: string, audio: Record<string, unknown>) {
+    fs.mkdirSync(path.dirname(specPath(videoId)), { recursive: true })
+    fs.writeFileSync(specPath(videoId), JSON.stringify({
+      ...validSpec(videoId),
+      audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false, ...audio },
+    }))
+  }
+  const post = (body: unknown, videoId = 'deadbeef01') => app.request(`/api/projects/s1/specs/${videoId}/pick-bgm`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+
+  it('换曲成功：bgm 更新 + beatGrid 重分析 + manualBeats 保留', async () => {
+    const abs = seedBgm(); seedBeatCache(abs)
+    seedSpec('deadbeef01', { bgm: { src: '/old/x.mp3', mood: 'warm' }, beatGrid: { t0: 9, T: 9, bpm: 9, strongBeats: [9], manualBeats: [1.5, 3.25] } })
+    const res = await post({ bgm: BGM_REL, mood: 'tense' })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.audio.bgm).toEqual({ src: abs, mood: 'tense' })
+    expect(body.audio.beatGrid.bpm).toBe(120)
+    expect(body.audio.beatGrid.t0).toBe(0.25)
+    expect(body.audio.beatGrid.strongBeats).toEqual([0.25, 2.25])
+    expect(body.audio.beatGrid.manualBeats).toEqual([1.5, 3.25]) // 手动卡点不被自动重分析覆盖
+    const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
+    expect(onDisk.audio.beatGrid.manualBeats).toEqual([1.5, 3.25])
+    expect(onDisk.audio.bgm.src).toBe(abs)
+  })
+
+  it('曲库为空 → 400', async () => {
+    seedSpec('deadbeef01', {})
+    const res = await post({ mood: 'tense' })
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toContain('曲库')
+  })
+
+  it('bgm 路径穿越 → 400', async () => {
+    seedBgm()
+    seedSpec('deadbeef01', {})
+    const res = await post({ bgm: '../../../etc/hosts' })
+    expect(res.status).toBe(400)
+  })
+
+  it('节拍分析失败 → 仍换曲 + warning + manualBeats 保留（beatGrid 不整块置 null）', async () => {
+    const abs = seedBgm() // 不写 .beats.json，beatPython 为空 → spawn 失败 → analyzeBeats 返 null
+    seedSpec('deadbeef01', { beatGrid: { t0: 1, T: 0.5, bpm: 120, strongBeats: [1], manualBeats: [2.5] } })
+    const res = await post({ bgm: BGM_REL })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.audio.bgm.src).toBe(abs) // 换曲照做
+    expect(body.audio.beatGrid).toEqual({ t0: 0, T: 0, bpm: 0, strongBeats: [], manualBeats: [2.5] })
+    expect(body.warnings).toContain('节拍分析失败，卡点吸附不可用')
+  })
+
+  it('节拍分析失败且原本无手动卡点 → beatGrid 置 null', async () => {
+    seedBgm()
+    seedSpec('deadbeef01', { beatGrid: { t0: 1, T: 0.5, bpm: 120, strongBeats: [1] } })
+    const body = await (await post({ bgm: BGM_REL })).json() as any
+    expect(body.audio.beatGrid).toBeNull()
+  })
+
+  it('spec 不存在 → 404；videoId 非法 → 400', async () => {
+    expect((await post({ bgm: BGM_REL })).status).toBe(404)
+    expect((await app.request(`/api/projects/s1/specs/${encodeURIComponent('../x')}/pick-bgm`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })).status).toBe(400)
+  })
+})
+
+describe('waveform 波形 peaks', () => {
+  /**
+   * 已知时长的 WAV：44 字节头 + 8kHz 单声道 16bit 的 10Hz 正弦，避免依赖任何外部素材。
+   * ⚠️ 波形要 10Hz 这种**低频**：端点会把音频重采样到 200Hz，高频（如逐样本翻正负的
+   * 4kHz 方波）会被抗混叠低通滤干净，读回来是一片近似静音，测不出振幅。
+   */
+  function writeWav(abs: string, seconds: number, amp = 16000) {
+    const rate = 8000, n = rate * seconds
+    const data = Buffer.alloc(n * 2)
+    for (let i = 0; i < n; i++) data.writeInt16LE(Math.round(amp * Math.sin((2 * Math.PI * 10 * i) / rate)), i * 2)
+    const head = Buffer.alloc(44)
+    head.write('RIFF', 0); head.writeUInt32LE(36 + data.length, 4); head.write('WAVE', 8)
+    head.write('fmt ', 12); head.writeUInt32LE(16, 16); head.writeUInt16LE(1, 20); head.writeUInt16LE(1, 22)
+    head.writeUInt32LE(rate, 24); head.writeUInt32LE(rate * 2, 28); head.writeUInt16LE(2, 32); head.writeUInt16LE(16, 34)
+    head.write('data', 36); head.writeUInt32LE(data.length, 40)
+    fs.mkdirSync(path.dirname(abs), { recursive: true })
+    fs.writeFileSync(abs, Buffer.concat([head, data]))
+    return abs
+  }
+  function seedSpecWithBgm(videoId: string, src: string | null) {
+    fs.mkdirSync(path.dirname(specPath(videoId)), { recursive: true })
+    fs.writeFileSync(specPath(videoId), JSON.stringify({
+      ...validSpec(videoId),
+      audio: { narration: null, bgm: src ? { src, mood: null } : null, beatGrid: null, captionsEnabled: false },
+    }))
+  }
+
+  it('返回 ≤1000 个 0..1 的 peaks 与正确 durationSec', async () => {
+    const wav = writeWav(path.join(root, 'templates/bgm/tone.wav'), 12)
+    seedSpecWithBgm('deadbeef01', wav)
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(Array.isArray(body.peaks)).toBe(true)
+    expect(body.peaks.length).toBeGreaterThan(0)
+    expect(body.peaks.length).toBeLessThanOrEqual(1000)
+    for (const p of body.peaks) expect(p).toBeGreaterThanOrEqual(0)
+    for (const p of body.peaks) expect(p).toBeLessThanOrEqual(1)
+    expect(Math.max(...body.peaks)).toBeGreaterThan(0.2) // 非静音，确实读到了样本
+    expect(body.durationSec).toBeGreaterThan(11.5)
+    expect(body.durationSec).toBeLessThan(12.5)
+  })
+
+  it('第二次命中缓存，结果一致', async () => {
+    const wav = writeWav(path.join(root, 'templates/bgm/tone.wav'), 3)
+    seedSpecWithBgm('deadbeef01', wav)
+    const a = await (await app.request('/api/projects/s1/specs/deadbeef01/waveform')).json() as any
+    const b = await (await app.request('/api/projects/s1/specs/deadbeef01/waveform')).json() as any
+    expect(b).toEqual(a)
+  })
+
+  it('spec 无 bgm → 404', async () => {
+    seedSpecWithBgm('deadbeef01', null)
+    expect((await app.request('/api/projects/s1/specs/deadbeef01/waveform')).status).toBe(404)
+  })
+
+  it('bgm 文件缺失 → 404', async () => {
+    seedSpecWithBgm('deadbeef01', path.join(root, 'templates/bgm/missing.wav'))
+    expect((await app.request('/api/projects/s1/specs/deadbeef01/waveform')).status).toBe(404)
+  })
+
+  it('ffmpeg 解不开的文件（非零退出）→ 503', async () => {
+    const bad = path.join(root, 'templates/bgm/bad.wav')
+    fs.mkdirSync(path.dirname(bad), { recursive: true })
+    fs.writeFileSync(bad, 'not audio at all')
+    seedSpecWithBgm('deadbeef01', bad)
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(503)
+    expect((await res.json() as any).error).toContain('波形不可用')
+  })
+
+  it('bgm.src 落在 templates/workspace 之外（如 /etc/hosts）→ 400，不 spawn ffmpeg', async () => {
+    seedSpecWithBgm('deadbeef01', '/etc/hosts')
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toContain('路径非法')
+  })
+
+  it('bgm.src 用 ../ 试图逃出 templates 子树 → 400', async () => {
+    // templates/bgm/../../../etc/hosts 解析出去就落在两棵子树之外
+    const escaped = path.join(root, 'templates/bgm/../../../etc/hosts')
+    seedSpecWithBgm('deadbeef01', escaped)
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toContain('路径非法')
+  })
+
+  it('bgm.src 落在 workspace 子树内（非 templates）也放行——两棵子树都认', async () => {
+    const wav = writeWav(path.join(root, 'workspace/s1/uploads/tone.wav'), 3)
+    seedSpecWithBgm('deadbeef01', wav)
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/waveform')
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('decodeMono 超时', () => {
+  it('DECODE_TIMEOUT_MS 已接线为 30s', async () => {
+    const { DECODE_TIMEOUT_MS } = await import('../src/spec-routes')
+    expect(DECODE_TIMEOUT_MS).toBe(30_000)
+  })
+
+  it('ffmpeg 卡住不返回时，timeoutMs 到点 kill 子进程并 resolve(\'timeout\')', async () => {
+    // 命名管道（FIFO）：open() 供 ffmpeg 读取会一直阻塞到有写端连上——我们不写，制造一次
+    // 真实的「读不完」，而不是伪造。用极小的 timeoutMs（30ms）避免这条用例拖慢整个套件。
+    const { execFileSync } = await import('node:child_process')
+    const { decodeMono } = await import('../src/spec-routes')
+    const fifo = path.join(root, 'stuck.fifo')
+    execFileSync('mkfifo', [fifo])
+    const start = Date.now()
+    const result = await decodeMono(fifo, 30)
+    expect(result).toBe('timeout')
+    expect(Date.now() - start).toBeLessThan(5000) // 确实是超时触发的，不是巧合地跑完了
+  })
+})
+
+describe('PUT 保留内层 manualBeats', () => {
+  it('pickKnownSpecFields 只剥顶层，audio.beatGrid.manualBeats 原样过闸', async () => {
+    const spec = {
+      ...validSpec('deadbeef01'),
+      audio: {
+        narration: null, bgm: { src: '/x.mp3', mood: null },
+        beatGrid: { t0: 0.5, T: 0.5, bpm: 120, strongBeats: [0.5], manualBeats: [1.25, 4.75] },
+        captionsEnabled: false,
+      },
+    }
+    const res = await app.request('/api/projects/s1/specs/deadbeef01', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+    })
+    expect(res.status).toBe(200)
+    const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
+    expect(onDisk.audio.beatGrid.manualBeats).toEqual([1.25, 4.75])
+  })
+})

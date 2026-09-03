@@ -2,11 +2,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { api, type CustomTemplate } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
+import { useConfirm } from '../../components/ui/Confirm'
 import { useTaskRun } from '../../useTaskRun'
 
 /** 模板库 tab：上传对标视频 → 拆解节奏 → LLM 设计模板 → 落库；列表展示已有自定义模板。 */
 export default function TemplatesTab() {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const fileRef = useRef<HTMLInputElement>(null)
   const [aspectRatio, setAspectRatio] = useState<'portrait' | 'landscape'>('portrait')
   const [name, setName] = useState('')
@@ -37,7 +39,7 @@ export default function TemplatesTab() {
   }
 
   async function remove(id: number) {
-    if (!confirm('删除这个模板？已渲染过的视频不受影响。')) return
+    if (!(await confirm({ title: '删除这个模板？', body: '已渲染过的视频不受影响。', danger: true, okLabel: '删除' }))) return
     await fetch(`/api/templates/${id}`, { method: 'DELETE' })
     qc.invalidateQueries({ queryKey: ['templates'] })
   }
@@ -82,6 +84,7 @@ export default function TemplatesTab() {
         ))}
         {templates.data?.length === 0 && <p className="col-span-3 text-sm text-faint">还没有自定义模板，上传一条对标视频生成第一个。</p>}
       </div>
+      {confirmEl}
     </div>
   )
 }

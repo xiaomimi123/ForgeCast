@@ -7,9 +7,10 @@ import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
 import { api, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
+import { useConfirm } from '../../../components/ui/Confirm'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
 import type { TaskRun } from '../../../useTaskRun'
 import InspectorPane from './InspectorPane'
@@ -28,12 +29,20 @@ const TOOLBAR_H = 46
 const MAT_H = 300
 const MAT_PAD = 18
 const TIMELINE_H = 186
+/** <1040 时间轴降到的高度（§4：只留分镜+卡点两轨）。见 TimelinePane 的 `compact` 注释。 */
+const TIMELINE_H_COMPACT = 148
 /**
  * 右栏收抽屉的阈值（§4 窄屏表：<1240 右栏收成抽屉，toolbar 出现「参数」按钮）。
  * 三栏一起摆下时中栏最小宽必须是 **560 而不是 620**：300 + 620 + 320 + 两道 8 的 gap = 1256 > 1240，
  * 于是 1240–1256 这一段窗口宽度里整块网格比视口宽，横向滚动条从页面底部冒出来。
  */
 const NARROW_PX = 1240
+/**
+ * 左栏收抽屉的阈值（§4：<1040 左栏也收成抽屉，时间轴同时降到 148 只留分镜+卡点两轨）。
+ * 两栏摆下（中栏+右栏）时同理要留够最小宽：620 + 320 + 一道 8 的 gap = 948 < 1040，够宽松，
+ * 不像 NARROW_PX 那样需要为了消灭中间那段横向滚动条把 MID_MIN 从 620 压到 560。
+ */
+const NARROW_LEFT_PX = 1040
 const MID_MIN = 560
 /** 9:16 画布：高度由 mat 高减上下留白得出，宽 = 高 × 0.5625 */
 const CANVAS_H = MAT_H - MAT_PAD * 2
@@ -51,7 +60,7 @@ export default function EditorPage({
   selected, hook, setHook, n, setN, busy, copyRun, videoRun, onGenerate,
   vp, setVp, bgmList, onMakeVideo,
   items, selectedItemId, onSelectItem, onDeleteItem, onCloseEditor,
-  transitionExtras,
+  leaveGuardRef, transitionExtras,
 }: {
   selected: string
   hook: string
@@ -72,6 +81,13 @@ export default function EditorPage({
   onDeleteItem: (item: ContentItemView) => void
   /** 「打回重做」：退出编辑态回到队列视角（不改库内状态，见 §5 —— 它是「这版不要了，去重做」的视角切换） */
   onCloseEditor: () => void
+  /**
+   * 未保存改动闸门的**出口**：本组件把 `confirmLeave` 挂进这个 ref，宿主（WorkshopPage）在
+   * 「切走剪辑台 tab」前 await 它。tab 是条件渲染 ⇒ 切走即卸载 ⇒ 编辑态（useEditorState 的内存态）
+   * 连同未保存改动一起消失，所以闸必须由**宿主**在卸载前把住，组件内部拦不到这一步。
+   * 卸载时自动清空，宿主拿到 null 即「剪辑台没挂着，无改动可丢」。
+   */
+  leaveGuardRef?: MutableRefObject<(() => Promise<boolean>) | null>
   /** 过渡区：旧「拍摄脚本」「卡点」两个折叠面板，P1/P2 由分镜行与时间轴接管后删除 */
   transitionExtras?: ReactNode
 }) {
@@ -82,6 +98,7 @@ export default function EditorPage({
   const videoId = specPath ? videoIdFromSpecPath(specPath) : null
 
   const ed = useEditorState(selected, videoId)
+  const { confirm, confirm3, element: confirmEl, open: confirmOpen } = useConfirm()
   const playerRef = useRef<PlayerRef>(null)
   /** 当前播放头（秒）。Task 9 的时间轴消费；这里先存住，保证 frameupdate 接线在骨架期就是通的。 */
   const [currentSec, setCurrentSec] = useState(0)
@@ -97,12 +114,24 @@ export default function EditorPage({
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
   /** 窄屏（<1240）时右栏收成抽屉；这个 state 是抽屉的开合。 */
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /** 窄屏（<1040）时左栏（队列）也收成抽屉；与右栏抽屉互斥（见 `toggleLeftDrawer`/`toggleRightDrawer`）。 */
+  const [leftDrawerOpen, setLeftDrawerOpen] = useState(false)
   /**
    * spec 被**整包换掉**的次数（重置为生成结果 / 重写这段）。右栏的参数草稿是「相对当前 spec 的
    * 改动」，spec 换了草稿就无所指——但这两条路径都不换内容项，光靠 `current.id` 察觉不到。
    */
   const [specEpoch, setSpecEpoch] = useState(0)
   const wide = useViewportAtLeast(NARROW_PX)
+  /** 左栏是否常驻（>=1040）。§4：<1040 左栏也收成抽屉，此时 `wide` 必然也是 false（1040<1240）。 */
+  const leftWide = useViewportAtLeast(NARROW_LEFT_PX)
+
+  /** 两个抽屉互斥：开一个先关掉另一个——两个都开时中栏会被两层浮层夹成一条缝。 */
+  function toggleRightDrawer() {
+    setDrawerOpen((v) => { if (!v) setLeftDrawerOpen(false); return !v })
+  }
+  function toggleLeftDrawer() {
+    setLeftDrawerOpen((v) => { if (!v) setDrawerOpen(false); return !v })
+  }
 
   // 换内容项时复位这条内容独有的临时状态
   useEffect(() => {
@@ -136,6 +165,8 @@ export default function EditorPage({
   undoRef.current = ed.undo
   const redoRef = useRef(ed.redo)
   redoRef.current = ed.redo
+  const confirmOpenRef = useRef(confirmOpen)
+  confirmOpenRef.current = confirmOpen
 
   // 快捷键：Ctrl/Cmd+Z 撤销、Shift+Ctrl/Cmd+Z 重做、Ctrl/Cmd+S 保存。
   // 输入框聚焦时不抢撤销/重做——那时用户要的是输入框自己的撤销栈。
@@ -156,6 +187,9 @@ export default function EditorPage({
       }
       if (key === 'z') {
         if (inField) return
+        // confirm 弹层开着时跳过：防「弹层里撤销后点保存并继续」把撤销后的版本保存下去——
+        // 弹层通常就是在问「要不要保存/丢弃」，此时改动态不该再被键盘悄悄改动。
+        if (confirmOpenRef.current) return
         e.preventDefault()
         if (e.shiftKey) redoRef.current()
         else undoRef.current()
@@ -173,31 +207,47 @@ export default function EditorPage({
 
   /**
    * 离开当前内容（切队列 / 关编辑态）前的未保存改动闸门。返回 true 表示可以走。
-   * 两段 confirm：第一段问「要不要先保存」，答否再问「确定丢弃吗」——关键是**不能无声丢**。
-   * 保存失败时不放行，否则「保存了」的错觉加上改动丢失是最坏的组合。
+   * 原来是两段 window.confirm（先问要不要保存，答否再问确定丢弃），现在合成一个 confirm3
+   * 三选弹层——'save'/'discard'/'cancel' 分别对应原来「确定＝保存并离开」「取消＋二次确定＝丢弃」
+   * 「取消＋二次取消＝停留」。**保存失败时不放行**：语义与替换前完全一致，否则「保存了」的
+   * 错觉加上改动丢失是最坏的组合。
    */
   async function confirmLeave(): Promise<boolean> {
     if (!ed.dirty) return true
-    if (confirm('有未保存的改动。要先保存吗？\n\n确定＝保存并离开；取消＝进入丢弃确认')) {
-      try {
-        await ed.save()
-        return true
-      } catch (e) {
-        setNotice(`保存失败，已留在当前内容：${e instanceof Error ? e.message : String(e)}`)
-        return false
-      }
+    const choice = await confirm3({ title: '有未保存的改动', body: '要先保存吗？丢弃改动无法撤销。' })
+    if (choice === 'cancel') return false
+    if (choice === 'discard') return true
+    try {
+      await ed.save()
+      return true
+    } catch (e) {
+      setNotice(`保存失败，已留在当前内容：${e instanceof Error ? e.message : String(e)}`)
+      return false
     }
-    return confirm('丢弃这些未保存的改动并离开？此操作不可撤销。')
   }
 
-  /** 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。 */
-  function selectItemGuarded(item: ContentItemView) {
-    if (item.id === selectedItemId) return
-    confirmLeave().then((ok) => { if (ok) onSelectItem(item) })
+  // 每次渲染都重挂：confirmLeave 闭包里的 ed 每帧都是新的，挂旧的会拿到过期的 dirty/save。
+  // 无依赖数组是刻意的（等价于「渲染后同步最新闭包」），卸载时清空见 leaveGuardRef 注释。
+  useEffect(() => {
+    if (!leaveGuardRef) return
+    leaveGuardRef.current = confirmLeave
+    return () => { leaveGuardRef.current = null }
+  })
+
+  /**
+   * 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。
+   * 返回是否真的切换了——调用方（窄屏左抽屉）据此决定要不要关抽屉：取消时抽屉别关，
+   * 否则用户在弹层里点「取消」后发现抽屉已经关了，找不到刚才点的队列在哪。
+   */
+  async function selectItemGuarded(item: ContentItemView): Promise<boolean> {
+    if (item.id === selectedItemId) return true
+    const ok = await confirmLeave()
+    if (ok) onSelectItem(item)
+    return ok
   }
 
   async function doReset() {
-    if (!confirm('重置为生成结果？剪辑台里的手工改动会全部丢弃，且不可撤销。')) return
+    if (!(await confirm({ title: '重置为生成结果？', body: '剪辑台里的手工改动会全部丢弃，且不可撤销。', danger: true }))) return
     try {
       await ed.resetToOrig()
       bumpSpecEpoch()
@@ -222,7 +272,7 @@ export default function EditorPage({
 
   async function doRenderFromSpec() {
     if (!selected || !videoId) return
-    if (!confirm('用当前编辑结果渲一版成片？\n旁白与字幕沿用上一版配音，改过的文字不会改配音。')) return
+    if (!(await confirm({ title: '用当前编辑结果渲一版成片？', body: '旁白与字幕沿用上一版配音，改过的文字不会改配音。' }))) return
     try {
       // 与「重写这段」「用新参数重渲」互斥：这里也是服务端读改写（视需要先 PUT 落盘，
       // 再 POST 入队渲染读盘），在途时若并发发出另一条会静默互覆盖磁盘。
@@ -261,21 +311,27 @@ export default function EditorPage({
       <div
         className="grid gap-2"
         style={{
-          // 窄屏（<1240）右栏收进抽屉，网格只剩两列——时间轴的 col-span 也跟着变，否则它会
-          // 多占一列、把整块网格撑宽。
-          gridTemplateColumns: wide ? `300px minmax(${MID_MIN}px,1fr) 320px` : `300px minmax(${MID_MIN}px,1fr)`,
-          gridTemplateRows: `minmax(0,1fr) ${TIMELINE_H}px`,
+          // 窄屏右栏（<1240）/ 左栏（<1040）依次收进抽屉，网格列数跟着少——时间轴的 col-span
+          // 也跟着变，否则它会多占一列、把整块网格撑宽。
+          gridTemplateColumns: wide
+            ? `300px minmax(${MID_MIN}px,1fr) 320px`
+            : leftWide
+              ? `300px minmax(${MID_MIN}px,1fr)`
+              : `minmax(${MID_MIN}px,1fr)`,
+          gridTemplateRows: `minmax(0,1fr) ${leftWide ? TIMELINE_H : TIMELINE_H_COMPACT}px`,
           height: 'calc(100vh - 190px)',
           minHeight: 620,
         }}
       >
-        {/* ── 左栏 300：内容队列（QueuePane，实施说明 §4）── */}
-        <QueuePane
-          selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
-          busy={busy} copyRun={copyRun} onGenerate={onGenerate}
-          items={items} selectedItemId={selectedItemId}
-          onSelectItem={selectItemGuarded} onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
-        />
+        {/* ── 左栏 300：内容队列（QueuePane，实施说明 §4）。<1040 时移到下面的左抽屉 ── */}
+        {leftWide && (
+          <QueuePane
+            selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
+            busy={busy} copyRun={copyRun} onGenerate={onGenerate}
+            items={items} selectedItemId={selectedItemId}
+            onSelectItem={selectItemGuarded} onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
+          />
+        )}
 
         {/* ── 中栏 Stage：toolbar 46 / preview mat 300 / 分镜列表 1fr ── */}
         <section
@@ -284,6 +340,10 @@ export default function EditorPage({
         >
           {/* toolbar */}
           <div className="flex items-center gap-2 border-b border-[var(--fc-line)] px-3">
+            {/* 窄屏（<1040）才出「队列」：左端，与右端「参数」对称——宽屏左栏一直在，多一个按钮只是噪声 */}
+            {!leftWide && (
+              <button className={OUTLINE} onClick={toggleLeftDrawer} title="打开左栏内容队列">队列</button>
+            )}
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-medium text-[var(--fc-ink)]">
                 {current ? `#${current.seq} ${current.title}` : '未选中内容'}
@@ -303,7 +363,7 @@ export default function EditorPage({
                 title="这版不要了：退出编辑态，回队列重做">打回重做</button>
               {/* 窄屏才出「参数」：宽屏右栏一直在，多一个按钮只是噪声 */}
               {!wide && (
-                <button className={OUTLINE} onClick={() => setDrawerOpen((v) => !v)}
+                <button className={OUTLINE} onClick={toggleRightDrawer}
                   title="打开右栏参数检查器">参数</button>
               )}
               <button className={SOLID} disabled={!canApprove} onClick={approve}>通过并送分发</button>
@@ -337,7 +397,7 @@ export default function EditorPage({
             <ShotList
               slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
               currentSec={currentSec} onNotice={setNotice} onSelectLayer={setSelectedLayerId}
-              onSpecReplaced={bumpSpecEpoch}
+              onSpecReplaced={bumpSpecEpoch} confirm={confirm}
             />
           </div>
         </section>
@@ -348,19 +408,22 @@ export default function EditorPage({
             ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
             vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
             onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
-            specEpoch={specEpoch}
+            specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
           />
         )}
 
-        {/* ── 时间轴 186 整宽（刻度 / 分镜 / 字幕 三轨）── */}
+        {/* ── 时间轴（刻度 / 分镜 / 字幕 / BGM / 卡点 五轨；<1040 降到 148 只留分镜+卡点两轨）── */}
         <TimelinePane
-          className={wide ? 'col-span-3' : 'col-span-2'}
+          className={wide ? 'col-span-3' : leftWide ? 'col-span-2' : 'col-span-1'}
+          slug={selected} videoId={videoId}
           ed={ed} playerRef={playerRef} currentSec={currentSec}
           selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+          onNotice={setNotice} confirm={confirm}
+          compact={!leftWide}
         />
       </div>
 
-      {/* 窄屏抽屉：右栏原样搬进来，宽度仍是 320——参数控件的排布是按这个宽度调的 */}
+      {/* 窄屏右抽屉：右栏原样搬进来，宽度仍是 320——参数控件的排布是按这个宽度调的 */}
       {!wide && drawerOpen && (
         <div className="fixed inset-0 z-30 flex justify-end bg-black/25" onClick={() => setDrawerOpen(false)}>
           <div className="h-full w-[320px] bg-[var(--fc-surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -371,7 +434,23 @@ export default function EditorPage({
               ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
               vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
-              specEpoch={specEpoch}
+              specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 窄屏左抽屉（<1040）：队列原样搬进来，宽度仍是 300，与右抽屉互斥（见 toggleLeftDrawer） */}
+      {!leftWide && leftDrawerOpen && (
+        <div className="fixed inset-0 z-30 flex justify-start bg-black/25" onClick={() => setLeftDrawerOpen(false)}>
+          <div className="h-full w-[300px] bg-[var(--fc-surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <QueuePane
+              className="h-full"
+              selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
+              busy={busy} copyRun={copyRun} onGenerate={onGenerate}
+              items={items} selectedItemId={selectedItemId}
+              onSelectItem={(item) => { selectItemGuarded(item).then((ok) => { if (ok) setLeftDrawerOpen(false) }) }}
+              onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
             />
           </div>
         </div>
@@ -385,6 +464,7 @@ export default function EditorPage({
       )}
 
       {transitionExtras}
+      {confirmEl}
     </div>
   )
 }

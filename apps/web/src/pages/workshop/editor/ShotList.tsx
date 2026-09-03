@@ -1,8 +1,9 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
 import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { deriveShots, updateLayerText, type ShotView } from '@forgecast/editing'
+import { addManualBeat, deriveShots, updateLayerText, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useState, type RefObject } from 'react'
+import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
 import { OUTLINE } from './ui'
 import type { useEditorState } from './useEditorState'
@@ -63,7 +64,7 @@ interface RewriteResp { spec: VideoSpec; newText: string }
  *   否则服务端读的是磁盘旧版本，返回的新 spec 一整包替换回来就把本地手改吃掉了。
  */
 export default function ShotList({
-  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced,
+  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced, confirm,
 }: {
   slug: string
   videoId: string | null
@@ -75,6 +76,8 @@ export default function ShotList({
   onSelectLayer: (layerId: string | null) => void
   /** spec 被整包换掉了（重写返回的是一整份新 spec）——右栏的参数草稿据此作废。 */
   onSpecReplaced: () => void
+  /** in-app 确认弹层，与 EditorPage 共享同一个 useConfirm 实例（同时只有一个弹层）。 */
+  confirm: (opts: ConfirmOpts) => Promise<boolean>
 }) {
   const spec = ed.spec
   const shots = useMemo(() => (spec && !isUnsupported(spec) ? deriveShots(spec) : []), [spec])
@@ -112,6 +115,19 @@ export default function ShotList({
     setDraft(null)
   }
 
+  /**
+   * 「加卡点」：在这一镜的入点加一个手动卡点（进 undo，⌘/Ctrl+Z 可回退）。
+   * 手动点会进时间轴卡点轨（描边墨色）并参与拖拽吸附——所以「把下一镜对到这一刀」是可行的。
+   * 幂等：同一位置（±0.01s）已有卡点时 `addManualBeat` 返回同一引用，这里只提示、不压 undo。
+   */
+  function addBeat(shot: ShotView) {
+    if (!spec) return
+    const next = addManualBeat(spec, shot.startSec)
+    if (next === spec) { onNotice(`${fmtTimecode(shot.startSec)} 处已经有卡点了`); return }
+    ed.apply(next)
+    onNotice(`已在 ${fmtTimecode(shot.startSec)} 加卡点`)
+  }
+
   async function doRewrite(shot: ShotView) {
     if (!slug || !videoId || !spec) return
     // **上锁必须在第一个 await 之前**：下面的 save 也是异步的，锁若等到 save 之后再上，
@@ -144,7 +160,7 @@ export default function ShotList({
         if (res.status === 409) {
           const body = await res.json().catch(() => ({})) as { affected?: string[] }
           const list = (body.affected ?? []).join('、') || '（未知图层）'
-          if (!confirm(`该段含手工改动，重写将覆盖：${list}。继续？`)) { onNotice('已取消重写'); return true }
+          if (!(await confirm({ title: '该段含手工改动', body: `重写将覆盖：${list}。继续？`, danger: true }))) { onNotice('已取消重写'); return true }
           res = await post(true)
         }
         if (!res.ok) {
@@ -199,6 +215,7 @@ export default function ShotList({
               onChange={(v) => setDraft({ id: shot.sectionId, base: shot.text, value: v })}
               onCommit={commitDraft}
               onRewrite={() => doRewrite(shot)}
+              onAddBeat={() => addBeat(shot)}
             />
           ))}
         </div>
@@ -209,7 +226,7 @@ export default function ShotList({
 
 /** 单行分镜（§5：collapsed 底 --fc-bg / 1px 线 / padding 9,11；active 底白 / 左 3px accent / padding 11 + 操作条）。 */
 function ShotRow({
-  shot, active, busy, locked, value, onSelect, onChange, onCommit, onRewrite,
+  shot, active, busy, locked, value, onSelect, onChange, onCommit, onRewrite, onAddBeat,
 }: {
   shot: ShotView
   active: boolean
@@ -221,6 +238,7 @@ function ShotRow({
   onChange: (v: string) => void
   onCommit: () => void
   onRewrite: () => void
+  onAddBeat: () => void
 }) {
   const rows = Math.min(8, Math.max(2, value.split('\n').length + Math.floor(value.length / 28)))
   return (
@@ -280,7 +298,13 @@ function ShotRow({
             {busy ? '重写中…' : '重写这段'}
           </button>
           <button className={`${OUTLINE} !py-1 !text-xs`} disabled title="P2">换画面素材</button>
-          <button className={`${OUTLINE} !py-1 !text-xs`} disabled title="P2">加卡点</button>
+          <button
+            className={`${OUTLINE} !py-1 !text-xs`}
+            title="在这一镜的入点加一个手动卡点（会进撤销栈，也会参与拖拽吸附）"
+            onClick={onAddBeat}
+          >
+            加卡点
+          </button>
         </div>
       )}
     </div>

@@ -42,6 +42,8 @@
 
 时间轴直接拖 `spec.layers` 的 `start/duration`，卡点吸附读 `spec.audio.beatGrid`。CutPlanEditor（cutplan.json 那套）保留不动但**不再扩建**，新视频一律用剪辑台；入口在 P2 卡点轨落地后从工坊移除（cutplan API 与数据保留，老项目还能用）。
 
+> **状态（P2 已完成）**：入口已移除——`WorkshopPage` 的「卡点（旧版）」折叠区连同 `CutPlanEditor` 的 import 一并删掉，工坊里已不可达；组件文件 `apps/web/src/pages/CutPlanEditor.tsx` 与 `/api/projects/:slug/cutplan` 端点原样保留（端点实测仍 200），卡点编辑全部由剪辑台时间轴的卡点轨接管（三态菱形 + 双击加手动卡点 + 拖 Clip 吸附）。
+
 ## 2. 已确认的能力决策
 
 | 决策点 | 结论 |
