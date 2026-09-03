@@ -6,15 +6,16 @@
 import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
-import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { api, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
+import { api, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
-import TaskProgress from '../../../components/TaskProgress'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
-import { useTaskRun, type TaskRun } from '../../../useTaskRun'
+import type { TaskRun } from '../../../useTaskRun'
+import InspectorPane from './InspectorPane'
 import QueuePane from './QueuePane'
 import ShotList from './ShotList'
+import TimelinePane from './TimelinePane'
 import { NoOrigSnapshotError, useEditorState } from './useEditorState'
 
 export const VIDEO_TPLS = [
@@ -46,14 +47,18 @@ export interface VideoParams { tpl: string; bgm: string; mood: string; bg: strin
 /** 实心（黑）与描边两套按钮 class——同屏只能有一个用 SOLID，见 docs/剪辑台-实施说明.md §7 */
 export const SOLID = 'rounded-[var(--fc-r-sm)] bg-[var(--fc-ink)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--fc-ink-2)] disabled:bg-[var(--fc-line)] disabled:text-[var(--fc-faint)]'
 export const OUTLINE = 'rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-transparent px-3 py-1.5 text-sm font-medium text-[var(--fc-ink)] hover:border-[var(--fc-ink)] hover:bg-[var(--fc-bg)] disabled:border-[var(--fc-line)] disabled:text-[var(--fc-line-2)]'
-/** 左/右栏里的整宽描边按钮 */
-const OUTLINE_BLOCK = `w-full ${OUTLINE}`
-
 /** 尺寸表（实施说明 §4）。数字集中在这里，三栏和时间轴都从这里取，避免各写各的对不上。 */
 const TOOLBAR_H = 46
 const MAT_H = 300
 const MAT_PAD = 18
 const TIMELINE_H = 186
+/**
+ * 右栏收抽屉的阈值（§4 窄屏表：<1240 右栏收成抽屉，toolbar 出现「参数」按钮）。
+ * 三栏一起摆下时中栏最小宽必须是 **560 而不是 620**：300 + 620 + 320 + 两道 8 的 gap = 1256 > 1240，
+ * 于是 1240–1256 这一段窗口宽度里整块网格比视口宽，横向滚动条从页面底部冒出来。
+ */
+const NARROW_PX = 1240
+const MID_MIN = 560
 /** 9:16 画布：高度由 mat 高减上下留白得出，宽 = 高 × 0.5625 */
 const CANVAS_H = MAT_H - MAT_PAD * 2
 const CANVAS_W = Math.round(CANVAS_H * 0.5625)
@@ -107,11 +112,21 @@ export default function EditorPage({
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  /** 重置端点 404（这条视频生成于旧版本、没有 .orig 快照）后隐藏「重置」——服务端没有单独的探测接口 */
+  /**
+   * 重置端点 404 的兜底。**主判据是 `ed.hasOrig`（GET spec 带回来的，进场即知）**——这个 state
+   * 只在「服务端说没快照」时补一刀，覆盖 hasOrig 与实际状态之间的竞态（比如快照被手工删掉）。
+   */
   const [resetUnavailable, setResetUnavailable] = useState(false)
+  /** 右栏图层检查器的选中图层。选中来源：ShotList 的 active 行、时间轴上点选的 Clip/字幕条。 */
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
+  /** 窄屏（<1240）时右栏收成抽屉；这个 state 是抽屉的开合。 */
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const wide = useViewportAtLeast(NARROW_PX)
 
   // 换内容项时复位这条内容独有的临时状态
-  useEffect(() => { setCurrentSec(0); setMenuOpen(false); setNotice(null); setResetUnavailable(false) }, [videoId])
+  useEffect(() => {
+    setCurrentSec(0); setMenuOpen(false); setNotice(null); setResetUnavailable(false); setSelectedLayerId(null)
+  }, [videoId])
 
   // 点菜单外面关掉它。用 mousedown 而非 click：click 要等按键抬起，期间菜单还盖在页面上，
   // 点它下面的控件会「第一下只关菜单」。写法与 ContentCard 的「⋯」一致。
@@ -215,13 +230,24 @@ export default function EditorPage({
    * **不是**旧的 `POST /video` 全管线——后者会重新 lower，把剪辑台上的手工改动整段覆盖掉。
    * 脏的时候先落盘再入队：端点读的是磁盘上的 spec，不先存等于渲了个旧版本。
    */
+  async function enqueueRender(): Promise<boolean> {
+    if (!selected || !videoId) return false
+    await api<{ taskId: string }>(`/api/projects/${selected}/specs/${videoId}/render`, { method: 'POST' })
+    qc.invalidateQueries({ queryKey: ['content-items', selected] })
+    return true
+  }
+
   async function doRenderFromSpec() {
     if (!selected || !videoId) return
     if (!confirm('用当前编辑结果渲一版成片？\n旁白与字幕沿用上一版配音，改过的文字不会改配音。')) return
     try {
-      if (ed.dirty) await ed.save()
-      await api<{ taskId: string }>(`/api/projects/${selected}/specs/${videoId}/render`, { method: 'POST' })
-      qc.invalidateQueries({ queryKey: ['content-items', selected] })
+      // **防御式**：渲染端点读的是磁盘上的 spec，没落盘就入队等于渲了个旧版本。保存失败必须
+      // 就地中止——继续入队会渲出一版「用户以为包含了刚才改动、其实没有」的成片，
+      // 那比直接报错难查十倍。
+      if (ed.dirty) {
+        if (!(await ed.save())) { setNotice('渲成片已取消：当前内容没有可保存的素材包'); return }
+      }
+      await enqueueRender()
       setNotice('已入队：渲染中，进度看队列卡片')
     } catch (e) {
       setNotice(`渲成片失败：${e instanceof Error ? e.message : String(e)}`)
@@ -246,7 +272,9 @@ export default function EditorPage({
       <div
         className="grid gap-2"
         style={{
-          gridTemplateColumns: '300px minmax(620px,1fr) 320px',
+          // 窄屏（<1240）右栏收进抽屉，网格只剩两列——时间轴的 col-span 也跟着变，否则它会
+          // 多占一列、把整块网格撑宽。
+          gridTemplateColumns: wide ? `300px minmax(${MID_MIN}px,1fr) 320px` : `300px minmax(${MID_MIN}px,1fr)`,
           gridTemplateRows: `minmax(0,1fr) ${TIMELINE_H}px`,
           height: 'calc(100vh - 190px)',
           minHeight: 620,
@@ -284,6 +312,11 @@ export default function EditorPage({
               <button className={OUTLINE} disabled={!current}
                 onClick={() => { confirmLeave().then((ok) => { if (ok) onCloseEditor() }) }}
                 title="这版不要了：退出编辑态，回队列重做">打回重做</button>
+              {/* 窄屏才出「参数」：宽屏右栏一直在，多一个按钮只是噪声 */}
+              {!wide && (
+                <button className={OUTLINE} onClick={() => setDrawerOpen((v) => !v)}
+                  title="打开右栏参数检查器">参数</button>
+              )}
               <button className={SOLID} disabled={!canApprove} onClick={approve}>通过并送分发</button>
               <div className="relative" ref={menuRef}>
                 <button className={OUTLINE} onClick={() => setMenuOpen((v) => !v)} aria-label="更多">⋯</button>
@@ -291,9 +324,8 @@ export default function EditorPage({
                   <div className="absolute right-0 z-20 mt-1 w-52 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] py-1 text-sm shadow-lg">
                     <button className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)] disabled:text-[var(--fc-line-2)]"
                       disabled={!ed.spec} onClick={() => { setMenuOpen(false); doSave() }}>保存（⌘/Ctrl+S）</button>
-                    <button className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)] disabled:text-[var(--fc-line-2)]"
-                      disabled={!ed.spec} onClick={() => { setMenuOpen(false); doRenderFromSpec() }}>用当前编辑结果渲成片</button>
-                    {!resetUnavailable && (
+                    {/* 「渲成片」不在这里了——它是右栏检查器底部的主线动作，两处入口只会让人犹豫点哪个 */}
+                    {ed.hasOrig && !resetUnavailable && (
                       <button className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)] disabled:text-[var(--fc-line-2)]"
                         disabled={!ed.spec} onClick={() => { setMenuOpen(false); doReset() }}>重置为生成结果</button>
                     )}
@@ -315,43 +347,40 @@ export default function EditorPage({
           <div className="min-h-0">
             <ShotList
               slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
-              currentSec={currentSec} onNotice={setNotice}
+              currentSec={currentSec} onNotice={setNotice} onSelectLayer={setSelectedLayerId}
             />
           </div>
         </section>
 
-        {/* ── 右栏 320：Inspector（Task 9 正式化；这里挂 P0 视频参数，保证功能不空窗）── */}
-        <aside
-          className="flex min-h-0 flex-col overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)]"
-          style={{ boxSizing: 'border-box' }}
-        >
-          <div className="flex h-[34px] shrink-0 items-center border-b border-[var(--fc-line)] px-3 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
-            参数（过渡版 · Task 9 接管）
-          </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-            <div className="rounded-[var(--fc-r-sm)] bg-[var(--fc-sunken)] px-2 py-1.5 text-xs text-[var(--fc-muted)]">
-              {current ? `当前内容 #${current.seq} · ${current.title}` : '未选中内容——点左侧队列里的一条'}
-            </div>
-            <VideoParamFields vp={vp} setVp={setVp} bgmList={bgmList} />
-            <button className={OUTLINE_BLOCK} disabled={!selected || busy || !current}
-              onClick={() => current && onMakeVideo(current.copyAssetId)}>
-              {videoRun.running ? '渲染中…' : '按参数重新生成（走全管线，会覆盖手工改动）'}
-            </button>
-            <TaskProgress run={videoRun} />
-          </div>
-        </aside>
+        {/* ── 右栏 320：Inspector（图层检查器 + 渲染参数暂存）。窄屏时移到下面的抽屉里 ── */}
+        {wide && (
+          <InspectorPane
+            ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
+            vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+            onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
+          />
+        )}
 
-        {/* ── 时间轴 186 整宽占位（Task 9）── */}
-        <section
-          className="col-span-3 overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)]"
-          style={{ height: TIMELINE_H, boxSizing: 'border-box' }}
-        >
-          <div className="flex h-8 items-center border-b border-[var(--fc-line)] px-3 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
-            时间轴
-          </div>
-          <div className="p-3 text-xs text-[var(--fc-faint)]">时间轴由 Task 9 装配（刻度 / 分镜 / 字幕 / BGM / 卡点五轨）。</div>
-        </section>
+        {/* ── 时间轴 186 整宽（刻度 / 分镜 / 字幕 三轨）── */}
+        <TimelinePane
+          className={wide ? 'col-span-3' : 'col-span-2'}
+          ed={ed} playerRef={playerRef} currentSec={currentSec}
+          selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+        />
       </div>
+
+      {/* 窄屏抽屉：右栏原样搬进来，宽度仍是 320——参数控件的排布是按这个宽度调的 */}
+      {!wide && drawerOpen && (
+        <div className="fixed inset-0 z-30 flex justify-end bg-black/25" onClick={() => setDrawerOpen(false)}>
+          <div className="h-full w-[320px] bg-[var(--fc-surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <InspectorPane
+              ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
+              vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+              onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
+            />
+          </div>
+        </div>
+      )}
 
       {notice && (
         <div className="rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] px-3 py-2 text-xs text-[var(--fc-muted)]">
@@ -418,65 +447,19 @@ function StageBody({
   )
 }
 
-/** 视频参数控件（过渡版，原 EditorTransitionTab 右栏原样搬迁）。 */
-function VideoParamFields({ vp, setVp, bgmList }: { vp: VideoParams; setVp: (v: VideoParams) => void; bgmList: BgmList | undefined }) {
-  const templates = useQuery({
-    queryKey: ['templates'], queryFn: () => api<CustomTemplate[]>('/api/templates'), networkMode: 'always',
-  })
-  const tplOptions = [
-    ...VIDEO_TPLS,
-    ...(templates.data ?? []).map((t) => ({ value: `custom-${t.id}`, label: `${t.name}（对标拆解 · ${t.aspect_ratio === 'portrait' ? '竖屏' : '横屏'}）` })),
-  ]
-  const sel = 'mt-1 w-full rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] p-1.5 text-sm'
-  return (
-    <>
-      <div>
-        <label className="text-xs text-[var(--fc-muted)]">模板</label>
-        <select className={sel} value={vp.tpl} onChange={(e) => setVp({ ...vp, tpl: e.target.value })}>
-          {tplOptions.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        {vp.tpl === 'demo' && <p className="mt-1 text-xs text-[var(--fc-faint)]">需先在项目详情页上传 shots/ 截图</p>}
-      </div>
-      <div>
-        <label className="text-xs text-[var(--fc-muted)]">画布比例</label>
-        <div className="mt-1 flex items-center gap-4 text-sm">
-          <label className="flex items-center gap-1">
-            <input type="radio" checked={vp.ratio === 'portrait'} onChange={() => setVp({ ...vp, ratio: 'portrait' })} /> 竖屏 9:16
-          </label>
-          <label className="flex items-center gap-1">
-            <input type="radio" checked={vp.ratio === 'landscape'} onChange={() => setVp({ ...vp, ratio: 'landscape' })} /> 横屏 16:9
-          </label>
-        </div>
-      </div>
-      <div>
-        <label className="text-xs text-[var(--fc-muted)]">BGM</label>
-        <select className={sel} value={vp.bgm} onChange={(e) => setVp({ ...vp, bgm: e.target.value })}>
-          <option value="">自动（按钩子情绪）</option>
-          <option value="none">不加背景乐</option>
-          {bgmList?.root.map((f) => <option key={f} value={f}>{f}</option>)}
-          {Object.entries(bgmList?.byMood ?? {}).map(([m, files]) => (
-            <optgroup key={m} label={m}>
-              {files.map((f) => <option key={f} value={f}>{f}</option>)}
-            </optgroup>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="text-xs text-[var(--fc-muted)]">情绪</label>
-        <select className={sel} value={vp.mood} onChange={(e) => setVp({ ...vp, mood: e.target.value })}>
-          {MOODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="text-xs text-[var(--fc-muted)]">背景{vp.tpl === 'story' && <span className="text-[var(--fc-faint)]">（story 不显示背景层）</span>}</label>
-        <select className={`${sel} disabled:opacity-50`} disabled={vp.tpl === 'story'} value={vp.bg} onChange={(e) => setVp({ ...vp, bg: e.target.value })}>
-          {BGS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
-        </select>
-      </div>
-      <label className="flex items-center gap-2 text-xs text-[var(--fc-muted)]">
-        <input type="checkbox" checked={vp.captions} onChange={(e) => setVp({ ...vp, captions: e.target.checked })} />
-        烧旁白字幕进视频（默认关）
-      </label>
-    </>
-  )
+/**
+ * 视口宽是否 >= `px`。剪辑台的窄屏行为（§4）必须**跟着窗口实时变**：用一次性读 innerWidth 的写法，
+ * 用户把窗口拉窄后右栏还在，三栏挤成一团；拉宽后抽屉按钮还在，点了出一个多余的浮层。
+ * 用 matchMedia 而不是 resize 事件：只在越过阈值的那一刻回调一次，拖窗口时不会每帧 setState。
+ */
+function useViewportAtLeast(px: number): boolean {
+  const [ok, setOk] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth >= px))
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${px}px)`)
+    const on = () => setOk(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [px])
+  return ok
 }

@@ -63,7 +63,7 @@ interface RewriteResp { spec: VideoSpec; newText: string }
  *   否则服务端读的是磁盘旧版本，返回的新 spec 一整包替换回来就把本地手改吃掉了。
  */
 export default function ShotList({
-  slug, videoId, ed, playerRef, currentSec, onNotice,
+  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer,
 }: {
   slug: string
   videoId: string | null
@@ -71,6 +71,8 @@ export default function ShotList({
   playerRef: RefObject<PlayerRef>
   currentSec: number
   onNotice: (msg: string) => void
+  /** 选中这一镜的文本图层 → 右栏图层检查器（选中来源之一，另一个是时间轴点选）。 */
+  onSelectLayer: (layerId: string | null) => void
 }) {
   const spec = ed.spec
   const shots = useMemo(() => (spec && !isUnsupported(spec) ? deriveShots(spec) : []), [spec])
@@ -92,6 +94,8 @@ export default function ShotList({
       setActiveId(shot.sectionId)
       setDraft(null)
     }
+    // 右栏检查器跟着走：这一镜的唯一文本层没有时回落第一层，总比让检查器空着强
+    if (spec) onSelectLayer(textLayerId(spec, shot) ?? shot.layerIds[0] ?? null)
     playerRef.current?.seekTo(secToFrames(shot.startSec))
   }
 
@@ -145,6 +149,9 @@ export default function ShotList({
       const out = await res.json() as RewriteResp
       // 整包替换进 undo 栈——用户 ⌘Z 可以撤销这次重写（磁盘上仍是新版本，再保存一次即可回退）
       ed.apply(out.spec)
+      // 服务端已经把这份写回磁盘了：不对齐净快照的话「未保存」会立刻假亮，
+      // 用户会去按一次毫无意义的 ⌘S（而且那次 PUT 传的还是同样的内容）。
+      ed.markSaved(out.spec)
       setDraft(null)
       onNotice('已重写；旁白仍为旧配音，语音与画面文案可能不一致')
     } catch (e) {
