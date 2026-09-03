@@ -214,3 +214,86 @@ describe('render 端点（剪辑台渲成片）', () => {
     expect((await res.json() as any).error).toBe('图层为空，无可渲染内容')
   })
 })
+
+describe('rewrite-section 端点', () => {
+  function rewritableSpec(videoId: string, over: Record<string, unknown> = {}) {
+    return {
+      ...validSpec(videoId),
+      semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }] },
+      layers: [{ ...layer({ id: 'l1' }), from: 'sec-hook', content: { kind: 'text', text: '原文案' } }],
+      ...over,
+    }
+  }
+  function seed(videoId: string, over: Record<string, unknown> = {}) {
+    fs.mkdirSync(path.dirname(specPath(videoId)), { recursive: true })
+    fs.writeFileSync(specPath(videoId), JSON.stringify(rewritableSpec(videoId, over)))
+  }
+
+  it('videoId 非法 → 400', async () => {
+    const res = await app.request('/api/projects/s1/specs/' + encodeURIComponent('../x') + '/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-hook' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('项目不存在 → 404', async () => {
+    const res = await app.request('/api/projects/nope/specs/deadbeef01/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-hook' }),
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('spec 不存在 → 404', async () => {
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-hook' }),
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('成功 → 200，落盘更新 spec.warnings 与图层 text', async () => {
+    seed('deadbeef01')
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-hook' }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.newText).toBe('原文案（重写版）')
+    expect(body.spec.semantic.sections[0].text).toBe('原文案（重写版）')
+    const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
+    expect(onDisk.layers[0].content.text).toBe('原文案（重写版）')
+    expect(onDisk.warnings).toContain('「sec-hook」已重写，旁白仍为旧文案，语音与画面文案可能不一致')
+  })
+
+  it('目标图层 overridden 且无 force → 409 带 affected', async () => {
+    seed('deadbeef01', { layers: [{ ...layer({ id: 'l1' }), from: 'sec-hook', overridden: true, content: { kind: 'text', text: '原文案' } }] })
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-hook' }),
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as any
+    expect(body.error).toBe('该段有手工改动')
+    expect(body.affected).toEqual(['l1'])
+  })
+
+  it('目标图层 overridden 但带 force → 通过并落盘', async () => {
+    seed('deadbeef01', { layers: [{ ...layer({ id: 'l1' }), from: 'sec-hook', overridden: true, content: { kind: 'text', text: '原文案' } }] })
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-hook', force: true }),
+    })
+    expect(res.status).toBe(200)
+    const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
+    expect(onDisk.layers[0].content.text).toBe('原文案（重写版）')
+    expect(onDisk.layers[0].overridden).toBe(true)
+  })
+
+  it('不支持的段（dialogue）→ 400', async () => {
+    seed('deadbeef01', {
+      semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-d', role: 'body', dialogue: [{ who: 'them', text: 'hi' }] }] },
+      layers: [{ ...layer({ id: 'l1' }), from: 'sec-d', content: { kind: 'text', text: 'x' } }],
+    })
+    const res = await app.request('/api/projects/s1/specs/deadbeef01/rewrite-section', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sectionId: 'sec-d' }),
+    })
+    expect(res.status).toBe(400)
+  })
+})

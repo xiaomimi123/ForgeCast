@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CoreCtx } from '@forgecast/core'
-import { renderFromSpec } from '@forgecast/studio'
+import { renderFromSpec, RewriteUnsupportedError, rewriteSection } from '@forgecast/studio'
 import type { Hono } from 'hono'
 import type { TaskQueue } from './tasks'
 
@@ -111,5 +111,36 @@ export function registerSpecRoutes(app: Hono, ctx: CoreCtx, queue: TaskQueue): v
       kind: 'video', slug, sourceAssetId: spec.semantic?.sourceAssetId ?? undefined,
     })
     return c.json({ taskId })
+  })
+
+  /** 「重写这段」：只换该段文本图层的 text，不重跑 lower（见 rewriteSection 注释）。
+   *  手工改过的图层（overridden===true）默认拦下，避免 LLM 悄悄覆盖用户的手改；带 force 时放行。 */
+  app.post('/api/projects/:slug/specs/:videoId/rewrite-section', async (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    if (!projExists(slug)) return c.json({ error: '项目不存在' }, 404)
+    const p = specAbs(slug, videoId)
+    if (!fs.existsSync(p)) return c.json({ error: 'spec 不存在' }, 404)
+    let spec: any
+    try { spec = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return c.json({ error: 'spec 文件损坏' }, 500) }
+    const body = await c.req.json().catch(() => null)
+    const sectionId = body?.sectionId
+    if (typeof sectionId !== 'string' || !sectionId) return c.json({ error: '缺少 sectionId' }, 400)
+
+    const affected = (spec.layers ?? []).filter((l: any) => l.from === sectionId && l.content?.kind === 'text' && l.overridden === true)
+    if (affected.length > 0 && !body?.force) {
+      return c.json({ error: '该段有手工改动', affected: affected.map((l: any) => l.id) }, 409)
+    }
+
+    try {
+      const { spec: out, newText } = await rewriteSection(ctx, spec, sectionId, body?.instruction)
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, JSON.stringify(out, null, 2), 'utf8')
+      return c.json({ spec: out, newText })
+    } catch (err) {
+      if (err instanceof RewriteUnsupportedError) return c.json({ error: err.message }, 400)
+      throw err
+    }
   })
 }
