@@ -9,20 +9,12 @@ import { Player, type PlayerRef } from '@remotion/player'
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
-import ContentCard, { StatusTag } from '../../../components/ContentCard'
+import { StatusTag } from '../../../components/ContentCard'
 import TaskProgress from '../../../components/TaskProgress'
-import { Empty, Failure, Skeleton } from '../../../components/ui/States'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
 import { useTaskRun, type TaskRun } from '../../../useTaskRun'
+import QueuePane from './QueuePane'
 import { NoOrigSnapshotError, useEditorState } from './useEditorState'
-
-/** 钩子枚举（旧「文案」tab 生成面板常量，随面板一起搬进剪辑台左栏） */
-export const HOOKS = [
-  { value: 'pain', label: '行业痛点型' },
-  { value: 'sideline', label: '副业型' },
-  { value: 'infogap', label: '信息差型' },
-  { value: 'story', label: '接单故事型' },
-]
 
 export const VIDEO_TPLS = [
   { value: 'flash', label: 'flash · 文字快闪' },
@@ -51,8 +43,8 @@ export const BGS = [
 export interface VideoParams { tpl: string; bgm: string; mood: string; bg: string; captions: boolean; ratio: 'portrait' | 'landscape' }
 
 /** 实心（黑）与描边两套按钮 class——同屏只能有一个用 SOLID，见 docs/剪辑台-实施说明.md §7 */
-const SOLID = 'rounded-[var(--fc-r-sm)] bg-[var(--fc-ink)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--fc-ink-2)] disabled:bg-[var(--fc-line)] disabled:text-[var(--fc-faint)]'
-const OUTLINE = 'rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-transparent px-3 py-1.5 text-sm font-medium text-[var(--fc-ink)] hover:border-[var(--fc-ink)] hover:bg-[var(--fc-bg)] disabled:border-[var(--fc-line)] disabled:text-[var(--fc-line-2)]'
+export const SOLID = 'rounded-[var(--fc-r-sm)] bg-[var(--fc-ink)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--fc-ink-2)] disabled:bg-[var(--fc-line)] disabled:text-[var(--fc-faint)]'
+export const OUTLINE = 'rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-transparent px-3 py-1.5 text-sm font-medium text-[var(--fc-ink)] hover:border-[var(--fc-ink)] hover:bg-[var(--fc-bg)] disabled:border-[var(--fc-line)] disabled:text-[var(--fc-line-2)]'
 /** 左/右栏里的整宽描边按钮 */
 const OUTLINE_BLOCK = `w-full ${OUTLINE}`
 
@@ -259,65 +251,13 @@ export default function EditorPage({
           minHeight: 620,
         }}
       >
-        {/* ── 左栏 300：内容队列（Task 7 正式化，这里是 P0 面板的最简搬迁）── */}
-        <section
-          className="flex min-h-0 flex-col overflow-hidden rounded-[var(--fc-r-md)] border border-[var(--fc-line)] bg-[var(--fc-surface)]"
-          style={{ boxSizing: 'border-box' }}
-        >
-          <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-[var(--fc-line)] px-2.5">
-            <span className="font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">内容队列</span>
-            <span className="ml-auto font-mono text-[10px] text-[var(--fc-faint)]">{list.length}</span>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="space-y-2 border-b border-[var(--fc-line)] p-2.5">
-              <div>
-                <label className="text-xs text-[var(--fc-muted)]">钩子类型</label>
-                <div className="mt-1 grid grid-cols-2 gap-1.5">
-                  {HOOKS.map((h) => (
-                    <button key={h.value}
-                      className={`rounded-[var(--fc-r-xs)] border px-2 py-1 text-xs ${hook === h.value ? 'border-[var(--fc-accent)] bg-[var(--fc-accent-tint)] font-bold text-[var(--fc-accent-deep)]' : 'border-[var(--fc-line-2)] bg-transparent text-[var(--fc-muted)]'}`}
-                      onClick={() => setHook(h.value)}>{h.label}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-[var(--fc-muted)]">篇数</label>
-                <input type="number" min={1} max={5}
-                  className="h-7 w-16 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] px-2 text-sm"
-                  value={n} onChange={(e) => setN(Number(e.target.value))} />
-                <button className={`ml-auto ${OUTLINE}`} disabled={!selected || busy} onClick={onGenerate}>
-                  {copyRun.running ? '生成中…' : '生成'}
-                </button>
-              </div>
-              <TaskProgress run={copyRun} />
-            </div>
-            {items.isLoading && <div className="p-2"><Skeleton lines={4} /></div>}
-            {items.isError && (
-              <div className="p-2">
-                <Failure step="载入内容列表" error={items.error instanceof Error ? items.error.message : String(items.error)} onRetry={() => items.refetch()} />
-              </div>
-            )}
-            {!items.isLoading && !items.isError && list.length === 0 && (
-              <div className="p-2">
-                <Empty why="这个项目还没有内容" action={
-                  <button className={OUTLINE} disabled={!selected || busy} onClick={onGenerate}>
-                    {copyRun.running ? '生成中…' : '生成'}
-                  </button>
-                } />
-              </div>
-            )}
-            {list.map((item) => (
-              <div key={item.id}>
-                <ContentCard item={item} selected={item.id === selectedItemId} onOpen={selectItemGuarded} onDelete={onDeleteItem} />
-                {item.status === 'failed' && (
-                  <div className="px-1 pb-2">
-                    <Failure step="渲染" error={item.error ?? ''} onRetry={() => onMakeVideo(item.copyAssetId)} />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* ── 左栏 300：内容队列（QueuePane，实施说明 §4）── */}
+        <QueuePane
+          selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
+          busy={busy} copyRun={copyRun} onGenerate={onGenerate}
+          items={items} selectedItemId={selectedItemId}
+          onSelectItem={selectItemGuarded} onDeleteItem={onDeleteItem} onMakeVideo={onMakeVideo}
+        />
 
         {/* ── 中栏 Stage：toolbar 46 / preview mat 300 / 分镜列表 1fr ── */}
         <section
