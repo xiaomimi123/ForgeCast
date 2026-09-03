@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import { api, type IntroDetail, type Project } from '../api'
 import Drawer from '../components/Drawer'
 import TaskProgress from '../components/TaskProgress'
+import { useConfirm } from '../components/ui/Confirm'
 import IntroSections from '../pages/board/IntroSections'
 import { useTaskRun } from '../useTaskRun'
 
@@ -23,6 +24,7 @@ type DocTab = (typeof DOC_TABS)[number]['key']
 
 export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose: () => void }) {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const [form, setForm] = useState<Record<string, string>>({})
   const [docTab, setDocTab] = useState<DocTab>('analysis')
   const [copied, setCopied] = useState(false)
@@ -140,6 +142,7 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
   }
 
   return (
+    <>
     <Drawer onClose={onClose} width={1100}>
       <div className="grid grid-cols-[1fr_360px] gap-6">
         <div className="card-forge p-6 text-sm leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h2]:font-bold [&_h2]:mt-4 [&_li]:ml-4">
@@ -279,8 +282,11 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
             <button className="w-full rounded-md border-[1.5px] border-danger py-1.5 text-sm text-danger disabled:opacity-50"
               disabled={del.isPending}
               onClick={() => {
-                if (window.confirm('删除这个项目？连带的文案/视频素材和 workspace 文件都会删掉，不可恢复。删除后对应候选可以重新立项。'))
-                  del.mutate()
+                confirm({
+                  title: '删除这个项目？',
+                  body: '连带的文案/视频素材和 workspace 文件都会删掉，不可恢复。删除后对应候选可以重新立项。',
+                  danger: true, okLabel: '删除',
+                }).then((ok) => { if (ok) del.mutate() })
               }}>
               {del.isPending ? '删除中…' : '删除项目'}
             </button>
@@ -288,5 +294,7 @@ export default function ProjectDrawer({ slug, onClose }: { slug: string; onClose
         </div>
       </div>
     </Drawer>
+    {confirmEl}
+    </>
   )
 }

@@ -3,6 +3,7 @@ import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import { deriveShots, updateLayerText, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useState, type RefObject } from 'react'
+import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
 import { OUTLINE } from './ui'
 import type { useEditorState } from './useEditorState'
@@ -63,7 +64,7 @@ interface RewriteResp { spec: VideoSpec; newText: string }
  *   否则服务端读的是磁盘旧版本，返回的新 spec 一整包替换回来就把本地手改吃掉了。
  */
 export default function ShotList({
-  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced,
+  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced, confirm,
 }: {
   slug: string
   videoId: string | null
@@ -75,6 +76,8 @@ export default function ShotList({
   onSelectLayer: (layerId: string | null) => void
   /** spec 被整包换掉了（重写返回的是一整份新 spec）——右栏的参数草稿据此作废。 */
   onSpecReplaced: () => void
+  /** in-app 确认弹层，与 EditorPage 共享同一个 useConfirm 实例（同时只有一个弹层）。 */
+  confirm: (opts: ConfirmOpts) => Promise<boolean>
 }) {
   const spec = ed.spec
   const shots = useMemo(() => (spec && !isUnsupported(spec) ? deriveShots(spec) : []), [spec])
@@ -144,7 +147,7 @@ export default function ShotList({
         if (res.status === 409) {
           const body = await res.json().catch(() => ({})) as { affected?: string[] }
           const list = (body.affected ?? []).join('、') || '（未知图层）'
-          if (!confirm(`该段含手工改动，重写将覆盖：${list}。继续？`)) { onNotice('已取消重写'); return true }
+          if (!(await confirm({ title: '该段含手工改动', body: `重写将覆盖：${list}。继续？`, danger: true }))) { onNotice('已取消重写'); return true }
           res = await post(true)
         }
         if (!res.ok) {

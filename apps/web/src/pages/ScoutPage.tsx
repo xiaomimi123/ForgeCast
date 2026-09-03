@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, type AutoScoutStatus, type Candidate } from '../api'
 import TaskProgress from '../components/TaskProgress'
+import { useConfirm } from '../components/ui/Confirm'
 import { useTaskRun } from '../useTaskRun'
 import CandidateCard from './board/CandidateCard'
 import CandidateDrawer from './board/CandidateDrawer'
@@ -30,6 +31,7 @@ function dayLabel(day: string, today: string): string {
 
 export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const logRef = useRef<HTMLDivElement>(null)
   const [tab, setTab] = useState<Tab>('all')
   const [detailId, setDetailId] = useState<number | null>(null)
@@ -95,12 +97,12 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
       () => qc.invalidateQueries({ queryKey: ['candidates'] }),
     )
   }
-  function rescoreAll() {
+  async function rescoreAll() {
     const n = (candidates.data ?? []).filter((c) => {
       try { return !(c.score_detail && (JSON.parse(c.score_detail) as any)?.targetBuyer) } catch { return true }
     }).length
     if (n === 0) { alert('候选都已真评过，无需批量评分'); return }
-    if (!window.confirm(`将对 ${n} 个未评候选真评分，消耗 key 额度、耗时较长（每个几秒），继续？`)) return
+    if (!(await confirm({ title: `真评分 ${n} 个未评候选？`, body: '消耗 key 额度、耗时较长（每个几秒），继续？' }))) return
     setActiveKey('rescore')
     rescoreAllRun.run(
       async () => (await api<{ taskId: string }>('/api/candidates/rescore-all', { method: 'POST' })).taskId,
@@ -311,6 +313,7 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
           </div>
         </div>
       )}
+      {confirmEl}
     </div>
   )
 }

@@ -4,10 +4,12 @@ import ReactMarkdown from 'react-markdown'
 import { api, type TailorCapability, type TailorDetail } from '../api'
 import Drawer from '../components/Drawer'
 import TaskProgress from '../components/TaskProgress'
+import { useConfirm } from '../components/ui/Confirm'
 import { useTaskRun } from '../useTaskRun'
 
 export default function TailorDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const detail = useQuery({ queryKey: ['tailor', id], queryFn: () => api<TailorDetail>(`/api/tailor/${id}`) })
   const proposal = useQuery({
     queryKey: ['tailor-proposal', id],
@@ -23,9 +25,9 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
   const activeRun = runs[activeKey]
   const busy = decomposeRun.running || searchRun.running || proposalRun.running
 
-  function runAction(action: 'decompose' | 'search' | 'proposal') {
+  async function runAction(action: 'decompose' | 'search' | 'proposal') {
     if (action === 'decompose' && (detail.data?.capabilities.length ?? 0) > 0
-      && !window.confirm('重新拆解会清掉现有能力清单和已搜的轮子，继续？')) return
+      && !(await confirm({ title: '重新拆解？', body: '会清掉现有能力清单和已搜的轮子，继续？', danger: true }))) return
     setActiveKey(action)
     const r = action === 'decompose' ? decomposeRun : action === 'search' ? searchRun : proposalRun
     r.run(
@@ -45,7 +47,7 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
     } catch (e) { alert(e instanceof Error ? e.message : String(e)) }
   }
   async function removeCap(capId: number) {
-    if (!window.confirm('删除该能力项及其轮子候选？')) return
+    if (!(await confirm({ title: '删除该能力项？', body: '连带的轮子候选一并删除', danger: true, okLabel: '删除' }))) return
     try {
       await api(`/api/tailor/capabilities/${capId}`, { method: 'DELETE' })
       qc.invalidateQueries({ queryKey: ['tailor', id] })
@@ -70,6 +72,7 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
   const pendingCount = caps.filter((c) => c.decision === 'pending').length
   const btn = 'btn px-4 py-2 text-sm disabled:opacity-50'
   return (
+    <>
     <Drawer onClose={onClose} width={900}>
       <div className="space-y-4">
         <div className="card p-4">
@@ -115,6 +118,8 @@ export default function TailorDrawer({ id, onClose }: { id: number; onClose: () 
         )}
       </div>
     </Drawer>
+    {confirmEl}
+    </>
   )
 }
 

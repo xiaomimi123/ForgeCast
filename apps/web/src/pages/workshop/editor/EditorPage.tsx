@@ -10,6 +10,7 @@ import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
+import { useConfirm } from '../../../components/ui/Confirm'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
 import type { TaskRun } from '../../../useTaskRun'
 import InspectorPane from './InspectorPane'
@@ -82,6 +83,7 @@ export default function EditorPage({
   const videoId = specPath ? videoIdFromSpecPath(specPath) : null
 
   const ed = useEditorState(selected, videoId)
+  const { confirm, confirm3, element: confirmEl } = useConfirm()
   const playerRef = useRef<PlayerRef>(null)
   /** 当前播放头（秒）。Task 9 的时间轴消费；这里先存住，保证 frameupdate 接线在骨架期就是通的。 */
   const [currentSec, setCurrentSec] = useState(0)
@@ -173,21 +175,23 @@ export default function EditorPage({
 
   /**
    * 离开当前内容（切队列 / 关编辑态）前的未保存改动闸门。返回 true 表示可以走。
-   * 两段 confirm：第一段问「要不要先保存」，答否再问「确定丢弃吗」——关键是**不能无声丢**。
-   * 保存失败时不放行，否则「保存了」的错觉加上改动丢失是最坏的组合。
+   * 原来是两段 window.confirm（先问要不要保存，答否再问确定丢弃），现在合成一个 confirm3
+   * 三选弹层——'save'/'discard'/'cancel' 分别对应原来「确定＝保存并离开」「取消＋二次确定＝丢弃」
+   * 「取消＋二次取消＝停留」。**保存失败时不放行**：语义与替换前完全一致，否则「保存了」的
+   * 错觉加上改动丢失是最坏的组合。
    */
   async function confirmLeave(): Promise<boolean> {
     if (!ed.dirty) return true
-    if (confirm('有未保存的改动。要先保存吗？\n\n确定＝保存并离开；取消＝进入丢弃确认')) {
-      try {
-        await ed.save()
-        return true
-      } catch (e) {
-        setNotice(`保存失败，已留在当前内容：${e instanceof Error ? e.message : String(e)}`)
-        return false
-      }
+    const choice = await confirm3({ title: '有未保存的改动', body: '要先保存吗？丢弃改动无法撤销。' })
+    if (choice === 'cancel') return false
+    if (choice === 'discard') return true
+    try {
+      await ed.save()
+      return true
+    } catch (e) {
+      setNotice(`保存失败，已留在当前内容：${e instanceof Error ? e.message : String(e)}`)
+      return false
     }
-    return confirm('丢弃这些未保存的改动并离开？此操作不可撤销。')
   }
 
   /** 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。 */
@@ -197,7 +201,7 @@ export default function EditorPage({
   }
 
   async function doReset() {
-    if (!confirm('重置为生成结果？剪辑台里的手工改动会全部丢弃，且不可撤销。')) return
+    if (!(await confirm({ title: '重置为生成结果？', body: '剪辑台里的手工改动会全部丢弃，且不可撤销。' }))) return
     try {
       await ed.resetToOrig()
       bumpSpecEpoch()
@@ -222,7 +226,7 @@ export default function EditorPage({
 
   async function doRenderFromSpec() {
     if (!selected || !videoId) return
-    if (!confirm('用当前编辑结果渲一版成片？\n旁白与字幕沿用上一版配音，改过的文字不会改配音。')) return
+    if (!(await confirm({ title: '用当前编辑结果渲一版成片？', body: '旁白与字幕沿用上一版配音，改过的文字不会改配音。' }))) return
     try {
       // 与「重写这段」「用新参数重渲」互斥：这里也是服务端读改写（视需要先 PUT 落盘，
       // 再 POST 入队渲染读盘），在途时若并发发出另一条会静默互覆盖磁盘。
@@ -337,7 +341,7 @@ export default function EditorPage({
             <ShotList
               slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
               currentSec={currentSec} onNotice={setNotice} onSelectLayer={setSelectedLayerId}
-              onSpecReplaced={bumpSpecEpoch}
+              onSpecReplaced={bumpSpecEpoch} confirm={confirm}
             />
           </div>
         </section>
@@ -385,6 +389,7 @@ export default function EditorPage({
       )}
 
       {transitionExtras}
+      {confirmEl}
     </div>
   )
 }

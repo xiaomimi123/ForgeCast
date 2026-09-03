@@ -2,6 +2,8 @@ import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { api, ASSET_STATUS_LABEL, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
+import type { ConfirmOpts } from '../../components/ui/Confirm'
+import { useConfirm } from '../../components/ui/Confirm'
 import { Empty, Failure, Skeleton } from '../../components/ui/States'
 import { useTaskRun } from '../../useTaskRun'
 
@@ -38,11 +40,12 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
  * 成片卡：竖屏播放器 + 审片（可选脚本基准）+ 报告 + 复盘 + 通过/删除。
  * 渲染成片与实拍上传共用一张卡，只有抬头的来源标签不同（旧「成片」tab 的卡片平移，并扩到渲染成片）。
  */
-function VideoCard({ asset, scriptAssets, onStatus, onDelete }: {
+function VideoCard({ asset, scriptAssets, onStatus, onDelete, confirm }: {
   asset: Asset
   scriptAssets: Asset[]
   onStatus: (id: number) => void
   onDelete: (id: number) => void
+  confirm: (opts: ConfirmOpts) => Promise<boolean>
 }) {
   const qc = useQueryClient()
   const reviewRun = useTaskRun()
@@ -93,7 +96,7 @@ function VideoCard({ asset, scriptAssets, onStatus, onDelete }: {
               >审核通过</button>
             )}
             <button className="rounded-md border border-danger px-2 py-0.5 text-xs text-danger"
-              onClick={() => { if (window.confirm('删除这条成片？文件和记录都会删掉')) onDelete(asset.id) }}>删除</button>
+              onClick={() => { confirm({ title: '删除这条成片？', body: '文件和记录都会删掉', danger: true, okLabel: '删除' }).then((ok) => { if (ok) onDelete(asset.id) }) }}>删除</button>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -150,6 +153,7 @@ export default function LibraryTab({ selected, assetsQuery, scriptAssets, onStat
   onDelete: (id: number) => void
 }) {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
 
@@ -203,9 +207,10 @@ export default function LibraryTab({ selected, assetsQuery, scriptAssets, onStat
       )}
       <div className="grid grid-cols-2 gap-4 2xl:grid-cols-3">
         {videos.map((a) => (
-          <VideoCard key={a.id} asset={a} scriptAssets={scriptAssets} onStatus={onStatus} onDelete={onDelete} />
+          <VideoCard key={a.id} asset={a} scriptAssets={scriptAssets} onStatus={onStatus} onDelete={onDelete} confirm={confirm} />
         ))}
       </div>
+      {confirmEl}
     </div>
   )
 }

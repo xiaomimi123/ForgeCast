@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api, ASSET_STATUS_LABEL, HOOK_LABEL, type Asset } from '../../api'
 import TaskProgress from '../../components/TaskProgress'
+import type { ConfirmOpts } from '../../components/ui/Confirm'
+import { useConfirm } from '../../components/ui/Confirm'
 import { Skeleton } from '../../components/ui/States'
 import { useTaskRun } from '../../useTaskRun'
 
 /** 单张拍摄脚本卡片：markdown 预览 / 编辑保存 / 审核 / 删除（编辑走通用 content 路由） */
-function ScriptCard({ asset }: { asset: Asset }) {
+function ScriptCard({ asset, confirm }: { asset: Asset; confirm: (opts: ConfirmOpts) => Promise<boolean> }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -44,7 +46,7 @@ function ScriptCard({ asset }: { asset: Asset }) {
             <button className="btn px-2 py-0.5 text-xs" onClick={() => approve.mutate()}>审核通过</button>
           )}
           <button className="rounded-md border border-danger px-2 py-0.5 text-xs text-danger"
-            onClick={() => { if (window.confirm('删除这份拍摄脚本？不可恢复')) del.mutate() }}>删除</button>
+            onClick={() => { confirm({ title: '删除这份拍摄脚本？', body: '不可恢复', danger: true, okLabel: '删除' }).then((ok) => { if (ok) del.mutate() }) }}>删除</button>
         </div>
       </div>
       {editing ? (
@@ -74,6 +76,7 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
   onRunningChange: (v: boolean) => void
 }) {
   const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
   const [fromCopy, setFromCopy] = useState<number | ''>('')
   const [mode, setMode] = useState('screen')
   const chosen = fromCopy === '' ? copyAssets[0]?.id : fromCopy
@@ -124,8 +127,9 @@ export default function ScriptTab({ selected, copyAssets, scriptAssets, running,
       </div>
       <div className="space-y-4">
         {scriptAssets.length === 0 && <div className="text-sm text-faint">暂无拍摄脚本。选好文案点左侧生成。</div>}
-        {scriptAssets.map((a) => <ScriptCard key={a.id} asset={a} />)}
+        {scriptAssets.map((a) => <ScriptCard key={a.id} asset={a} confirm={confirm} />)}
       </div>
+      {confirmEl}
     </div>
   )
 }
