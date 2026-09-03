@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { RewriteUnsupportedError, rewriteSection } from '../src/rewrite'
+import { RewriteUnsupportedError, rewriteSection, stripCodeFence } from '../src/rewrite'
 import type { Layer, VideoSpec } from '../src/videospec'
 
 let ctx: CoreCtx
@@ -21,28 +21,44 @@ const textLayer = (over: Partial<Layer> = {}): Layer => ({
   content: over.content ?? { kind: 'text', text: '原文案' }, style: over.style ?? {}, effects: over.effects ?? [],
 })
 
+/** 同 section 的非 text 图层（caption），用来证明「恰好一层 text 图层」判定不误把它算进去。 */
+const captionLayer = (over: Partial<Layer> = {}): Layer => ({
+  id: over.id ?? 'l-caption', kind: 'caption', from: over.from ?? 'sec-hook', overridden: over.overridden ?? false,
+  start: over.start ?? 0, duration: over.duration ?? 3, track: over.track ?? 2,
+  content: over.content ?? { kind: 'caption', text: '字幕' }, style: over.style ?? {}, effects: over.effects ?? [],
+})
+
 const baseSpec = (over: Partial<VideoSpec> = {}): VideoSpec => ({
   version: 1, videoId: 'deadbeef01', slug: 's1', template: 'flash', createdAt: '',
-  semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }] },
+  semantic: {
+    hook: null, sourceAssetId: null,
+    sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }, { id: 'sec-other', role: 'body', text: '别的段' }],
+  },
   canvas: { width: 1080, height: 1920 }, durationSec: 12,
-  layers: [textLayer()],
+  // 3 层：目标层 + 同 section 的非 text 图层（caption） + from 指向别的 section 的图层
+  layers: [textLayer(), captionLayer(), textLayer({ id: 'l-other', from: 'sec-other', start: 5, duration: 4, track: 3, content: { kind: 'text', text: '别的图层文案' } })],
   audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false }, warnings: [],
   ...over,
 })
 
 describe('rewriteSection mock', () => {
-  it('text 段重写返回确定性变体，图层 text 同步、时间轴一字不动', async () => {
+  it('text 段重写返回确定性变体，图层 text 同步、时间轴一字不动，其他图层完全不受影响', async () => {
     const spec = baseSpec()
     const { spec: out, newText } = await rewriteSection(ctx, spec, 'sec-hook')
     expect(newText).toBe('原文案（重写版）')
     expect(out.semantic.sections[0].text).toBe('原文案（重写版）')
-    expect(out.layers[0].content).toEqual({ kind: 'text', text: '原文案（重写版）' })
-    // 时间轴一字不动
-    for (let i = 0; i < spec.layers.length; i++) {
-      expect(out.layers[i].start).toBe(spec.layers[i].start)
-      expect(out.layers[i].duration).toBe(spec.layers[i].duration)
-      expect(out.layers[i].track).toBe(spec.layers[i].track)
-    }
+    const target = out.layers.find((l) => l.id === 'l-hook')!
+    expect(target.content).toEqual({ kind: 'text', text: '原文案（重写版）' })
+    expect(target.start).toBe(spec.layers[0].start)
+    expect(target.duration).toBe(spec.layers[0].duration)
+    expect(target.track).toBe(spec.layers[0].track)
+    // 关键不变量：非目标图层（同 section 的 caption 图层、from 指向别的 section 的图层）逐个全等，不被误动
+    const otherCaption = out.layers.find((l) => l.id === 'l-caption')!
+    expect(otherCaption).toEqual(spec.layers.find((l) => l.id === 'l-caption'))
+    const otherLayer = out.layers.find((l) => l.id === 'l-other')!
+    expect(otherLayer).toEqual(spec.layers.find((l) => l.id === 'l-other'))
+    // 别的 section 的文本也没被误改
+    expect(out.semantic.sections[1].text).toBe('别的段')
   })
 
   it('mock 不借道 ctx.llm（spy ctx.llm.complete 零调用）', async () => {
@@ -92,5 +108,16 @@ describe('rewriteSection mock', () => {
     const spec = baseSpec({ layers: [textLayer({ overridden: true })] })
     const { spec: out } = await rewriteSection(ctx, spec, 'sec-hook')
     expect(out.layers[0].overridden).toBe(true)
+  })
+})
+
+describe('stripCodeFence', () => {
+  it('剥掉首尾 markdown 代码围栏', () => {
+    expect(stripCodeFence('```\n重写后的文案\n```')).toBe('重写后的文案')
+    expect(stripCodeFence('```markdown\n重写后的文案\n```')).toBe('重写后的文案')
+  })
+
+  it('不带围栏的文本原样返回（仅 trim）', () => {
+    expect(stripCodeFence('  重写后的文案  ')).toBe('重写后的文案')
   })
 })

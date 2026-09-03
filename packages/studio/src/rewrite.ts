@@ -17,6 +17,15 @@ export class RewriteUnsupportedError extends Error {
   }
 }
 
+/** 剥掉 LLM 习惯性包的 markdown 代码围栏（```…```），并 trim 首尾空白。剥完为空交给调用方判断（那边会 throw）。 */
+export function stripCodeFence(text: string): string {
+  return text
+    .trim()
+    .replace(/^```[a-z]*\n?/i, '')
+    .replace(/\n?```$/, '')
+    .trim()
+}
+
 /** 判定某 section 是否支持「重写这段」——不满足则给出具体理由，供端点/调用方展示。 */
 export function findRewritableTarget(spec: VideoSpec, sectionId: string): { section: Section; layer: Layer } {
   const section = spec.semantic.sections.find((s) => s.id === sectionId)
@@ -48,8 +57,9 @@ export async function rewriteSection(
     const system = '你是短视频文案编辑，请在保持原意与风格的前提下重写这段文案，只输出新文案本身，不要解释。'
     const prompt = instruction ? `${originalText}\n\n改写要求：${instruction}` : originalText
     const result = await ctx.llm.complete({ model: ctx.config.llm.models.copy, system, prompt })
-    if (!result) throw new Error('LLM 重写返回内容为空')
-    newText = result
+    const stripped = stripCodeFence(result ?? '')
+    if (!stripped) throw new Error('LLM 重写返回内容为空')
+    newText = stripped
   }
 
   const warningText = `「${sectionId}」已重写，旁白仍为旧文案，语音与画面文案可能不一致`

@@ -219,8 +219,15 @@ describe('rewrite-section 端点', () => {
   function rewritableSpec(videoId: string, over: Record<string, unknown> = {}) {
     return {
       ...validSpec(videoId),
-      semantic: { hook: null, sourceAssetId: null, sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }] },
-      layers: [{ ...layer({ id: 'l1' }), from: 'sec-hook', content: { kind: 'text', text: '原文案' } }],
+      semantic: {
+        hook: null, sourceAssetId: null,
+        sections: [{ id: 'sec-hook', role: 'hook', text: '原文案' }, { id: 'sec-other', role: 'body', text: '别的段' }],
+      },
+      // 目标层 l1 + 一个 from 指向别的 section 的图层 l2，用来证明「其他图层不受影响」
+      layers: [
+        { ...layer({ id: 'l1' }), from: 'sec-hook', content: { kind: 'text', text: '原文案' } },
+        { ...layer({ id: 'l2', start: 5, duration: 4, track: 2 }), from: 'sec-other', content: { kind: 'text', text: '别的图层文案' } },
+      ],
       ...over,
     }
   }
@@ -262,6 +269,10 @@ describe('rewrite-section 端点', () => {
     const onDisk = JSON.parse(fs.readFileSync(specPath('deadbeef01'), 'utf8'))
     expect(onDisk.layers[0].content.text).toBe('原文案（重写版）')
     expect(onDisk.warnings).toContain('「sec-hook」已重写，旁白仍为旧文案，语音与画面文案可能不一致')
+    // 关键不变量：非目标图层（l2）与非目标 section（sec-other）完全不受影响
+    const seeded = rewritableSpec('deadbeef01')
+    expect(onDisk.layers.find((l: any) => l.id === 'l2')).toEqual(seeded.layers.find((l: any) => l.id === 'l2'))
+    expect(onDisk.semantic.sections.find((s: any) => s.id === 'sec-other').text).toBe('别的段')
   })
 
   it('目标图层 overridden 且无 force → 409 带 affected', async () => {
