@@ -20,6 +20,19 @@ type TabKey = (typeof TABS)[number]['key']
 export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('editor')
+  /**
+   * 剪辑台的未保存改动闸门（由 EditorPage 挂进来；没挂剪辑台时为 null）。
+   * 三个 tab 是**条件渲染**：切走剪辑台 = EditorPage 卸载 = 编辑态内存里的未保存改动直接蒸发，
+   * 组件内部的 confirmLeave 根本没机会跑。所以闸只能架在这一层的 tab 切换上。
+   */
+  const editorLeaveGuard = useRef<(() => Promise<boolean>) | null>(null)
+
+  /** 切 tab：从剪辑台走开时先过未保存闸门（用户选保存/丢弃/取消）。 */
+  async function switchTab(next: TabKey) {
+    if (next === tab) return
+    if (tab === 'editor' && editorLeaveGuard.current && !(await editorLeaveGuard.current())) return
+    setTab(next)
+  }
   const [slug, setSlug] = useState('')
   const [hook, setHook] = useState('pain')
   const [n, setN] = useState(1)
@@ -153,7 +166,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
         {selected && <button onClick={() => onOpenProject(selected)} className="text-xs text-fire">查看项目详情 →</button>}
         <div className="ml-auto seg-tabs">
           {TABS.map((t) => (
-            <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
+            <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => { void switchTab(t.key) }}>{t.label}</button>
           ))}
         </div>
       </div>
@@ -172,6 +185,7 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
           items={contentItems} selectedItemId={selectedItemId}
           onSelectItem={(item) => setSelectedItemId(item.id)} onDeleteItem={deleteContentItem}
           onCloseEditor={() => setSelectedItemId(null)}
+          leaveGuardRef={editorLeaveGuard}
           transitionExtras={
             /* 过渡区：旧「拍摄脚本」「卡点」两个 tab。P1 的分镜行与 P2 的时间轴接管后删除。 */
             <>
@@ -196,7 +210,13 @@ export default function WorkshopPage({ onOpenProject }: { onOpenProject: (slug: 
       {!projects.isError && tab === 'library' && (
         <LibraryTab selected={selected} assetsQuery={assets} scriptAssets={scriptAssets}
           contentItems={contentItems.data ?? []} onDelete={deleteAsset}
-          onOpenInEditor={(itemId) => { setSelectedItemId(itemId); setTab('editor') }} />
+          /* E 键：进剪辑台方向。真正会丢改动的是「切走剪辑台」那一步，闸已架在 switchTab；
+             此处 EditorPage 必然处于卸载状态（ref 为 null），仍走同一条路以免日后改成常挂载时漏掉 */
+          onOpenInEditor={async (itemId) => {
+            if (editorLeaveGuard.current && !(await editorLeaveGuard.current())) return
+            setSelectedItemId(itemId)
+            setTab('editor')
+          }} />
       )}
       {!projects.isError && tab === 'templates' && <TemplatesTab />}
 

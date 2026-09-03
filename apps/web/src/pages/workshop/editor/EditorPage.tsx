@@ -7,7 +7,7 @@ import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
 import { api, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
 import { useConfirm } from '../../../components/ui/Confirm'
@@ -52,7 +52,7 @@ export default function EditorPage({
   selected, hook, setHook, n, setN, busy, copyRun, videoRun, onGenerate,
   vp, setVp, bgmList, onMakeVideo,
   items, selectedItemId, onSelectItem, onDeleteItem, onCloseEditor,
-  transitionExtras,
+  leaveGuardRef, transitionExtras,
 }: {
   selected: string
   hook: string
@@ -73,6 +73,13 @@ export default function EditorPage({
   onDeleteItem: (item: ContentItemView) => void
   /** 「打回重做」：退出编辑态回到队列视角（不改库内状态，见 §5 —— 它是「这版不要了，去重做」的视角切换） */
   onCloseEditor: () => void
+  /**
+   * 未保存改动闸门的**出口**：本组件把 `confirmLeave` 挂进这个 ref，宿主（WorkshopPage）在
+   * 「切走剪辑台 tab」前 await 它。tab 是条件渲染 ⇒ 切走即卸载 ⇒ 编辑态（useEditorState 的内存态）
+   * 连同未保存改动一起消失，所以闸必须由**宿主**在卸载前把住，组件内部拦不到这一步。
+   * 卸载时自动清空，宿主拿到 null 即「剪辑台没挂着，无改动可丢」。
+   */
+  leaveGuardRef?: MutableRefObject<(() => Promise<boolean>) | null>
   /** 过渡区：旧「拍摄脚本」「卡点」两个折叠面板，P1/P2 由分镜行与时间轴接管后删除 */
   transitionExtras?: ReactNode
 }) {
@@ -193,6 +200,14 @@ export default function EditorPage({
       return false
     }
   }
+
+  // 每次渲染都重挂：confirmLeave 闭包里的 ed 每帧都是新的，挂旧的会拿到过期的 dirty/save。
+  // 无依赖数组是刻意的（等价于「渲染后同步最新闭包」），卸载时清空见 leaveGuardRef 注释。
+  useEffect(() => {
+    if (!leaveGuardRef) return
+    leaveGuardRef.current = confirmLeave
+    return () => { leaveGuardRef.current = null }
+  })
 
   /** 队列点选：点的是当前这条就直接放行（不算离开），否则先过未保存闸门。 */
   function selectItemGuarded(item: ContentItemView) {

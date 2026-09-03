@@ -304,7 +304,8 @@ export default function LibraryTab({ selected, assetsQuery, scriptAssets, conten
   useEffect(() => {
     setFocusIdx((i) => (videos.length === 0 ? 0 : Math.min(i, videos.length - 1)))
   }, [videos.length])
-  useEffect(() => { setCheckedIds([]); setFocusIdx(0); setExpandedId(null) }, [selected])
+  // 切项目：勾选 / 焦点 / 展开 / 本地打回标记全部清空（打回是会话内的本地态，跟着上一个项目走没有意义）
+  useEffect(() => { setCheckedIds([]); setRejectedIds([]); setFocusIdx(0); setExpandedId(null) }, [selected])
 
   const focusAsset = videos[focusIdx] ?? null
   useEffect(() => {
