@@ -399,7 +399,7 @@ export default function EditorPage({
             <ShotList
               slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
               currentSec={currentSec} onNotice={setNotice} onSelectLayer={setSelectedLayerId}
-              onSpecReplaced={bumpSpecEpoch} confirm={confirm}
+              onSpecReplaced={bumpSpecEpoch} confirm={confirm} compact={!leftWide}
             />
           </div>
         </section>

@@ -106,9 +106,9 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 流程（**只有 Web 端有入口，CLI `forgecast video` 不支持 talk**）：
 
 1. **上传**：做内容 → 成片库 →「上传成片」上传口播 mp4/mov/m4v（落 `workspace/<slug>/uploads/`，登记为 `origin='upload'` 的视频素材）。
-2. **出片**：剪辑台右栏模板下拉选 `talk · 口播合成` → 多出的「口播素材」下拉里选刚上传的那条（没有上传素材时下拉换成提示，出片按钮禁用）→ 出片。成片时长 = ffprobe 量出的片源时长，视频层落在分镜轨第一条 Clip。
+2. **出片**：剪辑台右栏模板下拉选 `talk · 口播合成` → 多出的「口播素材」下拉里选刚上传的那条（没有上传素材时下拉换成提示，出片按钮禁用）→ 出片。成片时长 = ffprobe 量出的片源时长，视频层单独占一条「口播底片」轨。
 3. **剪辑台**：
-   - **裁头尾**：拖视频 Clip 左缘=裁头（动片源起点 `trimStart`）、右缘=裁尾；与普通图层的 resize 语义不同。`spec.durationSec` 跟着联动，越界的动效层自动钳回。
+   - **裁头尾**：拖「口播底片」轨上那条 Clip 的左缘=裁头（动片源起点 `trimStart`）、右缘=裁尾；与普通图层的 resize 语义不同。`spec.durationSec` 跟着联动，越界的动效层自动钳回。
    - **打字幕**：字幕轨空白处**双击**插一条手动字幕，在分镜文案列表里直接打字；字幕条可挪、可拖时长；**把文本清空即删除**这条字幕。
    - **音量**：右栏图层检查器对视频层给出 `trimStart` / `trimEnd` / `volume` 数字微调（volume 0~1）。
 4. **渲成片**：走剪辑台的「渲成片」（Remotion）。

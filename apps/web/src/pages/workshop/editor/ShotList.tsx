@@ -64,7 +64,7 @@ interface RewriteResp { spec: VideoSpec; newText: string }
  *   否则服务端读的是磁盘旧版本，返回的新 spec 一整包替换回来就把本地手改吃掉了。
  */
 export default function ShotList({
-  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced, confirm,
+  slug, videoId, ed, playerRef, currentSec, onNotice, onSelectLayer, onSpecReplaced, confirm, compact,
 }: {
   slug: string
   videoId: string | null
@@ -78,6 +78,9 @@ export default function ShotList({
   onSpecReplaced: () => void
   /** in-app 确认弹层，与 EditorPage 共享同一个 useConfirm 实例（同时只有一个弹层）。 */
   confirm: (opts: ConfirmOpts) => Promise<boolean>
+  /** 窄屏（<1040）：时间轴按 §4 只留分镜+卡点，字幕轨被过滤掉——同 TimelinePane 的那一位。
+   *  手动字幕的空态提示要据此换话：窄屏下「去字幕轨双击」是句用户执行不了的指令。 */
+  compact: boolean
 }) {
   const spec = ed.spec
   const usable = spec && !isUnsupported(spec) ? spec : null
@@ -282,7 +285,11 @@ export default function ShotList({
               手动字幕 {captions.length > 0 && <span className="text-[var(--fc-faint)]">· {captions.length} 条</span>}
             </div>
             {captions.length === 0 ? (
-              <p className="text-xs text-[var(--fc-faint)]">还没有字幕——在时间轴字幕轨上双击空白处加一条。</p>
+              <p className="text-xs text-[var(--fc-faint)]">
+                {compact
+                  ? '窗口太窄，字幕轨已隐藏——放宽窗口后可在时间轴加字幕。'
+                  : '还没有字幕——在时间轴字幕轨上双击空白处加一条。'}
+              </p>
             ) : (
               <div className="flex flex-col gap-2">
                 {captions.map((l) => (
