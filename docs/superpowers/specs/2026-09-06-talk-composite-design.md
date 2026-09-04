@@ -52,7 +52,7 @@ talk 是 **Remotion-only**：generate 的 talk 分支**不产 HyperFrames index.
 ## 2. 生产流程
 
 - **入口**：出片参数模板下拉加 `talk`，选中时多出「口播素材」下拉（本项目 `origin='upload'` 的视频；没有则提示先上传）。server `/video` talk 分支：校验 uploadAssetId（非 upload 视频 400）→ ffprobe 时长 → `lowerTalk` → `renderAndRegister`（Remotion）。
-- **大文件零拷贝（关键决策）**：hfDir 里放**软链**指向 workspace 的上传视频，不拷贝——②已验证 `bundle()` 的 copy-dir 对 publicDir 内软链做 realpath 绝对化重建、不复制本体（Docker 链路同样成立）。几百 MB 的口播片渲染零拷贝。
+- **大文件零拷贝（关键决策）**：hfDir 里放**软链**指向 workspace 的上传视频，不拷贝。（实施勘误：单文件软链被 Remotion 静态服务器 404，Task 8 验收钉出后改为**目录软链** `assets/talk-src/` → 上传文件所在目录，src 引 `talk-src/<basename>`，零拷贝保住，commit 98da9e7）——②已验证 `bundle()` 的 copy-dir 对 publicDir 内软链做 realpath 绝对化重建、不复制本体（Docker 链路同样成立）。几百 MB 的口播片渲染零拷贝。
 - 聚合/成片库/批量审片零改动：talk 产的 video asset 照常带 `sourceAssetId`。
 
 ## 3. 剪辑台（talk 配套）
