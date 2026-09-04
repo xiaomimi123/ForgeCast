@@ -1,5 +1,5 @@
-import type { Effect, LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { paramsDiff, setLayerStyle, toggleEffect } from '@forgecast/editing'
+import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
+import { paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer } from '@forgecast/editing'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
@@ -373,6 +373,7 @@ function LayerInspector({ ed, spec, layerId }: {
     )
   }
   const st = layer.style
+  const isVideo = layer.content.kind === 'video'
   const patchLive = (patch: Partial<LayerStyle>) => ed.applyTransient(setLayerStyle(spec, layer.id, patch))
   const patchStep = (patch: Partial<LayerStyle>) => ed.apply(setLayerStyle(spec, layer.id, patch))
   /** 数字输入：空串＝不设这一项（回落模板默认），不是 0。 */
@@ -395,6 +396,10 @@ function LayerInspector({ ed, spec, layerId }: {
         <span className="ml-auto max-w-[140px] truncate normal-case text-[var(--fc-faint)]" title={layer.id}>{layer.id}</span>
       </div>
       <div className="space-y-2">
+        {/* 视频层（talk 口播底片）没有字号/颜色/对齐这套东西——那组控件对它一项都不生效，
+            与其灰显一整列不可用的字段，不如换成它真正能调的三项：裁头 / 裁尾 / 音量。 */}
+        {isVideo ? <VideoLayerFields ed={ed} spec={spec} layer={layer} /> : (
+      <>
         {numField('X', 'x')}
         {numField('Y', 'y')}
         {numField('宽', 'width')}
@@ -443,6 +448,8 @@ function LayerInspector({ ed, spec, layerId }: {
             </span>
           </div>
         </Field>
+      </>
+        )}
 
         <div className="pt-1 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">特效</div>
         <div className="grid grid-cols-3 gap-x-2 gap-y-1">
@@ -459,6 +466,79 @@ function LayerInspector({ ed, spec, layerId }: {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * 视频层（talk 口播底片）的三个数字字段：裁头 / 裁尾 / 音量。
+ *
+ * **裁头/裁尾走本地草稿、失焦或 Enter 才提交**，不像其它数字字段那样每次 onChange 就
+ * applyTransient：`trimVideoLayer` 会钳制（裁不过 0.2s 底线、吐不过片源两端），边打字边钳
+ * 会把输入框里的半截数字改掉——打 `1.5` 在敲到 `1.` 那一刻就被回写成 `1`，小数点再也打不进去。
+ * 提交时按「目标值 − 当前值」算 δ（该函数的入参是增量，δ>0 恒为「多裁掉」）。
+ *
+ * 音量是有界的离散步进，没有这个问题：直接 applyTransient + 失焦 commit，
+ * 连按几下方向键收成一格 undo。
+ */
+function VideoLayerFields({ ed, spec, layer }: {
+  ed: ReturnType<typeof useEditorState>; spec: VideoSpec; layer: Layer
+}) {
+  const content = layer.content.kind === 'video' ? layer.content : null
+  const [draft, setDraft] = useState<{ key: 'start' | 'end'; value: string } | null>(null)
+  // 换层 / 换内容项后草稿作废：否则上一层的半截数字会跟着显示在下一层的输入框里
+  useEffect(() => { setDraft(null) }, [layer.id])
+  if (!content) return null
+
+  const trimStart = content.trimStart ?? 0
+  const sourceDur = content.sourceDurationSec
+  /** 已裁掉的尾部长度。片源总长未知（老 spec）时为 null——那时不知道尾巴还剩多少，不假装知道。 */
+  const trimTail = sourceDur === undefined ? null : Math.max(0, Math.round((sourceDur - (trimStart + layer.duration)) * 1000) / 1000)
+
+  const commitTrim = (edge: 'start' | 'end', raw: string) => {
+    setDraft(null)
+    const target = Number(raw)
+    if (raw.trim() === '' || !Number.isFinite(target)) return
+    const cur = edge === 'start' ? trimStart : trimTail
+    if (cur === null) return
+    const next = trimVideoLayer(spec, layer.id, edge, target - cur)
+    if (next !== spec) ed.apply(next)
+  }
+
+  const trimField = (label: string, edge: 'start' | 'end', cur: number | null, hint: string) => (
+    <Field label={label} hint={hint}>
+      <input
+        className={CTRL} type="number" step={0.1} min={0}
+        value={draft?.key === edge ? draft.value : (cur ?? 0).toFixed(1)}
+        disabled={cur === null}
+        onChange={(e) => setDraft({ key: edge, value: e.target.value })}
+        onBlur={(e) => commitTrim(edge, e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      />
+    </Field>
+  )
+
+  return (
+    <>
+      {trimField('裁头', 'start', trimStart, '从片源开头裁掉多少秒（减小＝把裁掉的头吐回来）')}
+      {trimField('裁尾', 'end', trimTail,
+        trimTail === null ? '这份 spec 没有片源总长，裁尾只能在时间轴上拖' : '从片源结尾裁掉多少秒（减小＝把裁掉的尾吐回来）')}
+      <Field label="片长" hint="裁剪后的成片时长，跟着裁头/裁尾走">
+        <div className={CTRL_RO}>{layer.duration.toFixed(1)}s{sourceDur !== undefined && ` / 片源 ${sourceDur.toFixed(1)}s`}</div>
+      </Field>
+      <Field label="音量" hint="口播原声音量 0~1">
+        <div className="flex items-center gap-2">
+          <input
+            className={CTRL} type="number" step={0.1} min={0} max={1}
+            value={content.volume ?? 1}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              if (Number.isFinite(v)) ed.applyTransient(setVideoVolume(spec, layer.id, v))
+            }}
+            onBlur={() => ed.commit()}
+          />
+        </div>
+      </Field>
+    </>
   )
 }
 

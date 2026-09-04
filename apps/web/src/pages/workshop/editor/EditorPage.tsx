@@ -16,7 +16,7 @@ import type { TaskRun } from '../../../useTaskRun'
 import InspectorPane from './InspectorPane'
 import QueuePane from './QueuePane'
 import ShotList from './ShotList'
-import TimelinePane from './TimelinePane'
+import TimelinePane, { timelineHeight } from './TimelinePane'
 import { OUTLINE, SOLID, type VideoParams } from './ui'
 import { NoOrigSnapshotError, useEditorState } from './useEditorState'
 
@@ -28,9 +28,8 @@ export { BGS, MOODS, OUTLINE, SOLID, VIDEO_TPLS, type VideoParams } from './ui'
 const TOOLBAR_H = 46
 const MAT_H = 300
 const MAT_PAD = 18
-const TIMELINE_H = 186
-/** <1040 时间轴降到的高度（§4：只留分镜+卡点两轨）。见 TimelinePane 的 `compact` 注释。 */
-const TIMELINE_H_COMPACT = 148
+/** 时间轴高度（186 / <1040 时 148，talk 再多一条 26 的底片轨）由 TimelinePane 独家给出——
+ *  网格行高与它内部的 section 高度必须同源，见 `timelineHeight` 的注释。 */
 /**
  * 右栏收抽屉的阈值（§4 窄屏表：<1240 右栏收成抽屉，toolbar 出现「参数」按钮）。
  * 三栏一起摆下时中栏最小宽必须是 **560 而不是 620**：300 + 620 + 320 + 两道 8 的 gap = 1256 > 1240，
@@ -320,7 +319,7 @@ export default function EditorPage({
             : leftWide
               ? `300px minmax(${MID_MIN}px,1fr)`
               : `minmax(${MID_MIN}px,1fr)`,
-          gridTemplateRows: `minmax(0,1fr) ${leftWide ? TIMELINE_H : TIMELINE_H_COMPACT}px`,
+          gridTemplateRows: `minmax(0,1fr) ${timelineHeight(ed.spec, !leftWide)}px`,
           height: 'calc(100vh - 190px)',
           minHeight: 620,
         }}

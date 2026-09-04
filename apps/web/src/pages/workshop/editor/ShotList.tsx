@@ -1,5 +1,5 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
-import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
+import type { Layer, VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import { addManualBeat, deriveShots, updateLayerText, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useState, type RefObject } from 'react'
@@ -80,7 +80,24 @@ export default function ShotList({
   confirm: (opts: ConfirmOpts) => Promise<boolean>
 }) {
   const spec = ed.spec
-  const shots = useMemo(() => (spec && !isUnsupported(spec) ? deriveShots(spec) : []), [spec])
+  const usable = spec && !isUnsupported(spec) ? spec : null
+  /** talk 的口播底片层。它单独占一行（「口播视频」），不混进分镜列表——那一段没有文案可改，
+   *  混进去就是一行永远显示「（空）」、点了也改不动的死行。 */
+  const film = useMemo(
+    () => (usable?.template === 'talk' ? usable.layers.find((l) => l.content.kind === 'video') ?? null : null),
+    [usable],
+  )
+  const shots = useMemo(() => {
+    const all = usable ? deriveShots(usable) : []
+    return film ? all.filter((s) => !s.layerIds.includes(film.id)) : all
+  }, [usable, film])
+  /** talk 的手动字幕（`addCaptionLayer` 插的，from 为 null 所以不进 deriveShots）。按时间排。 */
+  const captions = useMemo(
+    () => (usable?.template === 'talk'
+      ? usable.layers.filter((l) => l.content.kind === 'caption').sort((a, b) => a.start - b.start)
+      : []),
+    [usable],
+  )
   /** 全列唯一 active（§5）。存 sectionId 而非索引：重写 / 撤销后段序不变但内容会变，索引会指错行。 */
   const [activeId, setActiveId] = useState<string | null>(null)
   /**
@@ -104,14 +121,29 @@ export default function ShotList({
     playerRef.current?.seekTo(secToFrames(shot.startSec))
   }
 
+  /**
+   * 一行「可改字的东西」→ 它当前的文本与要写回的图层。
+   * 行 id 有两种来源：分镜行用 sectionId，talk 的手动字幕行用图层 id（`cap-manual-n`）——
+   * 两种 id 的取值空间不重叠，同一份 draft 状态可以共用。
+   */
+  function editableAt(id: string): { text: string; layerId: string } | null {
+    if (!spec) return null
+    const shot = shots.find((s) => s.sectionId === id)
+    if (shot) {
+      const layerId = textLayerId(spec, shot)
+      return layerId ? { text: shot.text, layerId } : null
+    }
+    const cap = captions.find((c) => c.id === id)
+    if (cap && cap.content.kind === 'caption') return { text: cap.content.text, layerId: cap.id }
+    return null
+  }
+
   /** 提交草稿。**值没变就不 apply**——否则点一下失焦就占掉一格 undo 栈。 */
   function commitDraft() {
     if (!draft || !spec) return
-    const shot = shots.find((s) => s.sectionId === draft.id)
-    if (!shot || draft.value === shot.text) { setDraft(null); return }
-    const layerId = textLayerId(spec, shot)
-    if (!layerId) { setDraft(null); return }
-    ed.apply(updateLayerText(spec, layerId, draft.value))
+    const target = editableAt(draft.id)
+    if (!target || draft.value === target.text) { setDraft(null); return }
+    ed.apply(updateLayerText(spec, target.layerId, draft.value))
     setDraft(null)
   }
 
@@ -199,8 +231,20 @@ export default function ShotList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {!spec && <p className="text-xs text-[var(--fc-faint)]">选中一条已出片的内容后，这里显示它的分镜文案。</p>}
-        {spec && shots.length === 0 && (
+        {spec && shots.length === 0 && !film && (
           <p className="text-xs text-[var(--fc-faint)]">这条素材包里没有可编辑的分镜（图层为空或是自定义模板）。</p>
+        )}
+        {/* talk：口播底片单独一行——点它把右栏图层检查器切到视频层（trim/音量在那里微调） */}
+        {film && (
+          <FilmRow
+            layer={film}
+            active={activeId === film.id}
+            onSelect={() => {
+              if (activeId !== film.id) { commitDraft(); setActiveId(film.id); setDraft(null) }
+              onSelectLayer(film.id)
+              playerRef.current?.seekTo(secToFrames(film.start))
+            }}
+          />
         )}
         <div className="flex flex-col gap-2">
           {shots.map((shot) => (
@@ -219,7 +263,123 @@ export default function ShotList({
             />
           ))}
         </div>
+
+        {/* talk 手动字幕：与分镜行同一套编辑口径（草稿 → 失焦/⌘Enter → updateLayerText） */}
+        {film && (
+          <div className="mt-3">
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
+              手动字幕 {captions.length > 0 && <span className="text-[var(--fc-faint)]">· {captions.length} 条</span>}
+            </div>
+            {captions.length === 0 ? (
+              <p className="text-xs text-[var(--fc-faint)]">还没有字幕——在时间轴字幕轨上双击空白处加一条。</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {captions.map((l) => (
+                  <CaptionRow
+                    key={l.id}
+                    layer={l}
+                    active={activeId === l.id}
+                    value={
+                      draft && draft.id === l.id && draft.base === (l.content.kind === 'caption' ? l.content.text : '')
+                        ? draft.value
+                        : (l.content.kind === 'caption' ? l.content.text : '')
+                    }
+                    onSelect={() => {
+                      if (activeId !== l.id) { commitDraft(); setActiveId(l.id); setDraft(null) }
+                      onSelectLayer(l.id)
+                      playerRef.current?.seekTo(secToFrames(l.start))
+                    }}
+                    onChange={(v) => setDraft({
+                      id: l.id,
+                      base: l.content.kind === 'caption' ? l.content.text : '',
+                      value: v,
+                    })}
+                    onCommit={commitDraft}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * talk 的「口播视频」行。没有文案可改，显示的是**裁剪摘要**——用户在时间轴上拖完两端，
+ * 到底裁掉了多少、还剩多长，这里有一处能读到确切数字（时间轴上的条只画得下一行小字）。
+ */
+function FilmRow({ layer, active, onSelect }: { layer: Layer; active: boolean; onSelect: () => void }) {
+  const c = layer.content.kind === 'video' ? layer.content : null
+  const trimStart = c?.trimStart ?? 0
+  const src = (c?.src ?? '').split(/[/\\]/).pop() ?? ''
+  return (
+    <div
+      onClick={onSelect}
+      className={`mb-2 cursor-pointer rounded-[var(--fc-r-sm)] border border-[var(--fc-line)] ${
+        active ? 'bg-[var(--fc-surface-2)]' : 'bg-[var(--fc-bg)] hover:border-[var(--fc-line-2)]'
+      }`}
+      style={{ padding: '9px 11px', borderLeft: active ? '3px solid var(--fc-accent)' : undefined }}
+    >
+      <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--fc-faint)]">
+        <span>{fmtTimecode(layer.start)}</span>
+        <span className="rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)] px-1.5 py-0.5 text-[var(--fc-muted)]">口播视频</span>
+        <span className="ml-auto">已裁头 {trimStart.toFixed(1)}s · 片长 {layer.duration.toFixed(1)}s</span>
+      </div>
+      <p className="mt-1 truncate text-sm text-[var(--fc-ink)]">{src || '（口播底片）'}</p>
+      {active && (
+        <p className="mt-1 text-[11px] leading-relaxed text-[var(--fc-faint)]">
+          在时间轴底片轨拖两端裁剪；右栏图层检查器里可以数字微调裁头 / 裁尾 / 音量。
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** talk 的手动字幕行：一行可改字的文本（与分镜行同款，只是没有重写/加卡点那组按钮）。 */
+function CaptionRow({ layer, active, value, onSelect, onChange, onCommit }: {
+  layer: Layer
+  active: boolean
+  value: string
+  onSelect: () => void
+  onChange: (v: string) => void
+  onCommit: () => void
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      className={`cursor-pointer rounded-[var(--fc-r-sm)] border border-[var(--fc-line)] ${
+        active ? 'bg-[var(--fc-surface-2)]' : 'bg-[var(--fc-bg)] hover:border-[var(--fc-line-2)]'
+      }`}
+      style={{ padding: active ? 11 : '9px 11px', borderLeft: active ? '3px solid var(--fc-accent)' : undefined }}
+    >
+      <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--fc-faint)]">
+        <span>{fmtTimecode(layer.start)}</span>
+        <span className="rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)] px-1.5 py-0.5 text-[var(--fc-muted)]">字幕</span>
+        <span className="ml-auto">{layer.duration.toFixed(1)}s</span>
+      </div>
+      {active ? (
+        <textarea
+          className="mt-2 w-full resize-y rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] p-2 text-sm leading-relaxed text-[var(--fc-ink)]"
+          rows={2}
+          value={value}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault()
+              onCommit();
+              (e.target as HTMLTextAreaElement).blur()
+            }
+          }}
+        />
+      ) : (
+        <p className="mt-1 truncate text-sm leading-relaxed text-[var(--fc-ink)]">
+          {value || <span className="text-[var(--fc-faint)]">（空）</span>}
+        </p>
+      )}
     </div>
   )
 }
