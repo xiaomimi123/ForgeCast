@@ -10,19 +10,41 @@ const videoLayer = (over: Partial<Layer> = {}): Layer => ({
   style: over.style ?? {}, effects: over.effects ?? [],
 })
 
-/** 口播底片 v[0,12) 在 track0，两条动效层：a[0,3) track1、b[8,3) track2（右缘 11）。 */
+/**
+ * 口播底片 v[0,12) 在 track0；动效层复刻 lowerTalk 的真实结构——hook/card/cta **同在 track 1**，
+ * 比例照抄 `[0,.15D) / [.15D,.85D) / [.85D,D)`：a=hook[0,1.8)、b=card[1.8,10.2)、c=cta[10.2,12)。
+ * 「同一轨」是关键：早期 fixture 把它们摊在 track1/track2 上，于是逐层独立钳回的重叠缺陷永远照不出来。
+ */
 const talkSpec = (over: Partial<VideoSpec> = {}): VideoSpec =>
   baseSpec({
     durationSec: 12,
     layers: [
       videoLayer(),
-      textLayer({ id: 'a', start: 0, duration: 3, track: 1 }),
-      textLayer({ id: 'b', start: 8, duration: 3, track: 2 }),
+      textLayer({ id: 'a', start: 0, duration: 1.8, track: 1 }),
+      textLayer({ id: 'b', start: 1.8, duration: 8.4, track: 1 }),
+      textLayer({ id: 'c', start: 10.2, duration: 1.8, track: 1 }),
     ],
     ...over,
   })
 
 const round1 = (n: number) => Math.round(n * 10) / 10
+
+/**
+ * 同 track 不重叠是 spec 硬规则（server 的 validateSpecPut 会 400，用户一按 ⌘S 就被拒）。
+ * editing 不 import server：这里按同一口径（同 track 排序后相邻比较）自查。
+ */
+const expectNoOverlap = (s: VideoSpec) => {
+  const byTrack = new Map<number, VideoSpec['layers']>()
+  for (const l of s.layers) byTrack.set(l.track, [...(byTrack.get(l.track) ?? []), l])
+  for (const [track, ls] of byTrack) {
+    const sorted = [...ls].sort((a, b) => a.start - b.start)
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1]
+      const overlap = round1(prev.start + prev.duration) > sorted[i].start
+      expect(overlap ? `track${track} 重叠：${prev.id} × ${sorted[i].id}` : 'ok').toBe('ok')
+    }
+  }
+}
 
 const layerOf = (spec: VideoSpec, id: string) => spec.layers.find((l) => l.id === id)!
 const contentOf = (spec: VideoSpec, id: string) =>
@@ -104,8 +126,9 @@ describe('trimVideoLayer — edge=end 的片源长度钳制（sourceDurationSec�
     talkSpec({
       layers: [
         videoLayer({ content: { kind: 'video', src: 'talk.mp4', muted: false, trimStart: 1, trimEnd: 13, sourceDurationSec: 15 } }),
-        textLayer({ id: 'a', start: 0, duration: 3, track: 1 }),
-        textLayer({ id: 'b', start: 8, duration: 3, track: 2 }),
+        textLayer({ id: 'a', start: 0, duration: 1.8, track: 1 }),
+        textLayer({ id: 'b', start: 1.8, duration: 8.4, track: 1 }),
+        textLayer({ id: 'c', start: 10.2, duration: 1.8, track: 1 }),
       ],
       ...over,
     })
@@ -154,35 +177,58 @@ describe('trimVideoLayer — edge=end 的片源长度钳制（sourceDurationSec�
 
 describe('trimVideoLayer — 越界图层钳回', () => {
   it('duration 超界的截短（start 仍在界内）', () => {
-    // 裁到 10：b[8,3) 右缘 11 越界 → duration 截到 2
+    // 裁到 10：c=cta[10.2,12) 右缘越界 → 保时长贴末尾到 [8.2,10)，
+    // 于是 b=card[1.8,10.2) 也得让位，截到右缘 8.2（同轨不能压着 cta）
     const spec = talkSpec()
     const out = trimVideoLayer(spec, 'v', 'end', 2)
-    expect(layerOf(out, 'b').start).toBe(8)
-    expect(layerOf(out, 'b').duration).toBe(2)
+    expect(layerOf(out, 'c').start).toBe(8.2)
+    expect(layerOf(out, 'c').duration).toBe(1.8)
+    expect(layerOf(out, 'b').start).toBe(1.8)
+    expect(layerOf(out, 'b').duration).toBe(6.4)
     expect(layerOf(out, 'b').overridden).toBe(true)
-    // 没越界的层保持原引用（前端 memo 依赖）
+    // 没被挤到的层保持原引用（前端 memo 依赖）
     expect(layerOf(out, 'a')).toBe(layerOf(spec, 'a'))
     expect(layerOf(out, 'a').overridden).toBe(false)
+    expectNoOverlap(out)
   })
 
   it('start 超界的贴末尾（保时长，整体左移）', () => {
-    // 裁到 8.1：b 的 start=8 只剩 0.1 < 0.2 → 贴末尾 start = 8.1-3 = 5.1，duration 保 3
+    // 裁到 8.1：c 的 start=10.2 已在界外 → 贴末尾 start = 8.1-1.8 = 6.3，duration 保 1.8
     const out = trimVideoLayer(talkSpec(), 'v', 'end', 3.9)
     expect(out.durationSec).toBe(8.1)
-    expect(layerOf(out, 'b').start).toBe(5.1)
-    expect(layerOf(out, 'b').duration).toBe(3)
+    expect(layerOf(out, 'c').start).toBe(6.3)
+    expect(layerOf(out, 'c').duration).toBe(1.8)
+    expect(layerOf(out, 'b').duration).toBe(4.5)   // card 让位到 [1.8,6.3)
+    expectNoOverlap(out)
   })
 
-  it('完全放不下的钳到 0.2 贴末尾——不删层', () => {
-    // 裁到 1：b 时长 3 > 1，放不下 → start=0.8 duration=0.2；层数不变
+  it('完全放不下时挤成最短——仍不删层、仍不重叠', () => {
+    // 裁到 1：track1 三层各要 0.2，左移带地板（左边层数 × 0.2）→ a[0,.2) b[.2,.2) c[.4,.6)。
     const out = trimVideoLayer(talkSpec(), 'v', 'end', 11)
     expect(out.durationSec).toBe(1)
-    expect(out.layers).toHaveLength(3)
-    expect(layerOf(out, 'b').start).toBe(0.8)
-    expect(layerOf(out, 'b').duration).toBe(0.2)
-    // a[0,3) 的 start 仍在界内 → 走截短分支，压到 [0,1)
+    expect(out.layers).toHaveLength(4)
     expect(layerOf(out, 'a').start).toBe(0)
-    expect(layerOf(out, 'a').duration).toBe(1)
+    expect(layerOf(out, 'a').duration).toBe(0.2)
+    expect(layerOf(out, 'b').start).toBe(0.2)
+    expect(layerOf(out, 'b').duration).toBe(0.2)
+    expect(layerOf(out, 'c').start).toBe(0.4)
+    expect(layerOf(out, 'c').duration).toBe(0.6)
+    expectNoOverlap(out)
+  })
+
+  it('trim 后同轨仍无重叠（全量 δ 扫描；同轨邻居不能被逐层独立钳出重叠）', () => {
+    // 真实 lowerTalk 把 hook/card/cta 全放 track 1。逐层独立钳回时，card 只被截短、
+    // cta 却「保时长左移」，两者必然叠在一起 → server validateSpecPut 400 → ⌘S 与渲成片全挂。
+    const spec = talkSpec()
+    // δ 上界留到 durationSec ≥ 0.6：track1 有 3 层、每层最短 0.2，再短就是物理上放不下
+    // （不删层的铁律下无解），不属于本不变量的辖区。
+    for (let d = 0; d <= 11.4; d = round1(d + 0.1)) {
+      const out = trimVideoLayer(spec, 'v', 'end', d)
+      expectNoOverlap(out)
+      expect(out.layers).toHaveLength(spec.layers.length)
+      // 裁头同样联动 durationSec，一并扫
+      expectNoOverlap(trimVideoLayer(spec, 'v', 'start', d))
+    }
   })
 })
 
@@ -299,19 +345,6 @@ describe('addCaptionLayer', () => {
   })
 
   it('加完的 spec 同轨仍无重叠（复刻 validateSpecPut 的重叠检查）', () => {
-    // editing 不 import server：这里按同一口径（同 track 排序后相邻比较）自查。
-    const expectNoOverlap = (s: VideoSpec) => {
-      const byTrack = new Map<number, typeof s.layers>()
-      for (const l of s.layers) byTrack.set(l.track, [...(byTrack.get(l.track) ?? []), l])
-      for (const [track, ls] of byTrack) {
-        const sorted = [...ls].sort((a, b) => a.start - b.start)
-        for (let i = 1; i < sorted.length; i++) {
-          const prev = sorted[i - 1]
-          const overlap = round1(prev.start + prev.duration) > sorted[i].start
-          expect(overlap ? `track${track} 重叠：${prev.id} × ${sorted[i].id}` : 'ok').toBe('ok')
-        }
-      }
-    }
     const base = baseSpec({
       durationSec: 12,
       layers: [

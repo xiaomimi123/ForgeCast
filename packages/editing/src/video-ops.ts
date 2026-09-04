@@ -22,22 +22,62 @@ function requireVideoLayer(spec: VideoSpec, layerId: string): Layer {
 }
 
 /**
- * 底片时长变化后把其余图层钳回 [0, durationSec)。三种情况，都不删层——用户还能自己拉回来：
+ * 单层钳回 [0, limit)。三种情况，都不删层——用户还能自己拉回来：
  *   1. start 仍在界内且右缘越界 → 截短 duration
  *   2. start 太靠后（界内不足 MIN_LAYER_DURATION）但整条放得下 → 贴末尾（保时长左移）
- *   3. 整条都放不下（duration > durationSec）→ duration 钳到 0.2 贴末尾
+ *   3. 整条都放不下（duration > limit）→ duration 钳到 0.2 贴末尾
  * 被钳的层置 overridden：它们的时间确实被程序改过了，语义与「被剪辑台改过」一致——
  * 下次重新 lower 时应当保护/提示，而不是悄悄用生成值把用户看到的时间轴覆盖回去。
+ *
+ * `limit` 不一定是 durationSec：见 clampLayers——同轨右边的邻居先落位后，左边这条的可用右界
+ * 就是那位邻居的新 start。
  */
-function clampLayer(layer: Layer, durationSec: number): Layer {
-  if (layer.start + layer.duration <= durationSec) return layer
-  if (durationSec - layer.start >= MIN_LAYER_DURATION) {
-    return { ...layer, duration: round3(durationSec - layer.start), overridden: true }
+function clampLayer(layer: Layer, limit: number, floor: number): Layer {
+  if (layer.start + layer.duration <= limit) return layer
+  if (limit - layer.start >= MIN_LAYER_DURATION) {
+    return { ...layer, duration: round3(limit - layer.start), overridden: true }
   }
-  if (layer.duration <= durationSec) {
-    return { ...layer, start: round3(durationSec - layer.duration), overridden: true }
+  const start = round3(Math.max(floor, limit - layer.duration))
+  const duration = start + layer.duration <= limit
+    ? layer.duration
+    : Math.max(MIN_LAYER_DURATION, round3(limit - start))
+  return { ...layer, start, duration, overridden: true }
+}
+
+/**
+ * 底片时长变化后把其余图层整体钳回 [0, durationSec)，**按轨分组、从右往左带游标**。
+ *
+ * 逐层独立钳是错的：真实 lowerTalk 把 hook/card/cta 三层全放 track 1
+ * （比例 `[0,.15D) / [.15D,.85D) / [.85D,D)`）。裁短后 card 只被「截短」、cta 却「保时长左移」，
+ * 两者必然叠在一起；同 track 不重叠是 spec 硬规则，server 的 validateSpecPut 会直接 400 ——
+ * 剪辑台 ⌘S 与渲成片一起挂。20s 的片裁掉 2.9s 就够触发。
+ *
+ * 从右往左的理由：末尾那条（cta）的「贴末尾保时长」是设计意图，应当优先满足；让位的该是它
+ * 左边那条。游标 `limit` 从 durationSec 起，每落位一层就收缩到该层的新 start，左边的层只能
+ * 在 [0, limit) 里安身——于是截短/左移都不可能压到右邻居身上。
+ *
+ * 左移还带一条地板 `floor = 左边层数 × MIN_LAYER_DURATION`：不给左邻居留下最低限度的位置，
+ * 它们就只能挤成重叠。地板与游标一起，保证 durationSec ≥ 同轨层数 × 0.2 时结果必然无重叠。
+ * 再短就是物理无解（不删层是既有铁律，这里不为了消重叠去删用户的层）。
+ */
+function clampLayers(layers: Layer[], durationSec: number, skipId: string): Layer[] {
+  const byTrack = new Map<number, Layer[]>()
+  for (const l of layers) {
+    if (l.id === skipId) continue
+    byTrack.set(l.track, [...(byTrack.get(l.track) ?? []), l])
   }
-  return { ...layer, start: round3(durationSec - MIN_LAYER_DURATION), duration: MIN_LAYER_DURATION, overridden: true }
+  const clamped = new Map<string, Layer>()
+  for (const track of byTrack.values()) {
+    const sorted = [...track].sort((a, b) => a.start - b.start)
+    let limit = durationSec
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const next = clampLayer(sorted[i], limit, round3(i * MIN_LAYER_DURATION))
+      if (next !== sorted[i]) clamped.set(next.id, next)
+      limit = next.start
+    }
+  }
+  // 未被钳的层返回原引用（前端 memo 依赖），且保持原数组顺序
+  return layers.map((l) => clamped.get(l.id) ?? l)
 }
 
 /**
@@ -78,7 +118,7 @@ export function trimVideoLayer(spec: VideoSpec, layerId: string, edge: 'start' |
   return {
     ...spec,
     durationSec: duration,
-    layers: spec.layers.map((l) => (l.id === layerId ? nextVideo : clampLayer(l, duration))),
+    layers: clampLayers(spec.layers, duration, layerId).map((l) => (l.id === layerId ? nextVideo : l)),
   }
 }
 
