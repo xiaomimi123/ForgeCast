@@ -1,11 +1,11 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
 import type { Layer, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { addManualBeat, deriveShots, updateLayerText, type ShotView } from '@forgecast/editing'
+import { addManualBeat, deriveShots, removeCaptionLayer, updateLayerText, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useState, type RefObject } from 'react'
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
-import { OUTLINE } from './ui'
+import { isManualCaption, OUTLINE } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /**
@@ -138,11 +138,22 @@ export default function ShotList({
     return null
   }
 
-  /** 提交草稿。**值没变就不 apply**——否则点一下失焦就占掉一格 undo 栈。 */
+  /**
+   * 提交草稿。**值没变就不 apply**——否则点一下失焦就占掉一格 undo 栈。
+   * **清空即删**：手动字幕行清空文本＝删掉这一层（与时间轴上就地改字同一口径，
+   * 也是用户删字幕的唯一入口）。分镜行 / 五模板 TTS 字幕不适用，空文本照常写回。
+   */
   function commitDraft() {
     if (!draft || !spec) return
     const target = editableAt(draft.id)
     if (!target || draft.value === target.text) { setDraft(null); return }
+    if (draft.value.trim() === '' && isManualCaption(target.layerId)) {
+      setDraft(null)
+      setActiveId(null)
+      ed.apply(removeCaptionLayer(spec, target.layerId))
+      onNotice('已删除字幕（⌘/Ctrl+Z 可撤销）')
+      return
+    }
     ed.apply(updateLayerText(spec, target.layerId, draft.value))
     setDraft(null)
   }

@@ -136,3 +136,24 @@ export function addCaptionLayer(spec: VideoSpec, tSec: number, text: string): Vi
   }
   return { ...spec, layers: [...spec.layers, layer] }
 }
+
+/** 手动字幕 id 的前缀（`addCaptionLayer` 生成的形状）。 */
+const MANUAL_CAPTION_PREFIX = 'cap-manual-'
+
+/**
+ * 删除一条**手动**字幕层（剪辑台「清空文本即删除」的落点）。
+ *
+ * **只接受 `cap-manual-` 前缀的 id**，其余一律 throw：五模板的 `cap0/1/2…` 是 TTS cues 生成的，
+ * 与旁白一一对应，删掉就和语音对不上——那不是用户「清空一行字」该有的后果。
+ * 前缀是 `addCaptionLayer` 唯一的产出形状（见 `nextCaptionId`），拿它当「这条是手打的」的判据，
+ * 比看 `from === null || overridden` 都稳：后两者在别的编辑路径上也会成立。
+ */
+export function removeCaptionLayer(spec: VideoSpec, layerId: string): VideoSpec {
+  if (!layerId.startsWith(MANUAL_CAPTION_PREFIX)) {
+    throw new Error(`图层「${layerId}」不是手动字幕，不能删除`)
+  }
+  const layer = spec.layers.find((l) => l.id === layerId)
+  if (!layer) throw new Error(`图层「${layerId}」不存在`)
+  if (layer.kind !== 'caption') throw new Error(`图层「${layerId}」不是字幕层，不能删除`)
+  return { ...spec, layers: spec.layers.filter((l) => l.id !== layerId) }
+}

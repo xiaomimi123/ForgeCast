@@ -2,7 +2,7 @@ import { secToFrames } from '@forgecast/compositions/src/time'
 import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import {
   addCaptionLayer, addManualBeat, allBeats, deriveShots, layoutRow, moveLayer, moveShotBy,
-  removeManualBeat, resizeLayer, snapToBeats, trimVideoLayer, updateLayerText,
+  removeCaptionLayer, removeManualBeat, resizeLayer, snapToBeats, trimVideoLayer, updateLayerText,
   type Beat, type ShotView,
 } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
 import { fmtTimecode } from './ShotList'
+import { isManualCaption } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /** §4 尺寸表。五条轨道的高度是**唯一**来源：轨道名列与轨道行都从这个数组渲，才不会各写各的。
@@ -396,12 +397,23 @@ export default function TimelinePane({
     onNotice(`已在 ${fmtTimecode(added.start)} 加字幕`)
   }
 
-  /** 就地改字提交。值没变就不 apply——点一下失焦不该占掉一格 undo。 */
+  /**
+   * 就地改字提交。值没变就不 apply——点一下失焦不该占掉一格 undo。
+   * **清空即删**：手动字幕清空文本＝删掉这一层（否则会留下一条看不见、也没有删除入口的空层）。
+   * 五模板 TTS 的字幕层不走这条（它们与旁白一一对应，删了就对不上），空文本时丢弃编辑保留旧文本。
+   */
   function commitCaptionText(layerId: string, text: string) {
     const cur = ed.spec
     if (!cur || isUnsupported(cur)) return
     const layer = cur.layers.find((l) => l.id === layerId)
     if (!layer || layer.content.kind !== 'caption' || layer.content.text === text) return
+    if (text.trim() === '') {
+      if (!isManualCaption(layerId)) return
+      ed.commit()
+      ed.apply(removeCaptionLayer(cur, layerId))
+      onNotice('已删除字幕（⌘/Ctrl+Z 可撤销）')
+      return
+    }
     ed.commit()
     ed.apply(updateLayerText(cur, layerId, text))
   }

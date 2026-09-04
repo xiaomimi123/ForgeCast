@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Layer, VideoSpec } from '@forgecast/studio'
-import { addCaptionLayer, setVideoVolume, trimVideoLayer } from '../src/video-ops'
+import { addCaptionLayer, removeCaptionLayer, setVideoVolume, trimVideoLayer } from '../src/video-ops'
 import { baseSpec, captionLayer, snapshot, textLayer } from './fixtures'
 
 const videoLayer = (over: Partial<Layer> = {}): Layer => ({
@@ -348,5 +348,52 @@ describe('setVideoVolume', () => {
 
   it('非 video 图层 throw', () => {
     expect(() => setVideoVolume(talkSpec(), 'a', 0.5)).toThrow()
+  })
+})
+
+describe('removeCaptionLayer', () => {
+  const withManual = (over: Partial<Layer> = {}) => baseSpec({
+    durationSec: 12,
+    layers: [
+      videoLayer(),
+      captionLayer({ id: 'cap0', from: null, start: 0, duration: 2, track: 9 }),
+      captionLayer({ id: 'cap-manual-1', from: null, start: 4, duration: 2.5, track: 2, ...over }),
+    ],
+  })
+
+  it('删掉那一层，层数 -1，其余图层保持原引用，入参不被改', () => {
+    const spec = withManual()
+    const before = snapshot(spec)
+    const out = removeCaptionLayer(spec, 'cap-manual-1')
+    expect(spec).toEqual(before)
+    expect(out.layers).toHaveLength(2)
+    expect(out.layers.map((l) => l.id)).toEqual(['v', 'cap0'])
+    expect(out.layers[0]).toBe(spec.layers[0])
+    expect(out.layers[1]).toBe(spec.layers[1])
+    // durationSec 不动：删一条字幕不改片长
+    expect(out.durationSec).toBe(spec.durationSec)
+  })
+
+  it('undo 语境：删除返回的是新对象，旧引用仍是删除前那份（可整份回退）', () => {
+    const spec = withManual()
+    const out = removeCaptionLayer(spec, 'cap-manual-1')
+    expect(out).not.toBe(spec)
+    expect(spec.layers).toHaveLength(3)
+    expect(spec.layers.some((l) => l.id === 'cap-manual-1')).toBe(true)
+  })
+
+  it('非手动字幕（TTS 的 cap0）throw——它与旁白一一对应，不该被清空文本顺手删掉', () => {
+    const spec = withManual()
+    expect(() => removeCaptionLayer(spec, 'cap0')).toThrow(/不是手动字幕/)
+    expect(spec.layers).toHaveLength(3)
+  })
+
+  it('前缀对但不是字幕层 / 不存在的 id 都 throw', () => {
+    const notCaption = baseSpec({
+      durationSec: 12,
+      layers: [videoLayer(), textLayer({ id: 'cap-manual-1', track: 5 })],
+    })
+    expect(() => removeCaptionLayer(notCaption, 'cap-manual-1')).toThrow(/不是字幕层/)
+    expect(() => removeCaptionLayer(withManual(), 'cap-manual-9')).toThrow(/不存在/)
   })
 })

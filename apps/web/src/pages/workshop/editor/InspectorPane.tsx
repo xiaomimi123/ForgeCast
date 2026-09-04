@@ -484,7 +484,7 @@ function VideoLayerFields({ ed, spec, layer }: {
   ed: ReturnType<typeof useEditorState>; spec: VideoSpec; layer: Layer
 }) {
   const content = layer.content.kind === 'video' ? layer.content : null
-  const [draft, setDraft] = useState<{ key: 'start' | 'end'; value: string } | null>(null)
+  const [draft, setDraft] = useState<{ key: 'start' | 'end' | 'volume'; value: string } | null>(null)
   // 换层 / 换内容项后草稿作废：否则上一层的半截数字会跟着显示在下一层的输入框里
   useEffect(() => { setDraft(null) }, [layer.id])
   if (!content) return null
@@ -525,18 +525,22 @@ function VideoLayerFields({ ed, spec, layer }: {
       <Field label="片长" hint="裁剪后的成片时长，跟着裁头/裁尾走">
         <div className={CTRL_RO}>{layer.duration.toFixed(1)}s{sourceDur !== undefined && ` / 片源 ${sourceDur.toFixed(1)}s`}</div>
       </Field>
-      <Field label="音量" hint="口播原声音量 0~1">
-        <div className="flex items-center gap-2">
-          <input
-            className={CTRL} type="number" step={0.1} min={0} max={1}
-            value={content.volume ?? 1}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              if (Number.isFinite(v)) ed.applyTransient(setVideoVolume(spec, layer.id, v))
-            }}
-            onBlur={() => ed.commit()}
-          />
-        </div>
+      {/* 音量和 trim 一样走本地草稿：受控回写会把半截数字改掉——键入 `0.5` 敲到 `0.` 那一刻
+          `Number('0.')` 是 0，小数点当场被抹掉，再也打不进去。失焦 / 回车才提交。 */}
+      <Field label="音量" hint="口播原声音量 0~1（清空＝回到满音量）">
+        <input
+          className={CTRL} type="number" step={0.1} min={0} max={1}
+          value={draft?.key === 'volume' ? draft.value : (content.volume ?? 1)}
+          onChange={(e) => setDraft({ key: 'volume', value: e.target.value })}
+          onBlur={(e) => {
+            setDraft(null)
+            const v = e.target.value.trim() === '' ? 1 : Number(e.target.value)
+            if (!Number.isFinite(v)) return
+            const next = setVideoVolume(spec, layer.id, v)
+            if (next !== spec) ed.apply(next)
+          }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        />
       </Field>
     </>
   )
