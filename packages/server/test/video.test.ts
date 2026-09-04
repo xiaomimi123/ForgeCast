@@ -155,6 +155,16 @@ describe('video API tpl=talk', () => {
     ).run().lastInsertRowid)
     expect((await postVideo({ tpl: 'talk', uploadAssetId: id })).status).toBe(400)
   })
+  it('uploadAssetId 指向别的项目的 upload 素材 → 400（钉住 SQL 里的 project_id 那一维）', async () => {
+    ctx.db.prepare("INSERT INTO projects (slug) VALUES ('other')").run()
+    const otherId = (ctx.db.prepare("SELECT id FROM projects WHERE slug = 'other'").get() as any).id
+    const id = Number(ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (?, 'video', NULL, 'other/uploads/talk.mp4', '[]', 'upload')",
+    ).run(otherId).lastInsertRowid)
+    const res = await postVideo({ tpl: 'talk', uploadAssetId: id })
+    expect(res.status).toBe(400)
+  })
+
   it.skipIf(!HAS_FFMPEG)('合法 → 入队并跑通，meta 为 {kind:video, slug, sourceAssetId: 文案 id}', async () => {
     const upId = makeUpload()
     const { taskId } = await (await postVideo({ tpl: 'talk', assetId: 1, uploadAssetId: upId })).json() as any

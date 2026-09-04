@@ -24,6 +24,13 @@ export function validateSpecPut(body: any, videoId: string): string | null {
     if (typeof l.track !== 'number') return `图层 ${l.id ?? '?'} 缺少 track`
     if (!(l.start >= 0)) return `图层 ${l.id} 的 start 必须 >= 0`
     if (!(l.duration > 0)) return `图层 ${l.id} 的 duration 必须 > 0`
+    // content.src 是渲染时拼进 hf/<videoId>/ 的相对路径（图片、talk 底片、字体…）。
+    // 绝对路径或含 .. 的段能把渲染器指到工作区外的任意文件，PUT 是外部输入，必须在这里拦：
+    // 落盘之后再拦就晚了（磁盘上的 spec 会一直带着这条越界路径）。
+    const src = l.content?.src
+    if (typeof src === 'string' && (src.startsWith('/') || src.split('/').includes('..'))) {
+      return `图层 ${l.id} 的 src 不允许绝对路径或 ..`
+    }
   }
   // 同 track 时间不重叠：按 track 分组，组内按 start 排序后相邻比较
   const byTrack = new Map<number, Array<{ id: string; start: number; duration: number }>>()

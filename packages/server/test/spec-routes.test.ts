@@ -130,6 +130,31 @@ describe('spec 读写端点', () => {
     expect(res.status).toBe(200)
   })
 
+  it('PUT 图层 src 为绝对路径 / 含 .. → 400（PUT 是外部输入，路径穿越必须在落盘前拦）', async () => {
+    for (const src of ['/etc/passwd', '../../etc/passwd', 'assets/../../x.mp4']) {
+      const bad = {
+        ...validSpec(),
+        layers: [{ ...layer(), content: { kind: 'video', src, muted: false } }],
+      }
+      const res = await app.request('/api/projects/s1/specs/deadbeef01', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(bad),
+      })
+      expect([src, res.status]).toEqual([src, 400])
+      expect(((await res.json()) as any).error).toMatch(/src/)
+    }
+  })
+
+  it('PUT 合法相对 src → 200（带 .. 字样但不成段的文件名不误杀）', async () => {
+    const ok = {
+      ...validSpec(),
+      layers: [{ ...layer(), content: { kind: 'video', src: 'assets/talk-src/a..b.mp4', muted: false } }],
+    }
+    const res = await app.request('/api/projects/s1/specs/deadbeef01', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ok),
+    })
+    expect(res.status).toBe(200)
+  })
+
   it('PUT version !== 1 → 400', async () => {
     const bad = { ...validSpec(), version: 2 }
     const res = await app.request('/api/projects/s1/specs/deadbeef01', {
