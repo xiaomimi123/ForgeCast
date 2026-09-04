@@ -118,9 +118,7 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 - **人声来自视频本身**，talk 不跑 TTS（`audio.narration` 恒 null），也不自动生成字幕——字幕全部手动打（很多平台会自动配字幕，烧进去非必需）。
 - **科技背景默认不加**（不遮人脸），需要时在渲染参数里手选；BGM 与既有链路一致（有曲库就垫，旁白 ducking 现成）。
 - talk 是 **Remotion-only**，不产 HyperFrames `index.html`。
-- 底片按「零拷贝」设计**软链**进 `hf/<videoId>/assets/talk-source.mp4`（几百 MB 的口播片不每版拷一份），软链建不了的文件系统回落真拷贝。
-
-> ⚠️ **已知问题（真渲阻断，Task 8 验收发现）**：Remotion 的静态服务器对「最终路径是软链的文件」一律回 404（只有软链**目录**能解析），于是上面这条软链让真渲直接失败（`MEDIA_ELEMENT_ERROR: Format error`）。把该软链换成真文件后全链路真渲通过。修好之前 `FORGECAST_VIDEO_MODE=render` 下的 talk 出片不可用（stub 模式不受影响）。证据与定位见 `.superpowers/sdd/2026-09-06-talk-composite/task-8-report.md`。
+- 底片按「零拷贝」设计：把片源**所在目录**整体软链成 `hf/<videoId>/assets/talk-src`，spec 里 src 写 `assets/talk-src/<原文件名>`（几百 MB 的口播片不每版拷一份）。**链的必须是目录**——Remotion 的静态服务器（serve-handler 用 lstat）对「最终路径是软链的文件」一律回 404，而路径中间的软链目录由内核解析、不受影响；软链建不了的文件系统回落真拷贝（`talk-src` 建成真目录、片源拷进去，src 形态不变）+ 一条 warning。
 
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（五模板 Remotion 渲染 + 自定义模板 HyperFrames + Kokoro TTS）；`packages/compositions` 五模板的纯 React/Remotion 合成组件（零 Node 依赖，渲染与 Web 预览共用同一套组件）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/topics` 选题库（目标账号+爆款笔记+LLM 提炼的选题模式，生成文案时作为风格参考注入）；`packages/server` 本地 API

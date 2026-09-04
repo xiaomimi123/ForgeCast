@@ -546,15 +546,18 @@ describe.skipIf(!HAS_FFMPEG)('generateVideo tpl=talk（口播合成，stub）', 
     return { db: ctx.db, config, llm: ctx.llm }
   }
 
-  it('全链路：软链指向上传片源 / 不产 index.html / durationSec=ffprobe 值 / 无旁白无字幕', async () => {
+  it('全链路：目录软链指向片源所在目录 / 不产 index.html / durationSec=ffprobe 值 / 无旁白无字幕', async () => {
     const tctx = talkCtx()
     const { assetId: upId, abs: srcAbs } = makeUpload(tctx.config.paths.workspace)
     const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', assetId: 1, uploadAssetId: upId })
 
     const hfDir = hfDirOf(tctx.config.paths.workspace, 'demo')
-    const link = path.join(hfDir, 'assets', 'talk-source.mp4')
-    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true)
-    expect(fs.realpathSync(fs.readlinkSync(link))).toBe(fs.realpathSync(srcAbs))
+    // 软链的是**目录**不是文件：Remotion 静态服务器对最终路径是软链的文件回 404（serve-handler
+    // 用 lstat），但路径中间的软链目录由内核解析——链目录才服务得了，见 remotion-render.ts 注释。
+    const linkDir = path.join(hfDir, 'assets', 'talk-src')
+    expect(fs.lstatSync(linkDir).isSymbolicLink()).toBe(true)
+    expect(fs.statSync(linkDir).isDirectory()).toBe(true)
+    expect(fs.realpathSync(fs.readlinkSync(linkDir))).toBe(fs.realpathSync(path.dirname(srcAbs)))
     // 不产 index.html：talk 没有 HyperFrames 模板文件，走 HTML 那条路只会炸
     expect(fs.existsSync(path.join(hfDir, 'index.html'))).toBe(false)
 
@@ -574,36 +577,61 @@ describe.skipIf(!HAS_FFMPEG)('generateVideo tpl=talk（口播合成，stub）', 
     expect(spec.bgVariant).toBeUndefined()
   })
 
-  it('视频层：src 指向软链、sourceDurationSec 与 trimEnd 落 ffprobe 值', async () => {
+  it('视频层：src 指向目录软链内的片源、sourceDurationSec 与 trimEnd 落 ffprobe 值', async () => {
     const tctx = talkCtx()
     const { assetId: upId, abs: srcAbs } = makeUpload(tctx.config.paths.workspace)
     const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId })
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
     const spec = JSON.parse(fs.readFileSync(path.join(tctx.config.paths.workspace, row.spec_path), 'utf8'))
     const v = spec.layers.find((l: any) => l.kind === 'video')
-    expect(v.content.src).toBe('assets/talk-source.mp4')
+    expect(v.content.src).toBe(`assets/talk-src/${path.basename(srcAbs)}`)
     expect(v.from).toBe('sec-video')
     const dur = probeSec(srcAbs)
     expect(v.content.sourceDurationSec).toBeCloseTo(dur, 3)
     expect(v.content.trimEnd).toBeCloseTo(dur, 3)
   })
 
-  it('软链失败（FS 不支持）→ 回落真拷贝 + warning，不让渲染整条失败', async () => {
+  it('软链失败（FS 不支持）→ 回落真拷贝进真目录 + warning，不让渲染整条失败', async () => {
     const tctx = talkCtx()
     const { assetId: upId, abs: srcAbs } = makeUpload(tctx.config.paths.workspace)
     const real = fs.symlinkSync
     const spy = vi.spyOn(fs, 'symlinkSync').mockImplementation(((t: any, p: any, ty: any) => {
-      if (String(p).endsWith('talk-source.mp4')) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      if (String(p).endsWith('talk-src')) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
       return real(t, p, ty)
     }) as any)
     try {
       const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId })
-      const copied = path.join(hfDirOf(tctx.config.paths.workspace, 'demo'), 'assets', 'talk-source.mp4')
+      const dir = path.join(hfDirOf(tctx.config.paths.workspace, 'demo'), 'assets', 'talk-src')
+      expect(fs.lstatSync(dir).isSymbolicLink()).toBe(false)
+      const copied = path.join(dir, path.basename(srcAbs))
       expect(fs.lstatSync(copied).isSymbolicLink()).toBe(false)
       expect(fs.readFileSync(copied).length).toBe(fs.readFileSync(srcAbs).length)
+      // 回落也不改 src 形态：spec 里仍是 assets/talk-src/<basename>
       const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+      const spec = JSON.parse(fs.readFileSync(path.join(tctx.config.paths.workspace, row.spec_path), 'utf8'))
+      const v = spec.layers.find((l: any) => l.kind === 'video')
+      expect(v.content.src).toBe(`assets/talk-src/${path.basename(srcAbs)}`)
       expect(JSON.parse(row.warnings)).toContain('文件系统不支持软链，已复制口播素材')
     } finally { spy.mockRestore() }
+  })
+
+  /** 本缺陷的最小回归钉：Remotion 静态服务器用 lstat 看**最终路径组件**——只要 src 解析到的
+   *  那个文件本身是软链就 404（真渲实测：换真文件→通过、换同目录相对软链→仍 404）。
+   *  所以断言穿过（可以是软链的）目录之后，最终文件组件必须是真文件。 */
+  it('守护：spec.src 解析后的最终文件组件不是软链（软链文件会被 Remotion 静态服务器 404）', async () => {
+    const tctx = talkCtx()
+    const { assetId: upId } = makeUpload(tctx.config.paths.workspace)
+    const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId })
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const spec = JSON.parse(fs.readFileSync(path.join(tctx.config.paths.workspace, row.spec_path), 'utf8'))
+    const src = spec.layers.find((l: any) => l.kind === 'video').content.src as string
+    const hfDir = hfDirOf(tctx.config.paths.workspace, 'demo')
+    // 目录部分允许是软链（内核会解析），用 realpath 穿过；最终文件组件用 lstat 验必须是真文件
+    const abs = path.join(hfDir, src)
+    const finalAbs = path.join(fs.realpathSync(path.dirname(abs)), path.basename(abs))
+    expect(fs.existsSync(finalAbs)).toBe(true)
+    expect(fs.lstatSync(finalAbs).isSymbolicLink()).toBe(false)
+    expect(fs.lstatSync(finalAbs).isFile()).toBe(true)
   })
 
   it('显式 --bg 时才加科技背景（talk 默认 none）', async () => {

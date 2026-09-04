@@ -287,7 +287,11 @@ export async function probeDurationSec(absPath: string, timeoutMs = 30_000): Pro
  * 2. 不产 index.html——`templates/hf/` 里没有 talk.html，readTemplate 会直接抛；talk 只走 Remotion；
  * 3. 时长不由文案/旁白决定，而是 ffprobe 量出来的片源时长（成片就是这段口播本身）。
  *
- * 片源用**软链**进 `hf/<videoId>/assets/talk-source.mp4`（几百 MB 的口播不该每生成一版拷一份）；
+ * 片源零拷贝：把片源**所在目录**整体软链成 `hf/<videoId>/assets/talk-src`，src 写
+ * `assets/talk-src/<原文件名>`（几百 MB 的口播不该每生成一版拷一份）。
+ * **必须链目录、不能链文件**：Remotion 静态服务器（serve-handler 用 lstat）对最终路径是软链的
+ * 文件一律 404，但路径中间的软链目录由内核解析、不受影响——同一条事实见 remotion-render.ts 的
+ * linkPublicDirToBundleRoot 注释；bundle 的 copy-dir 也保留目录软链（绝对化目标、不复制本体）。
  * 软链不可用的文件系统（某些挂载卷/Windows 无权限）回落真拷贝并记一条 warning——比整条渲染失败强。
  */
 async function renderTalkPipeline(
@@ -324,12 +328,16 @@ async function renderTalkPipeline(
   scaffoldHfAssets(hfDir)   // 建 assets/ + 字体软链；index.html 那半边 talk 不需要
 
   const warnings: string[] = []
-  const linkPath = path.join(hfDir, 'assets', 'talk-source.mp4')
+  const srcBase = path.basename(srcAbs)
+  const linkDir = path.join(hfDir, 'assets', 'talk-src')
+  const videoSrc = `assets/talk-src/${srcBase}`
   // 绝对目标：片源在 workspace/<slug>/uploads/ 下，与 hf 目录不同支，相对链没有可移植性优势
   try {
-    fs.symlinkSync(srcAbs, linkPath, 'file')
+    fs.symlinkSync(path.dirname(srcAbs), linkDir, 'dir')
   } catch {
-    fs.copyFileSync(srcAbs, linkPath)
+    // 回落：把 talk-src 建成真目录，片源真拷进去——src 形态不变，下游（spec/剪辑台/渲染）无感
+    fs.mkdirSync(linkDir, { recursive: true })
+    fs.copyFileSync(srcAbs, path.join(linkDir, srcBase))
     onProgress('⚠ 文件系统不支持软链，已复制口播素材')
     warnings.push('文件系统不支持软链，已复制口播素材')
   }
@@ -350,7 +358,7 @@ async function renderTalkPipeline(
   const spec = lower(semantic, {
     videoId, slug, template: 'talk', canvas: canvasFor(ratio), durationSec,
     cues: [], beatGrid: grid, audio: audioSpec, brandName,
-    videoSrc: 'assets/talk-source.mp4', sourceDurationSec: durationSec,
+    videoSrc, sourceDurationSec: durationSec,
   })
   spec.warnings = warnings
   // talk 默认无背景（见 bgExplicit 注释）；显式给了才按五模板同一套规则解析
