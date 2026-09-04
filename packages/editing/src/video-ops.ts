@@ -46,7 +46,8 @@ function clampLayer(layer: Layer, durationSec: number): Layer {
  *   edge='end'  ：duration −= δ，trimStart 不动
  * trimEnd 始终维护为 (trimStart ?? 0) + 新 duration，保持片源区间与时间轴时长一致，
  * 即便调用方只看 duration。
- * 钳制：trimStart ≥ 0（吐不回没裁过的头）、duration ≥ MIN_LAYER_DURATION。
+ * 钳制：trimStart ≥ 0（吐不回没裁过的头）、duration ≥ MIN_LAYER_DURATION，
+ * 吐尾（edge='end' 且 δ<0）不得越过片源物理末尾——见下方 lower 的注释。
  * spec.durationSec 联动为视频层新 duration，其余图层按 clampLayer 钳回。
  */
 export function trimVideoLayer(spec: VideoSpec, layerId: string, edge: 'start' | 'end', deltaSec: number): VideoSpec {
@@ -54,9 +55,18 @@ export function trimVideoLayer(spec: VideoSpec, layerId: string, edge: 'start' |
   const content = layer.content as VideoContent
   const trimStart = content.trimStart ?? 0
 
-  // δ 的合法上界：裁到 MIN_LAYER_DURATION 为止。裁头时还有下界：最多吐回已裁掉的 trimStart。
+  // δ 的合法上界：裁到 MIN_LAYER_DURATION 为止。下界（吐回量）两端各有一条物理边界：
+  // - 裁头：最多吐回已裁掉的 trimStart（吐不回没裁过的头）；
+  // - 裁尾：最多吐到片源末尾——`trimStart + duration` 不得超过 `sourceDurationSec`。
+  //   越界的 trimEnd 会让 Remotion 读到片源之外（画面定格／报错），钳制必须落在这个纯函数里：
+  //   放到 UI 上钳不彻底（Inspector 的数字输入照样能填一个越界值）。
+  //   `sourceDurationSec` 缺省（老 spec、外部导入的 spec）时维持原行为——不知道片源多长，
+  //   就不假装知道，宁可不钳也不按猜出来的长度砍掉用户合法的吐回。
   const upper = round3(layer.duration - MIN_LAYER_DURATION)
-  const lower = edge === 'start' ? -trimStart : -Infinity
+  const sourceDur = content.sourceDurationSec
+  const lower = edge === 'start'
+    ? -trimStart
+    : (sourceDur === undefined ? -Infinity : -Math.max(0, round3(sourceDur - (trimStart + layer.duration))))
   const delta = round3(Math.min(Math.max(deltaSec, lower), upper))
   if (delta === 0) return spec
 

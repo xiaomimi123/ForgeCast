@@ -96,6 +96,62 @@ describe('trimVideoLayer — edge=end', () => {
   })
 })
 
+/** 吐尾不能超过片源物理长度：trimEnd 越过源视频末尾时 Remotion 会定格/报错，
+ *  钳制必须在纯函数里（Inspector 的数字输入绕得过任何只做在 UI 上的钳）。 */
+describe('trimVideoLayer — edge=end 的片源长度钳制（sourceDurationSec）', () => {
+  /** 片源 15s，已裁成 v[0,12)（头裁 1、尾裁 2）：还能往后吐 2s。 */
+  const srcSpec = (over: Partial<VideoSpec> = {}): VideoSpec =>
+    talkSpec({
+      layers: [
+        videoLayer({ content: { kind: 'video', src: 'talk.mp4', muted: false, trimStart: 1, trimEnd: 13, sourceDurationSec: 15 } }),
+        textLayer({ id: 'a', start: 0, duration: 3, track: 1 }),
+        textLayer({ id: 'b', start: 8, duration: 3, track: 2 }),
+      ],
+      ...over,
+    })
+
+  it('吐回量不超过剩余片源：δ=-5 只吐 2，trimEnd 停在 sourceDurationSec', () => {
+    const out = trimVideoLayer(srcSpec(), 'v', 'end', -5)
+    expect(layerOf(out, 'v').duration).toBe(14)
+    expect(out.durationSec).toBe(14)
+    expect(contentOf(out, 'v').trimStart).toBe(1)
+    expect(contentOf(out, 'v').trimEnd).toBe(15)
+    // 返回值一致性：trimEnd - trimStart 恒等于新 duration，durationSec 与之联动
+    expect(contentOf(out, 'v').trimEnd! - contentOf(out, 'v').trimStart!).toBe(layerOf(out, 'v').duration)
+  })
+
+  it('吐到片源末尾后再吐是无操作（δ 钳成 0 → 同一引用）', () => {
+    const full = trimVideoLayer(srcSpec(), 'v', 'end', -2)
+    expect(contentOf(full, 'v').trimEnd).toBe(15)
+    expect(trimVideoLayer(full, 'v', 'end', -0.5)).toBe(full)
+  })
+
+  it('未越界的吐回照常生效（钳制只砍超出的那部分）', () => {
+    const out = trimVideoLayer(srcSpec(), 'v', 'end', -1)
+    expect(layerOf(out, 'v').duration).toBe(13)
+    expect(contentOf(out, 'v').trimEnd).toBe(14)
+  })
+
+  it('钳制只管吐尾：δ>0 的多裁不受 sourceDurationSec 影响', () => {
+    const out = trimVideoLayer(srcSpec(), 'v', 'end', 2)
+    expect(layerOf(out, 'v').duration).toBe(10)
+    expect(contentOf(out, 'v').trimEnd).toBe(11)
+  })
+
+  it('钳制不越界到 edge=start：吐头仍只受 trimStart 限制', () => {
+    const out = trimVideoLayer(srcSpec(), 'v', 'start', -5)
+    expect(contentOf(out, 'v').trimStart).toBe(0)
+    expect(layerOf(out, 'v').duration).toBe(13)
+  })
+
+  it('无 sourceDurationSec（老 spec）→ 行为完全不变，仍可无限吐', () => {
+    const cut = trimVideoLayer(talkSpec(), 'v', 'end', 3)
+    const out = trimVideoLayer(cut, 'v', 'end', -50)
+    expect(layerOf(out, 'v').duration).toBe(59)
+    expect(contentOf(out, 'v').trimEnd).toBe(59)
+  })
+})
+
 describe('trimVideoLayer — 越界图层钳回', () => {
   it('duration 超界的截短（start 仍在界内）', () => {
     // 裁到 10：b[8,3) 右缘 11 越界 → duration 截到 2

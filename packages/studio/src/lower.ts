@@ -40,7 +40,8 @@ export interface LowerOpts {
   videoSrc?: string
   /** talk 专用：片源总长（ffprobe 实测）。缺省回落 durationSec——首次 lower 时成片时长就是片源
    *  时长，两者相等；显式给一份是为了不把这条巧合写死成隐式耦合（重新 lower 一条已裁剪的 talk
-   *  时 durationSec 会短于片源）。落进视频层 content.sourceDurationSec/trimEnd。 */
+   *  时 durationSec 会短于片源）。落进视频层 content.sourceDurationSec/trimEnd，
+   *  消费方是 editing 的 trimVideoLayer——吐尾不得越过片源物理末尾。 */
   sourceDurationSec?: number
 }
 

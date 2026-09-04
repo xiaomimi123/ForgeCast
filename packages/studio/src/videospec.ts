@@ -106,7 +106,9 @@ export interface AudioSpec {
   captionsEnabled: boolean
 }
 
-/** 各模板的最短成片时长（秒）。原先硬编码散落在 generate.ts 五个分支里。 */
+/** 各模板的最短成片时长（秒）。原先硬编码散落在 generate.ts 五个分支里。
+ *  `talk` 是预留常量，**暂无读取方**：口播成片时长 = ffprobe 实测的片源时长（见 generate.ts
+ *  renderTalkPipeline），补到 6s 只会在片源后面挂一段黑屏。 */
 export const MIN_DURATION: Record<string, number> = {
   flash: 12, story: 14, demo: 14, insight: 16, changelog: 12, custom: 6, talk: 6,
 }
