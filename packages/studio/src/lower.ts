@@ -36,6 +36,8 @@ export interface LowerOpts {
   plan?: LowerPlan | null
   audio: AudioSpec
   brandName?: string
+  /** talk 专用：口播底片视频（hfDir 相对路径）。其余五模板不读此字段。 */
+  videoSrc?: string
 }
 
 // ---- section 查找辅助：与 props.ts 里同样的「按稳定 id 查」路径，缺失时给安全默认值，不抛错 ----
@@ -480,6 +482,70 @@ function lowerInsight(sections: Section[], opts: LowerOpts): Layer[] {
   return layers
 }
 
+/**
+ * talk（口播合成）：track 0 是口播底片视频（不是五模板惯用的纯背景），track 1+ 是叠加的动效层
+ * （标题/卖点卡/CTA），没有字幕层（人声字幕手动打，不走 cues 自动生成）。
+ *
+ * 跨任务约定（Task 3 只负责按约定「读」，不负责「造」）：video 层的 `from` 固定写死
+ * `'sec-video'`——这个 section id 由 Task 4 的 generate 分支在组 semantic 时**追加**进
+ * `semantic.sections`（`{ id: 'sec-video', role: 'demo' }` 一类），lowerTalk 本身不校验
+ * sections 里是否真的存在该 id（不像其余五模板用 fromId() 查不到就回落 null——talk 的视频层
+ * 是硬性存在的底片，不是「可能缺失就该诚实变 null」的可选图层，直接引用即可）。
+ *
+ * 动效层节奏抄 lowerFlash 的比例分配起步（hook/cta clamp 后再按 durationSec 收窄中段），
+ * 但 talk 没有「钩子文案/卖点/CTA 各一段」的既定结构——直接借用 hook(pain)/body items/cta 三个
+ * 语义槽位：标题＝hook 段文案（0→15%），卖点卡＝body 段 items 均分中段（15%~85%），
+ * CTA+品牌＝末 15%（与 flash 一致，品牌名烧进文本，缺失退化成只有 cta 一行）。
+ * cssClass 先借用 flash 同名类（hookT/card/cta），Task 5 会以 flash 为起点做 `.tpl-talk` 版覆盖。
+ */
+function lowerTalk(sections: Section[], opts: LowerOpts): Layer[] {
+  const { durationSec } = opts
+  if (!opts.videoSrc) throw new Error('lowerTalk: opts.videoSrc 缺失——talk 模板必须提供口播底片视频')
+
+  const hookText = textOf(sections, 'pain')
+  const bodyItems = itemsOf(sections, 'body', [textOf(sections, 'body')].filter(Boolean))
+  const cta = textOf(sections, 'cta')
+
+  const hookEnd = durationSec * 0.15
+  const midStart = hookEnd
+  const midEnd = durationSec * 0.85
+  const ctaStart = midEnd
+
+  const layers: Layer[] = []
+
+  // track 0：口播底片视频——五模板都没有这一层，talk 独有。
+  layers.push({
+    id: 'talkVideo', kind: 'video', from: 'sec-video', overridden: false,
+    start: 0, duration: +durationSec.toFixed(4), track: 0,
+    content: { kind: 'video', src: opts.videoSrc, muted: false } as LayerContent,
+    style: {}, effects: [],
+  })
+
+  // 标题：hook 文案，0 → 15% 时长（抄 lowerFlash 的 flashHook：整层解码 + 淡入）。
+  layers.push(textLayer('talkHook', fromId(sections, 'pain'), 0, hookEnd, 1, hookText, 'hookT',
+    [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]))
+
+  // 卖点卡：body items 在中段（15%~85%）均分展示，每张卡淡入+缩放（抄 lowerFlash 的 flashHighlight）。
+  const items = bodyItems.length ? bodyItems : ['']
+  const midDur = Math.max(0, midEnd - midStart)
+  const perItem = items.length ? midDur / items.length : 0
+  items.forEach((text, i) => {
+    const start = midStart + i * perItem
+    layers.push(textLayer(`talkCard${i}`, fromId(sections, 'body'), start, perItem, 1, text, 'card',
+      [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.35, params: { scale: 0.9 } }]))
+  })
+
+  // CTA+品牌：末 15%（抄 lowerFlash 的 flashCta：品牌名烧进文本第二行，缺失退化成只有 cta 一行）。
+  const ctaDur = Math.max(0, durationSec - ctaStart)
+  const talkCtaText = opts.brandName ? `${cta}\n@${opts.brandName}` : cta
+  const talkCtaEffects: Effect[] = opts.brandName
+    ? [DECODE_LINE(0), { type: 'fadeIn', at: 0, duration: 0.4 }]
+    : [...DECODE_ALL, { type: 'fadeIn', at: 0, duration: 0.4 }]
+  layers.push(textLayer('talkCta', fromId(sections, 'cta'), ctaStart, ctaDur, 1, talkCtaText, 'cta', talkCtaEffects))
+
+  return layers
+}
+
 /** lower：语义层 → 图层层，拼成完整 VideoSpec。字幕（kind:'caption'）由 cues 生成，from:null，
  *  固定 track:9（沿用现值）；仅在 audio.captionsEnabled 时才生成——与原版 injectAudioCaptions 的
  *  captions 开关语义一致。音轨不进 layers，走 spec.audio。 */
@@ -492,9 +558,12 @@ export function lower(semantic: Semantic, opts: LowerOpts): VideoSpec {
     case 'demo': layers = lowerDemo(sections, opts); break
     case 'changelog': layers = lowerChangelog(sections, opts); break
     case 'insight': layers = lowerInsight(sections, opts); break
+    case 'talk': layers = lowerTalk(sections, opts); break
     default: layers = lowerFlash(sections, opts)
   }
-  if (opts.audio.captionsEnabled) layers = layers.concat(captionLayers(opts.cues))
+  // talk 无字幕层（手动打，不走 cues 自动生成）——调用方（Task 4）需保证 talk 的
+  // opts.audio.captionsEnabled 为 false；这里再兜底一次，双重保险不依赖调用方守约。
+  if (opts.audio.captionsEnabled && opts.template !== 'talk') layers = layers.concat(captionLayers(opts.cues))
 
   return {
     version: 1,

@@ -105,5 +105,5 @@ export interface AudioSpec {
 
 /** 各模板的最短成片时长（秒）。原先硬编码散落在 generate.ts 五个分支里。 */
 export const MIN_DURATION: Record<string, number> = {
-  flash: 12, story: 14, demo: 14, insight: 16, changelog: 12, custom: 6,
+  flash: 12, story: 14, demo: 14, insight: 16, changelog: 12, custom: 6, talk: 6,
 }
