@@ -12,9 +12,21 @@
  *
  * fixture 见 fixtures/generate.ts（含重生成命令与「为什么是这批输入」）。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
+
+// talk fixture 含 video 图层——LayerView 里的 <Sequence>/<Video> 靠 remotion 的 useVideoConfig()
+// 才能渲，脱离 <Composition /> 上下文会直接抛错（见 video-layer.test.tsx 同款 mock）。
+// 这里只是让它能渲出 DOM 节点，不测 remotion 自身的时间轴换算（那是 video-layer.test.tsx 的活）。
+vi.mock('remotion', () => ({
+  Video: (p: Record<string, unknown>) => (
+    <video data-testid="rv" src={p.src as string} muted={p.muted as boolean} />
+  ),
+  Sequence: (p: Record<string, unknown>) => <div data-testid="seq">{p.children as React.ReactNode}</div>,
+  useCurrentFrame: () => 0,
+  useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
+}))
 import { lockTimeFor } from '../src/decode'
 import type { Layer, VideoSpec } from '../src/videospec-types'
 import flash from './fixtures/flash.json'
@@ -26,15 +38,17 @@ import demoPlan from './fixtures/demoPlan.json'
 import insight from './fixtures/insight.json'
 import flashCaptions from './fixtures/flashCaptions.json'
 import demoSpacedShots from './fixtures/demoSpacedShots.json'
+import talk from './fixtures/talk.json'
 
 const FIXTURES: Array<[string, VideoSpec]> = [
   ['flash', flash as VideoSpec], ['story', story as VideoSpec], ['changelog', changelog as VideoSpec],
   ['demo', demo as VideoSpec], ['demoCarousel', demoCarousel as VideoSpec],
   ['demoPlan', demoPlan as VideoSpec], ['insight', insight as VideoSpec],
   ['flashCaptions', flashCaptions as VideoSpec], ['demoSpacedShots', demoSpacedShots as VideoSpec],
+  ['talk', talk as VideoSpec],
 ]
 
-/** 生成 fixture 时统一用的 brandName（generate.ts 里九组都是 '品牌'）。 */
+/** 生成 fixture 时统一用的 brandName（generate.ts 里十组都是 '品牌'）。 */
 const BRAND = '品牌'
 
 /** 图层中点时刻——保证该图层一定可见，且避开入场动画的极端帧。 */
@@ -99,6 +113,14 @@ describe('fixture 集合覆盖面守护', () => {
     const needsEncoding = (p: string) => /[ #?]/.test(p) || /[^\x00-\x7F]/.test(p)
     expect(FIXTURES.some(([, s]) => s.layers.some(
       (l) => l.content.kind === 'image' && needsEncoding(l.content.src),
+    ))).toBe(true)
+  })
+  /** talk（口播合成）独有：video 图层带 trimStart。①的七组、②补的两组都不含 video 图层——
+   *  talk fixture（见 generate.ts 文件头注释）是它唯一的来源，缺了它 trimStart 相关的任何
+   *  断言/回归都会在全部 fixture 上恒真恒绿。 */
+  it('至少一组 fixture 含带 trimStart 的 video 图层', () => {
+    expect(FIXTURES.some(([, s]) => s.layers.some(
+      (l) => l.content.kind === 'video' && l.content.trimStart !== undefined,
     ))).toBe(true)
   })
 })
@@ -193,7 +215,7 @@ describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
     const root = container.firstElementChild as HTMLElement
     const cls = root.className.split(/\s+/)
     expect(cls).toContain('specRoot')
-    const known = ['flash', 'story', 'demo', 'insight', 'changelog']
+    const known = ['flash', 'story', 'demo', 'insight', 'changelog', 'talk']
     expect(cls).toContain(`tpl-${known.includes(spec.template) ? spec.template : 'flash'}`)
     expect(cls.includes('landscape')).toBe(spec.canvas.width >= spec.canvas.height)
   })

@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "videoId": "v1",
+  "slug": "s",
+  "template": "talk",
+  "createdAt": "2026-08-31T00:00:00.000Z",
+  "semantic": {
+    "hook": null,
+    "sourceAssetId": null,
+    "sections": [
+      {
+        "id": "pain",
+        "role": "pain",
+        "text": "标题"
+      },
+      {
+        "id": "body",
+        "role": "body",
+        "text": "卖点"
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "text": "行动号召"
+      },
+      {
+        "id": "sec-video",
+        "role": "demo"
+      }
+    ]
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "durationSec": 20,
+  "layers": [
+    {
+      "id": "talkVideo",
+      "kind": "video",
+      "from": "sec-video",
+      "overridden": false,
+      "start": 0,
+      "duration": 20,
+      "track": 0,
+      "content": {
+        "kind": "video",
+        "src": "assets/talk-source.mp4",
+        "muted": false,
+        "trimEnd": 20,
+        "sourceDurationSec": 20,
+        "trimStart": 1.5
+      },
+      "style": {},
+      "effects": []
+    },
+    {
+      "id": "talkHook",
+      "kind": "text",
+      "from": "pain",
+      "overridden": false,
+      "start": 0,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "标题"
+      },
+      "style": {
+        "cssClass": "hookT"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    },
+    {
+      "id": "talkCard0",
+      "kind": "text",
+      "from": "body",
+      "overridden": false,
+      "start": 3,
+      "duration": 14,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "卖点"
+      },
+      "style": {
+        "cssClass": "card"
+      },
+      "effects": [
+        {
+          "type": "decode"
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.35,
+          "params": {
+            "scale": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "id": "talkCta",
+      "kind": "text",
+      "from": "cta",
+      "overridden": false,
+      "start": 17,
+      "duration": 3,
+      "track": 1,
+      "content": {
+        "kind": "text",
+        "text": "行动号召\n@品牌"
+      },
+      "style": {
+        "cssClass": "cta"
+      },
+      "effects": [
+        {
+          "type": "decode",
+          "params": {
+            "line": 0
+          }
+        },
+        {
+          "type": "fadeIn",
+          "at": 0,
+          "duration": 0.4
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "narration": null,
+    "bgm": null,
+    "beatGrid": null,
+    "captionsEnabled": false
+  },
+  "warnings": []
+}

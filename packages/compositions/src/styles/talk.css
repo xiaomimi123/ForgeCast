@@ -1,0 +1,37 @@
+/* talk（口播合成）模板样式。起步规格照抄 flash.css 对应类的数值，只改类名前缀与选择器：
+   lowerTalk（packages/studio/src/lower.ts）实际写死的 cssClass 是 hookT/card/cta 三个（无
+   brand——品牌名烧进 talkCta 文本第二行，见 lower.ts 注释），另加字幕层固定用的 cap（手动字幕，
+   addCaptionLayer 写死 cssClass:'cap'，不走本模板自动生成）。
+   - .hookT  ← 抄 flash 的 .painT（大标题规格）
+   - .card   ← 抄 flash 的 .highlightCard（卖点卡规格）
+   - .cta    ← 抄 flash 的 .cta（原样，无改动）
+   - .cap    ← 抄 flash 的 .cap（原样，字幕条）
+   竖横版结构照抄 flash 的 .landscape 后代方案（P1 的确定性方案：媒体查询在 Studio 预览里按
+   浏览器窗口求值会误命中，见 flash.css 顶部注释与 SpecView.tsx 的 landscape 挂类逻辑）。 */
+
+.tpl-talk { background: #0f0f1a; font-family: "NotoSC", sans-serif; }
+.tpl-talk .fill { position: absolute; inset: 0; }
+.tpl-talk .pad { padding: 90px; }
+.tpl-talk .center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.tpl-talk .hookT { font-size: 100px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-talk .card { padding: 40px 56px; border: 3px solid #ffd54f; border-radius: 24px; background: rgba(255,213,79,.10); }
+.tpl-talk .cta { font-size: 76px; font-weight: 800; color: #fff; margin-bottom: 36px; }
+.tpl-talk .cap { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 880px; text-align: center; font-size: 44px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 18px 34px; border-radius: 14px; z-index: 5; }
+
+/* 口播底片全屏：talkVideo 图层（lower.ts）style 为空对象，LayerView 的 geom() 读不到 x/y/
+   width/height，故 <div class="clip"> 本身无定形——但它内部的 Remotion <Sequence>
+   （LayerView.tsx 未加 layout="none"，走默认 layout="absolute-fill"）已经把子内容包成
+   position:absolute;inset:0;width/height:100% 的 div，且这层绝对定位相对的是更外层已经
+   position:absolute;inset:0 的 #cam（base.css），所以 Sequence 的包裹层本来就撑满画布，
+   不需要给 .clip 补 position。真正缺的是 <video> 标签自身——remotion 的 <Video> 不传 style
+   时不会自带 width/height:100%，天然只会是原始分辨率大小，需要这条规则把它撑满并裁切填满：
+   纯 CSS 解决，没有改 LayerView.tsx。talk 是目前唯一会出现 video 图层的模板，故直接选
+   `.tpl-talk video` 不必再加 :has() 限定。 */
+.tpl-talk video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* -- 横屏差异，结构照抄 flash.css 的 .landscape 后代方案，数值抄 flash 对应横版规则。 -- */
+.tpl-talk.landscape .pad { padding: 70px 160px; }
+.tpl-talk.landscape .hookT { font-size: 84px; font-weight: 900; line-height: 1.28; color: #fff; }
+.tpl-talk.landscape .card { padding: 30px 48px; border: 3px solid #ffd54f; border-radius: 22px; background: rgba(255,213,79,.10); }
+.tpl-talk.landscape .cta { font-size: 62px; font-weight: 800; color: #fff; margin-bottom: 28px; }
+.tpl-talk.landscape .cap { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); max-width: 1300px; text-align: center; font-size: 38px; font-weight: 700; line-height: 1.35; color: #fff; background: rgba(20,20,20,.82); padding: 16px 30px; border-radius: 14px; z-index: 5; }

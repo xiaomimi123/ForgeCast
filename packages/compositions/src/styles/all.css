@@ -5,10 +5,11 @@
      那两条给 1080×1920 渲染页写的全局规则（`* { margin:0;padding:0 }` 与
      `html,body{overflow:hidden;font-family}`）落进一个 CSS 层，不再压过 Tailwind 的工具类。
    清单只此一份——在 index.ts 里再抄一遍，将来加第七份样式就会「成片有、预览没有」。
-   顺序：base 先（共享 FX），五份模板专属在后。 */
+   顺序：base 先（共享 FX），六份模板专属在后。 */
 @import './base.css';
 @import './flash.css';
 @import './story.css';
 @import './demo.css';
 @import './insight.css';
 @import './changelog.css';
+@import './talk.css';
