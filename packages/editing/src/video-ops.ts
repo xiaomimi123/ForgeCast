@@ -112,13 +112,11 @@ export function addCaptionLayer(spec: VideoSpec, tSec: number, text: string): Vi
   }
 
   if (start + duration > spec.durationSec) {
-    if (spec.durationSec - start >= MIN_CAPTION_DURATION) {
-      duration = round3(spec.durationSec - start)
-    } else {
-      // 末尾也放不下：贴末尾按最短时长收（宁可与邻居轻微重叠，也不给一条看不见的 0 长字幕）
-      start = round3(Math.max(0, spec.durationSec - MIN_CAPTION_DURATION))
-      duration = Math.min(MIN_CAPTION_DURATION, spec.durationSec)
-    }
+    // 末尾放不下最短时长：不加层，返回同一引用。绝不「贴末尾缩短」——那会与同轨最后一条邻居重叠，
+    // 而同 track 不重叠是 spec 硬规则（server 的 validateSpecPut 会直接 400，用户一保存就被拒）。
+    // 调用方靠引用相等识别「这次什么也没加」，提示用户换个位置。
+    if (spec.durationSec - start < MIN_CAPTION_DURATION) return spec
+    duration = round3(spec.durationSec - start)
   }
 
   const layer: Layer = {

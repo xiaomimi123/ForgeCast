@@ -22,6 +22,8 @@ const talkSpec = (over: Partial<VideoSpec> = {}): VideoSpec =>
     ...over,
   })
 
+const round1 = (n: number) => Math.round(n * 10) / 10
+
 const layerOf = (spec: VideoSpec, id: string) => spec.layers.find((l) => l.id === id)!
 const contentOf = (spec: VideoSpec, id: string) =>
   layerOf(spec, id).content as { kind: 'video'; src: string; muted: boolean; trimStart?: number; trimEnd?: number; volume?: number }
@@ -214,14 +216,61 @@ describe('addCaptionLayer', () => {
     expect(tail.duration).toBe(0.5)
   })
 
-  it('顺延到末尾放不下时贴末尾缩短，最少 0.5s', () => {
+  it('顺延到末尾放不下时不加层，返回同一引用（严格不重叠）', () => {
     const spec = baseSpec({
       durationSec: 12,
       layers: [videoLayer(), captionLayer({ id: 'c1', start: 8, duration: 3.8, track: 2 })],
     })
+    const out = addCaptionLayer(spec, 9, 'x')
+    // 贴末尾缩短会与 c1 重叠，而同 track 不重叠是硬规则（server validateSpecPut 会 400）
+    expect(out).toBe(spec)
+    expect(out.layers).toHaveLength(2)
+  })
+
+  it('末尾剩余不足 0.5s 时不加层', () => {
+    const spec = baseSpec({ durationSec: 0.4, layers: [videoLayer({ duration: 0.4 })] })
+    expect(addCaptionLayer(spec, 0, 'x')).toBe(spec)
+  })
+
+  it('末尾剩余介于 0.5 与 2.5 之间时缩短到剩余长度', () => {
+    const spec = baseSpec({
+      durationSec: 12,
+      layers: [videoLayer(), captionLayer({ id: 'c1', start: 8, duration: 2, track: 2 })],
+    })
     const added = addCaptionLayer(spec, 9, 'x').layers.slice(-1)[0]
-    expect(added.start).toBe(11.5)
-    expect(added.duration).toBe(0.5)
+    expect(added.start).toBe(10)
+    expect(added.duration).toBe(2)
+  })
+
+  it('加完的 spec 同轨仍无重叠（复刻 validateSpecPut 的重叠检查）', () => {
+    // editing 不 import server：这里按同一口径（同 track 排序后相邻比较）自查。
+    const expectNoOverlap = (s: VideoSpec) => {
+      const byTrack = new Map<number, typeof s.layers>()
+      for (const l of s.layers) byTrack.set(l.track, [...(byTrack.get(l.track) ?? []), l])
+      for (const [track, ls] of byTrack) {
+        const sorted = [...ls].sort((a, b) => a.start - b.start)
+        for (let i = 1; i < sorted.length; i++) {
+          const prev = sorted[i - 1]
+          const overlap = round1(prev.start + prev.duration) > sorted[i].start
+          expect(overlap ? `track${track} 重叠：${prev.id} × ${sorted[i].id}` : 'ok').toBe('ok')
+        }
+      }
+    }
+    const base = baseSpec({
+      durationSec: 12,
+      layers: [
+        videoLayer(),
+        captionLayer({ id: 'c1', start: 1, duration: 2, track: 2 }),
+        captionLayer({ id: 'c2', start: 4, duration: 2, track: 2 }),
+        captionLayer({ id: 'c3', start: 8, duration: 3.8, track: 2 }),
+      ],
+    })
+    // 全时间轴扫一遍插入点：无论加成还是没加成，结果都必须无重叠
+    for (let t = -1; t <= 13; t = round1(t + 0.25)) {
+      const out = addCaptionLayer(base, t, `t=${t}`)
+      expectNoOverlap(out)
+      expect(out.layers.length).toBeLessThanOrEqual(base.layers.length + 1)
+    }
   })
 })
 
