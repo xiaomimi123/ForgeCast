@@ -60,6 +60,10 @@ export function LayerView(
       const { trimStart, trimEnd, volume } = layer.content
       inner = (
         <Sequence from={secToFrames(layer.start)} durationInFrames={secToFrames(layer.duration)}>
+          {/* startFrom/endAt 在 remotion 4.0.519 已 deprecated（新名 trimBefore/trimAfter，
+              两套名字不可混用）。暂不迁移：四份测试的 remotion mock 都按这两个 prop 名断言
+              （见 test/mocks/remotion.tsx 与 video-layer.test.tsx 的 data-* 探针），
+              迁移得连带改断言，等下次升 remotion 大版本时一并做。 */}
           <Video
             src={encodePathForUrl(layer.content.src)}
             muted={layer.content.muted}

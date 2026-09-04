@@ -19,14 +19,8 @@ import { SpecView } from '../src/SpecView'
 // talk fixture 含 video 图层——LayerView 里的 <Sequence>/<Video> 靠 remotion 的 useVideoConfig()
 // 才能渲，脱离 <Composition /> 上下文会直接抛错（见 video-layer.test.tsx 同款 mock）。
 // 这里只是让它能渲出 DOM 节点，不测 remotion 自身的时间轴换算（那是 video-layer.test.tsx 的活）。
-vi.mock('remotion', () => ({
-  Video: (p: Record<string, unknown>) => (
-    <video data-testid="rv" src={p.src as string} muted={p.muted as boolean} />
-  ),
-  Sequence: (p: Record<string, unknown>) => <div data-testid="seq">{p.children as React.ReactNode}</div>,
-  useCurrentFrame: () => 0,
-  useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
-}))
+// 四份测试共用 mocks/remotion.tsx。
+vi.mock('remotion', async () => (await import('./mocks/remotion')).makeRemotionMock())
 import { lockTimeFor } from '../src/decode'
 import type { Layer, VideoSpec } from '../src/videospec-types'
 import flash from './fixtures/flash.json'

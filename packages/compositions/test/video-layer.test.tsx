@@ -10,7 +10,8 @@ import type { Layer, VideoSpec } from '../src/videospec-types'
 // 必须显式 cleanup() 才能让三条 it 互不干扰。
 afterEach(cleanup)
 
-vi.mock('remotion', () => ({
+// 共用默认 mock，另覆盖 Video/Sequence——本文件要靠 data-* 探针断言时间轴换算。
+vi.mock('remotion', async () => (await import('./mocks/remotion')).makeRemotionMock({
   Video: (p: Record<string, unknown>) => (
     <video
       data-testid="rv"
@@ -26,8 +27,6 @@ vi.mock('remotion', () => ({
       {p.children as React.ReactNode}
     </div>
   ),
-  useCurrentFrame: () => 0,
-  useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
 }))
 
 const spec = (layers: Layer[]): VideoSpec => ({
