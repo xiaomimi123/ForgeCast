@@ -92,7 +92,11 @@ describe('video 图层', () => {
     expect(v2.dataset.endAt).toBeUndefined()
   })
 
-  it('start>0 的视频图层不再从片源 0 秒起播（②Task 8 遗留还债）——断言 Sequence.from 正确', () => {
+  // 这里只钉 `<Sequence from>` 的**透传值**（DOM 里读 data-from），不能证明浏览器真的从那个位置
+  // 起播——那是 Remotion 运行期行为，单测的 Sequence 是个假组件。真实起播位置由子项目④ Task 8 的
+  // 端到端真渲验收（裁头 2s 后成片 t=0 无红帧、蓝底秒数从 2 起）亲眼验过，证据见
+  // `.superpowers/sdd/2026-09-06-talk-composite/task-8-report.md`。测试名照断言强度写，别再写成「债还清了」。
+  it('Sequence.from 透传（真实起播位置由 Task 8 真渲验证）', () => {
     const { getByTestId } = render(<SpecView spec={spec([{
       id: 'bg', kind: 'video', from: null, overridden: false, start: 5, duration: 3, track: 0,
       content: { kind: 'video', src: 'clip.mp4', muted: true }, style: {}, effects: [],

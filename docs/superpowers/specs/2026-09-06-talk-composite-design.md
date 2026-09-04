@@ -79,3 +79,42 @@ talk 是 **Remotion-only**：generate 的 talk 分支**不产 HyperFrames index.
 - 软链方案依赖 bundle 的 copy-dir 行为（②验证过 macOS+Docker）；若 Remotion 升级改变该行为，退路是 hfDir 真拷贝（付磁盘代价）。
 - `<Sequence>` 包装改变 video 分支行为——②的 video-layer 测试要同步更新（当时断言的是裸 `<Video>`），属预期更新非门禁弱化，实施计划里明说。
 - talk 动效层节奏抄 flash 起步，观感由用户真机验后再调（同③的模式）。
+
+---
+
+## 7. 实现偏差（Task 8 收官时如实补记）
+
+本节记录**落地结果与上文设计不一致**的地方。上文各节保持设计当时的原样，不回改，以便对照。
+逐条的详细取舍在 `.superpowers/sdd/2026-09-06-talk-composite/task-{1..8}-report.md` 的账本里。
+
+1. **软链零拷贝（§2「大文件零拷贝（关键决策）」）未成立——真渲阻断，待修。**
+   `bundle()` 的 copy-dir 确实原样保留了 publicDir 里的软链（不复制本体，符合设计预期），
+   但 Remotion 渲染页面的静态服务器（serve-handler 用 `lstat`）对**最终路径是软链的文件**一律回 404，
+   于是 `<Video src="assets/talk-source.mp4">` 拿不到片源、渲染以
+   `MEDIA_ELEMENT_ERROR: Format error` 失败。这一点其实早已写在
+   `packages/studio/src/remotion-render.ts` 的 `linkPublicDirToBundleRoot` 注释里
+   （「链目录可以，链单个文件不行」），设计时没把它与本决策联系起来。
+   Task 8 用两组对照实验钉死了成因：把该软链换成真文件 → 全链路真渲通过；
+   把它换成**指向同目录内真文件的相对软链** → 仍 404（故与「链接目标逃出服务根」「路径含非 ASCII」无关，
+   就是软链文件本身）。**退路即 §6 已写的「hfDir 真拷贝（付磁盘代价）」**，另一条路是让
+   publicDir 侧只出现软链**目录**（例如软链 `assets/talk-src/` 整个目录、片源放在里面）。
+   修复未在本期做（Task 8 的职责是验收，不是改实现）。
+
+2. **底片在剪辑台里单独占一轨**（§3 原文是「时间轴上视频层即分镜轨第一个 Clip」）。
+   真 spec 上分镜轨会画坏（hook 段 0 宽、底片只画满 15%），故 Task 7 给 talk 加了独立的底片轨，
+   代价是 talk 的时间轴高度 212（五模板仍 186），`EditorPage` 的网格行高改为从 `timelineHeight()` 取。
+
+3. **`trimVideoLayer` 的吐尾钳制落在纯函数里**（§3 只写了「裁到 <0.2s 钳住」）：
+   `trimEnd` 不得越过片源物理末尾，判据是新增的 `content.sourceDurationSec`（由 `lowerTalk` 落值）。
+   放在 UI 上钳不彻底——Inspector 的数字输入照样能填越界值。`sourceDurationSec` 缺省的老 spec 维持原行为。
+
+4. **手动字幕「清空文本即删除」**（§3 未写删除路径）：新增 `removeCaptionLayer`，
+   只接受 `cap-manual-` 前缀的 id；五模板 TTS 生成的 `cap0/1/2` 不走这条路（它们与旁白一一对应）。
+
+5. **`spec.durationSec` 不套 `MIN_DURATION.talk`**：口播成片的长度就是这段口播本身，
+   补到 6s 只会在片源后挂一段黑屏。`MIN_DURATION.talk` 成为暂无读取方的预留常量。
+
+6. **动效层版式沿用五模板的既有行为**（§6 已预告「观感由用户真机验后再调」）：
+   真渲实测标题/卖点卡/CTA 都是文档流里的块级 `.clip`，贴在画面顶部；`.card` 与 flash 的
+   `.highlightCard` 同源，没有字号/颜色规则，在真人底片上是默认小字。**与 flash 逐帧对照过，
+   两者表现一致**，不是 talk 引入的回归，但 talk 的底片是真人画面，观感问题比五模板更显眼。
