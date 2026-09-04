@@ -12,6 +12,7 @@ export const VIDEO_TPLS = [
   { value: 'demo', label: 'demo · 产品截图轮播' },
   { value: 'changelog', label: 'changelog · 代码变更' },
   { value: 'insight', label: 'insight · 数据卡片解说' },
+  { value: 'talk', label: 'talk · 口播合成' },
 ]
 export const MOODS = [
   { value: '', label: '自动（按钩子情绪）' },
@@ -30,7 +31,12 @@ export const BGS = [
   { value: 'none', label: '不加背景' },
 ]
 
-export interface VideoParams { tpl: string; bgm: string; mood: string; bg: string; captions: boolean; ratio: 'portrait' | 'landscape' }
+/** `uploadAssetId` 只在 `tpl==='talk'` 时有意义——口播合成的底片是用户上传的口播成片
+ *  （`assets` 里 `type==='video' && origin==='upload'` 的一条），其余模板不读这个字段。 */
+export interface VideoParams {
+  tpl: string; bgm: string; mood: string; bg: string; captions: boolean; ratio: 'portrait' | 'landscape'
+  uploadAssetId?: number
+}
 
 /** 实心（黑）与描边两套按钮 class——同屏只能有一个用 SOLID，见 docs/剪辑台-实施说明.md §7 */
 export const SOLID = 'rounded-[var(--fc-r-sm)] bg-[var(--fc-ink)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--fc-ink-2)] disabled:bg-[var(--fc-line)] disabled:text-[var(--fc-faint)]'

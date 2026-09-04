@@ -118,11 +118,18 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
 
   function makeVideo(assetId: number) {
     if (!selected) return
+    // talk 前端也拦，不靠后端 400 兜底——出片按钮本该已经因为没选口播素材被禁用，这里是双保险
+    if (vp.tpl === 'talk' && !vp.uploadAssetId) return
     setActiveKey('video')
     videoRun.run(
       async () => {
         const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
-          method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions, ratio: vp.ratio }),
+          method: 'POST', body: JSON.stringify({
+            assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg,
+            captions: vp.captions, ratio: vp.ratio,
+            // talk 的底片是用户上传的口播视频，别的模板不带这个字段（服务端只在 tpl==='talk' 时校验它）
+            uploadAssetId: vp.tpl === 'talk' ? vp.uploadAssetId : undefined,
+          }),
         })
         // 拿到 taskId（＝任务已入队、meta 已写）后立刻失效 content-items：
         // 派生 rendering 靠的是任务队列（server content-items.ts：pending|running ⇒ rendering），
@@ -137,6 +144,8 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
 
   const copyAssets = (assets.data ?? []).filter((a) => a.type === 'copy')
   const scriptAssets = (assets.data ?? []).filter((a) => a.type === 'script')
+  // talk 模板的口播素材候选：本项目里用户上传的视频（不含模板渲染出来的成片）
+  const uploadAssets = (assets.data ?? []).filter((a) => a.type === 'video' && a.origin === 'upload')
 
   function deleteAsset(id: number) {
     api(`/api/assets/${id}`, { method: 'DELETE' })
@@ -204,7 +213,7 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
         <EditorPage
           selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
           busy={busy} copyRun={copyRun} videoRun={videoRun} onGenerate={() => generate()}
-          vp={vp} setVp={setVp} bgmList={bgmList.data} onMakeVideo={makeVideo}
+          vp={vp} setVp={setVp} bgmList={bgmList.data} onMakeVideo={makeVideo} uploadAssets={uploadAssets}
           items={contentItems} selectedItemId={selectedItemId}
           onSelectItem={(item) => setSelectedItemId(item.id)} onDeleteItem={deleteContentItem}
           onCloseEditor={() => setSelectedItemId(null)}

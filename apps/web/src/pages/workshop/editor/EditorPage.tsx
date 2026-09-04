@@ -8,7 +8,7 @@ import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
-import { api, type BgmList, type ContentItemView } from '../../../api'
+import { api, type Asset, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
 import { useConfirm } from '../../../components/ui/Confirm'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
@@ -58,7 +58,7 @@ const CANVAS_W = Math.round(CANVAS_H * 0.5625)
  */
 export default function EditorPage({
   selected, hook, setHook, n, setN, busy, copyRun, videoRun, onGenerate,
-  vp, setVp, bgmList, onMakeVideo,
+  vp, setVp, bgmList, onMakeVideo, uploadAssets,
   items, selectedItemId, onSelectItem, onDeleteItem, onCloseEditor,
   leaveGuardRef, transitionExtras,
 }: {
@@ -75,6 +75,8 @@ export default function EditorPage({
   setVp: (v: VideoParams) => void
   bgmList: BgmList | undefined
   onMakeVideo: (assetId: number) => void
+  /** talk 模板的口播素材候选（本项目 `type==='video' && origin==='upload'` 的 assets），出片参数面板用 */
+  uploadAssets: Asset[]
   items: UseQueryResult<ContentItemView[]>
   selectedItemId: number | null
   onSelectItem: (item: ContentItemView) => void
@@ -389,6 +391,7 @@ export default function EditorPage({
             <StageBody
               selected={selected} current={current} ed={ed} playerRef={playerRef}
               busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+              talkBlocked={vp.tpl === 'talk' && !vp.uploadAssetId}
             />
           </div>
 
@@ -406,7 +409,7 @@ export default function EditorPage({
         {wide && (
           <InspectorPane
             ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
-            vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+            vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
             onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
             specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
           />
@@ -432,7 +435,7 @@ export default function EditorPage({
             <InspectorPane
               className="h-full"
               ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
-              vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+              vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
               specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
             />
@@ -471,7 +474,7 @@ export default function EditorPage({
 
 /** 中栏预览区的四种状态：没选项 / 没 spec（待出片）/ 自定义模板 / 正常播放。 */
 function StageBody({
-  selected, current, ed, playerRef, busy, videoRun, onMakeVideo,
+  selected, current, ed, playerRef, busy, videoRun, onMakeVideo, talkBlocked,
 }: {
   selected: string
   current: ContentItemView | null
@@ -480,6 +483,8 @@ function StageBody({
   busy: boolean
   videoRun: TaskRun
   onMakeVideo: (assetId: number) => void
+  /** tpl==='talk' 但还没选口播素材——出片按钮跟着 InspectorPane 一起禁用，不靠后端 400 兜底 */
+  talkBlocked: boolean
 }) {
   const hint = 'max-w-[420px] text-center text-xs leading-relaxed text-[var(--fc-line)]'
   if (!selected) return <div className={hint}>先在左上角选一个项目</div>
@@ -491,7 +496,8 @@ function StageBody({
         <div className={hint}>先渲一版才能进剪辑台——剪辑台改的是「上一版成片的时间线」，还没有成片就没有可改的东西。</div>
         <button
           className="rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] px-3 py-1.5 text-sm font-medium text-[var(--fc-line)] hover:bg-white/10 disabled:opacity-40"
-          disabled={busy} onClick={() => onMakeVideo(current.copyAssetId)}>
+          disabled={busy || talkBlocked} title={talkBlocked ? '先选口播素材' : undefined}
+          onClick={() => onMakeVideo(current.copyAssetId)}>
           {videoRun.running ? '渲染中…' : '渲成片'}
         </button>
       </div>
