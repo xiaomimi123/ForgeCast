@@ -102,3 +102,21 @@ describe('lowerTalk：动效层', () => {
     expect(nonVideo.every((l) => l.track >= 1)).toBe(true)
   })
 })
+
+describe('lowerTalk：MIN_DURATION 边界（durationSec=6）', () => {
+  it('固定 6s、卖点 3 张：各层 duration>0 且同轨不重叠', () => {
+    const spec = lower(sem(sections), { ...base, durationSec: 6, template: 'talk', videoSrc: 'clips/a.mp4' } as any)
+    for (const l of spec.layers) expect(l.duration).toBeGreaterThan(0)
+
+    const byTrack = new Map<number, Array<{ s: number; e: number }>>()
+    for (const l of spec.layers) {
+      const arr = byTrack.get(l.track) ?? []
+      arr.push({ s: l.start, e: l.start + l.duration })
+      byTrack.set(l.track, arr)
+    }
+    for (const arr of byTrack.values()) {
+      arr.sort((a, b) => a.s - b.s)
+      for (let i = 1; i < arr.length; i++) expect(arr[i].s).toBeGreaterThanOrEqual(arr[i - 1].e - 1e-6)
+    }
+  })
+})
