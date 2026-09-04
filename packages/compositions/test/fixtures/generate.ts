@@ -136,9 +136,14 @@ for (const [name, optsFn] of Object.entries(SPECS)) {
   const spec = { ...lower(semantic, opts), createdAt: FIXED_CREATED_AT }
   if (opts.template === 'talk') {
     // 覆盖守护要求「至少一组 video 图层带 trimStart」（见文件头注释）——lower() 本身不产
-    // trimStart，这里补手动 patch。
+    // trimStart，这里补手动 patch。src 同处换成带空格的路径，让 talk 组同时覆盖「video 图层的
+    // src 也要编码」——原先 'assets/talk-source.mp4' 是纯 ASCII 无空格，编码断言在它身上恒真，
+    // 与 demoSpacedShots 那组给 image src 换空格路径是同一个道理（见文件头注释）。
     const videoLayer = spec.layers.find((l) => l.content.kind === 'video')
-    if (videoLayer && videoLayer.content.kind === 'video') videoLayer.content.trimStart = 1.5
+    if (videoLayer && videoLayer.content.kind === 'video') {
+      videoLayer.content.trimStart = 1.5
+      videoLayer.content.src = 'assets/talk source.mp4'
+    }
   }
   writeFileSync(join(OUT_DIR, `${name}.json`), `${JSON.stringify(spec, null, 2)}\n`)
   console.log(`${name}.json  layers=${spec.layers.length}`)

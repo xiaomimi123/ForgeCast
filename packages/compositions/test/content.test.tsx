@@ -199,6 +199,26 @@ describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
     }
   })
 
+  it('视频图层的 src 出现、路径分段完整、且已 percent 编码', () => {
+    // 同 image 那条断言的三关写法（见上），只是查找路径换成 mock 过的 <video data-testid="rv">。
+    for (const layer of spec.layers) {
+      if (layer.content.kind !== 'video') continue
+      const raw = layer.content.src
+      const { container } = render(<SpecView spec={spec} timeSec={mid(layer)} />)
+      const el = byId(container, layer.id)?.querySelector('[data-testid="rv"]') as HTMLVideoElement
+      expect(el, `图层 ${layer.id} 未渲出 video`).not.toBeNull()
+      const src = el.getAttribute('src') ?? ''
+      // 1) 空格与 #/? 必须已编码——`#`/`?` 未编码会让浏览器把后半段当 fragment/query 截掉。
+      for (const bad of [' ', '#', '?']) {
+        expect(src, `图层 ${layer.id} 的 src 未编码 ${JSON.stringify(bad)}`).not.toContain(bad)
+      }
+      // 2) 目录分隔符 `/` 必须原样保留（整串 encodeURIComponent 会把它编成 %2F 拆掉子目录）。
+      expect(src.split('/').length, `图层 ${layer.id} 的 src 目录层级被编坏`).toBe(raw.split('/').length)
+      // 3) 解回来必须与 spec 里的原路径逐字相等——既防漏编，也防多编/编错。
+      expect(decodeURIComponent(src), `图层 ${layer.id} 的 src 与 spec 不一致`).toBe(raw)
+    }
+  })
+
   it('品牌名上屏（跨五模板丢失过，修了四轮）', () => {
     const brandLayers = spec.layers.filter((l) => (textOf(l) ?? '').includes(BRAND))
     // 九组 fixture 全部传了 brandName，任何一组一个品牌图层都没有 = lower 侧把品牌名丢了。

@@ -45,7 +45,7 @@
       "track": 0,
       "content": {
         "kind": "video",
-        "src": "assets/talk-source.mp4",
+        "src": "assets/talk source.mp4",
         "muted": false,
         "trimEnd": 20,
         "sourceDurationSec": 20,
