@@ -63,10 +63,13 @@ export type LayerContent =
   | { kind: 'image'; src: string }        // 相对 hf 目录
   | {                              // Task 8 起真渲染（Remotion <Video>）
       kind: 'video'; src: string; muted: boolean
-      /** 子项目④ talk：以下三项均可选，缺省即①②的行为（整段铺满、不裁剪、满音量）。 */
+      /** 子项目④ talk：以下四项均可选，缺省即①②的行为（整段铺满、不裁剪、满音量）。 */
       trimStart?: number            // 秒，片源裁掉的头（缺省 0）
       trimEnd?: number               // 秒，片源终点（缺省=片源末尾，即不传 endAt）
       volume?: number                // 0..1，缺省 1
+      /** 片源总长（ffprobe 实测，生成期落值）。裁剪的吐尾钳制（editing）与剪辑台 UI 的
+       *  时间轴刻度都靠它——只看 trimStart/trimEnd 无从知道「还能往后拉多少」。 */
+      sourceDurationSec?: number
     }
   | { kind: 'caption'; text: string }
   | { kind: 'shape'; shape: 'rect' | 'ellipse' }

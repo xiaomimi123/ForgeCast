@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -501,5 +502,138 @@ describe('generateVideo 品牌名落片（回归：这是第 4 次复发的同�
     await generateVideo(tctx, { slug: 'demo', tpl })
     const html = hfIndexHtml(tctx.config.paths.workspace, 'demo')
     expect(html).toContain('快客通')
+  })
+})
+
+/**
+ * talk（口播合成）管线：与五模板的 renderHfPipeline 平行的独立分支——
+ * 不跑 TTS、不产 index.html（templates/hf/ 没有 talk 模板文件）、口播底片走软链零拷贝。
+ *
+ * 素材策略：用 ffmpeg 现合一段 2s 小 mp4，ffprobe 真跑（时长断言直接与测试内自己 probe 的值对齐，
+ * 不写死 2.0——容器格式的实际时长可能带零头）。ffmpeg 不在时整组跳过，不假红。
+ */
+const HAS_FFMPEG = (() => {
+  try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); execFileSync('ffprobe', ['-version'], { stdio: 'ignore' }); return true } catch { return false }
+})()
+function probeSec(abs: string): number {
+  return Number.parseFloat(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', abs], { encoding: 'utf8' }).trim())
+}
+/** 2s 测试片源只合成一次（整个文件共用），各用例拷进自己的 workspace——每例都跑一次 ffmpeg
+ *  会显著拖慢并发下的整套测试（曾把邻居用例挤到超时）。 */
+let sampleMp4 = ''
+function sampleSource(): string {
+  if (!sampleMp4) {
+    sampleMp4 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fc-talk-src-')), 'src.mp4')
+    execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=10:duration=2', '-pix_fmt', 'yuv420p', sampleMp4], { stdio: 'ignore' })
+  }
+  return sampleMp4
+}
+/** 造一段 2s 测试片源，登记成 origin='upload' 的 video 素材，返回 { assetId, abs }。 */
+function makeUpload(workspace: string, name = 'talk.mp4'): { assetId: number; abs: string } {
+  const dir = path.join(workspace, 'demo', 'uploads')
+  fs.mkdirSync(dir, { recursive: true })
+  const abs = path.join(dir, name)
+  fs.copyFileSync(sampleSource(), abs)
+  const info = ctx.db.prepare(
+    "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (1, 'video', NULL, ?, '[]', 'upload')",
+  ).run(path.join('demo', 'uploads', name))
+  return { assetId: Number(info.lastInsertRowid), abs }
+}
+
+describe.skipIf(!HAS_FFMPEG)('generateVideo tpl=talk（口播合成，stub）', () => {
+  function talkCtx(): CoreCtx {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    return { db: ctx.db, config, llm: ctx.llm }
+  }
+
+  it('全链路：软链指向上传片源 / 不产 index.html / durationSec=ffprobe 值 / 无旁白无字幕', async () => {
+    const tctx = talkCtx()
+    const { assetId: upId, abs: srcAbs } = makeUpload(tctx.config.paths.workspace)
+    const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', assetId: 1, uploadAssetId: upId })
+
+    const hfDir = hfDirOf(tctx.config.paths.workspace, 'demo')
+    const link = path.join(hfDir, 'assets', 'talk-source.mp4')
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(fs.realpathSync(fs.readlinkSync(link))).toBe(fs.realpathSync(srcAbs))
+    // 不产 index.html：talk 没有 HyperFrames 模板文件，走 HTML 那条路只会炸
+    expect(fs.existsSync(path.join(hfDir, 'index.html'))).toBe(false)
+
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const spec = JSON.parse(fs.readFileSync(path.join(tctx.config.paths.workspace, row.spec_path), 'utf8'))
+    expect(spec.template).toBe('talk')
+    expect(spec.durationSec).toBeCloseTo(probeSec(srcAbs), 3)
+    expect(spec.audio.narration).toBe(null)
+    expect(spec.audio.captionsEnabled).toBe(false)
+    expect(spec.layers.some((l: any) => l.kind === 'caption')).toBe(false)
+    expect(spec.semantic.sourceAssetId).toBe(1)
+    expect(spec.semantic.sections.some((s: any) => s.id === 'sec-video')).toBe(true)
+    // orig 快照
+    const origAbs = path.join(tctx.config.paths.workspace, row.spec_path).replace(/\.json$/, '.orig.json')
+    expect(fs.existsSync(origAbs)).toBe(true)
+    // bgVariant 默认 none（未显式 --bg 时不加科技背景）
+    expect(spec.bgVariant).toBeUndefined()
+  })
+
+  it('视频层：src 指向软链、sourceDurationSec 与 trimEnd 落 ffprobe 值', async () => {
+    const tctx = talkCtx()
+    const { assetId: upId, abs: srcAbs } = makeUpload(tctx.config.paths.workspace)
+    const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId })
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const spec = JSON.parse(fs.readFileSync(path.join(tctx.config.paths.workspace, row.spec_path), 'utf8'))
+    const v = spec.layers.find((l: any) => l.kind === 'video')
+    expect(v.content.src).toBe('assets/talk-source.mp4')
+    expect(v.from).toBe('sec-video')
+    const dur = probeSec(srcAbs)
+    expect(v.content.sourceDurationSec).toBeCloseTo(dur, 3)
+    expect(v.content.trimEnd).toBeCloseTo(dur, 3)
+  })
+
+  it('软链失败（FS 不支持）→ 回落真拷贝 + warning，不让渲染整条失败', async () => {
+    const tctx = talkCtx()
+    const { assetId: upId, abs: srcAbs } = makeUpload(tctx.config.paths.workspace)
+    const real = fs.symlinkSync
+    const spy = vi.spyOn(fs, 'symlinkSync').mockImplementation(((t: any, p: any, ty: any) => {
+      if (String(p).endsWith('talk-source.mp4')) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      return real(t, p, ty)
+    }) as any)
+    try {
+      const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId })
+      const copied = path.join(hfDirOf(tctx.config.paths.workspace, 'demo'), 'assets', 'talk-source.mp4')
+      expect(fs.lstatSync(copied).isSymbolicLink()).toBe(false)
+      expect(fs.readFileSync(copied).length).toBe(fs.readFileSync(srcAbs).length)
+      const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+      expect(JSON.parse(row.warnings)).toContain('文件系统不支持软链，已复制口播素材')
+    } finally { spy.mockRestore() }
+  })
+
+  it('显式 --bg 时才加科技背景（talk 默认 none）', async () => {
+    const tctx = talkCtx()
+    const { assetId: upId } = makeUpload(tctx.config.paths.workspace)
+    const out = await generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId, bg: 'aurora' })
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(out.assetId)
+    const spec = JSON.parse(fs.readFileSync(path.join(tctx.config.paths.workspace, row.spec_path), 'utf8'))
+    expect(spec.bgVariant).toBe('aurora')
+  })
+
+  it('缺 uploadAssetId → 抛错', async () => {
+    await expect(generateVideo(talkCtx(), { slug: 'demo', tpl: 'talk' })).rejects.toThrow(/口播素材/)
+  })
+
+  it('uploadAssetId 指向非上传素材（rendered 成片 / 文案）→ 抛错', async () => {
+    const tctx = talkCtx()
+    const bad = ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (1, 'video', NULL, 'demo/videos/x.mp4', '[]', 'rendered')",
+    ).run()
+    await expect(generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: Number(bad.lastInsertRowid) }))
+      .rejects.toThrow(/口播素材/)
+    await expect(generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: 1 })).rejects.toThrow(/口播素材/)
+  })
+
+  it('片源文件丢失（素材行在但文件没了）→ 抛「无法读取口播素材时长」', async () => {
+    const tctx = talkCtx()
+    const { assetId: upId, abs } = makeUpload(tctx.config.paths.workspace)
+    fs.rmSync(abs)
+    await expect(generateVideo(tctx, { slug: 'demo', tpl: 'talk', uploadAssetId: upId }))
+      .rejects.toThrow(/无法读取口播素材时长/)
   })
 })

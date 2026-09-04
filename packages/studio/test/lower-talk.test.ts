@@ -26,9 +26,18 @@ describe('lowerTalk：视频底层', () => {
     expect(v.overridden).toBe(false)
     expect(v.start).toBe(0)
     expect(v.duration).toBe(base.durationSec)
-    expect(v.content).toEqual({ kind: 'video', src: 'clips/a.mp4', muted: false })
+    // 初始态不裁剪：trimEnd/sourceDurationSec 都是片源末尾（缺 sourceDurationSec 时回落 durationSec）
+    expect(v.content).toEqual({ kind: 'video', src: 'clips/a.mp4', muted: false, trimEnd: 30, sourceDurationSec: 30 })
     expect(v.style).toEqual({})
     expect(v.effects).toEqual([])
+  })
+
+  it('显式 sourceDurationSec（片源比成片长，如已裁过的重 lower）落进 content，不跟 durationSec 走', () => {
+    const spec = lower(sem(sections), { ...base, durationSec: 12, template: 'talk', videoSrc: 'clips/a.mp4', sourceDurationSec: 42 } as any)
+    const v = spec.layers.find((l) => l.kind === 'video')!
+    expect(v.duration).toBe(12)
+    expect((v.content as any).sourceDurationSec).toBe(42)
+    expect((v.content as any).trimEnd).toBe(42)
   })
 
   it('videoSrc 缺失时 throw 明确消息', () => {

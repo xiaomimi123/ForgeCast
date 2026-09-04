@@ -628,16 +628,27 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   // —— M5 视频 ——
   app.post('/api/projects/:slug/video', async (c) => {
     const slug = c.req.param('slug')
-    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+    if (!project) return c.json({ error: '项目不存在' }, 404)
     const body = await c.req.json().catch(() => ({}))
-    // tpl 白名单校验：story/demo/changelog/insight 显式放行，其余（含未传）一律回落 flash
-    const tpl = ['story', 'demo', 'changelog', 'insight'].includes(body.tpl) || /^custom-\d+$/.test(body.tpl)
+    // tpl 白名单校验：story/demo/changelog/insight/talk 显式放行，其余（含未传）一律回落 flash
+    const tpl = ['story', 'demo', 'changelog', 'insight', 'talk'].includes(body.tpl) || /^custom-\d+$/.test(body.tpl)
       ? body.tpl : 'flash'
+    const uploadAssetId = typeof body.uploadAssetId === 'number' ? body.uploadAssetId : undefined
+    // talk 的底片是用户上传的口播视频：入队**前**校验到位，别把「选错素材」拖成一次失败的后台任务
+    if (tpl === 'talk') {
+      if (uploadAssetId === undefined) return c.json({ error: 'talk 需要选择口播素材' }, 400)
+      const upload = ctx.db.prepare(
+        "SELECT id FROM assets WHERE id = ? AND project_id = ? AND type = 'video' AND origin = 'upload'",
+      ).get(uploadAssetId, project.id)
+      if (!upload) return c.json({ error: '所选素材不是本项目上传的口播视频' }, 400)
+    }
     const ratio = body.ratio === 'landscape' ? 'landscape' : 'portrait'
     const taskId = queue.enqueue((log) => generateVideo(ctx, {
       slug,
       assetId: typeof body.assetId === 'number' ? body.assetId : undefined,
       tpl,
+      uploadAssetId,
       bgm: typeof body.bgm === 'string' ? body.bgm : undefined,
       mood: typeof body.mood === 'string' ? body.mood : undefined,
       bg: typeof body.bg === 'string' ? body.bg : undefined,

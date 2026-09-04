@@ -38,6 +38,10 @@ export interface LowerOpts {
   brandName?: string
   /** talk 专用：口播底片视频（hfDir 相对路径）。其余五模板不读此字段。 */
   videoSrc?: string
+  /** talk 专用：片源总长（ffprobe 实测）。缺省回落 durationSec——首次 lower 时成片时长就是片源
+   *  时长，两者相等；显式给一份是为了不把这条巧合写死成隐式耦合（重新 lower 一条已裁剪的 talk
+   *  时 durationSec 会短于片源）。落进视频层 content.sourceDurationSec/trimEnd。 */
+  sourceDurationSec?: number
 }
 
 // ---- section 查找辅助：与 props.ts 里同样的「按稳定 id 查」路径，缺失时给安全默认值，不抛错 ----
@@ -514,10 +518,13 @@ function lowerTalk(sections: Section[], opts: LowerOpts): Layer[] {
   const layers: Layer[] = []
 
   // track 0：口播底片视频——五模板都没有这一层，talk 独有。
+  // sourceDurationSec/trimEnd 一并落值：吐尾钳制（editing 的 trimVideoLayer）与剪辑台时间轴
+  // 都要知道片源还剩多少可拉，缺了就只能猜。初始态不裁剪，故 trimEnd = 片源末尾。
+  const sourceDur = +(opts.sourceDurationSec ?? durationSec).toFixed(4)
   layers.push({
     id: 'talkVideo', kind: 'video', from: 'sec-video', overridden: false,
     start: 0, duration: +durationSec.toFixed(4), track: 0,
-    content: { kind: 'video', src: opts.videoSrc, muted: false } as LayerContent,
+    content: { kind: 'video', src: opts.videoSrc, muted: false, trimEnd: sourceDur, sourceDurationSec: sourceDur } as LayerContent,
     style: {}, effects: [],
   })
 

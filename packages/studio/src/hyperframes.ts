@@ -321,12 +321,14 @@ export function readTemplate(name: string): string {
   return fs.readFileSync(path.join(HF_TEMPLATES, `${name}.html`), 'utf8')
 }
 
-/** 脚手架：写 hyperframes.json + index.html + assets/*，软链 fonts。 */
-export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Record<string, Buffer> = {}): void {
+/**
+ * hf 目录里**与 index.html 无关**的那半边：assets/ 与字体软链。
+ * 从 scaffoldHfProject 抽出来，供 talk 管线复用——talk 不产 index.html（templates/hf/ 没有
+ * talk 模板文件），但字体照样要在：base.css 的 @font-face 是根相对的 `/assets/fonts/…`，
+ * Remotion 打包时靠 publicDir 里的这个目录解析（见 remotion-render.ts linkPublicDirToBundleRoot）。
+ */
+export function scaffoldHfAssets(destDir: string): void {
   fs.mkdirSync(path.join(destDir, 'assets'), { recursive: true })
-  fs.copyFileSync(path.join(HF_TEMPLATES, 'hyperframes.json'), path.join(destDir, 'hyperframes.json'))
-  // GSAP 本地化（模板引用 gsap.min.js）：离线/部署目标渲染不依赖 CDN
-  fs.copyFileSync(path.join(HF_TEMPLATES, 'gsap.min.js'), path.join(destDir, 'gsap.min.js'))
   // fonts 目录软链（相对 index.html 的 assets/fonts 引用统一）。
   // 用相对路径：绝对路径软链在 Docker 挂载卷内失效（宿主机路径容器里不存在）；
   // 既有坏链（existsSync 随链为 false 但 lstat 存在）须先清掉，否则 symlink/cpSync 都会炸。
@@ -342,6 +344,14 @@ export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Re
       try { fs.symlinkSync(rel, fontsDst, 'dir') } catch { fs.cpSync(fontsSrc, fontsDst, { recursive: true }) }
     }
   }
+}
+
+/** 脚手架：写 hyperframes.json + index.html + assets/*，软链 fonts。 */
+export function scaffoldHfProject(destDir: string, indexHtml: string, assets: Record<string, Buffer> = {}): void {
+  scaffoldHfAssets(destDir)
+  fs.copyFileSync(path.join(HF_TEMPLATES, 'hyperframes.json'), path.join(destDir, 'hyperframes.json'))
+  // GSAP 本地化（模板引用 gsap.min.js）：离线/部署目标渲染不依赖 CDN
+  fs.copyFileSync(path.join(HF_TEMPLATES, 'gsap.min.js'), path.join(destDir, 'gsap.min.js'))
   fs.writeFileSync(path.join(destDir, 'index.html'), indexHtml, 'utf8')
   for (const [name, buf] of Object.entries(assets)) fs.writeFileSync(path.join(destDir, 'assets', name), buf)
 }
