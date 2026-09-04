@@ -61,7 +61,13 @@ export interface Layer {
 export type LayerContent =
   | { kind: 'text'; text: string }
   | { kind: 'image'; src: string }        // 相对 hf 目录
-  | { kind: 'video'; src: string; muted: boolean }   // Task 8 起真渲染（Remotion <Video>）
+  | {                              // Task 8 起真渲染（Remotion <Video>）
+      kind: 'video'; src: string; muted: boolean
+      /** 子项目④ talk：以下三项均可选，缺省即①②的行为（整段铺满、不裁剪、满音量）。 */
+      trimStart?: number            // 秒，片源裁掉的头（缺省 0）
+      trimEnd?: number               // 秒，片源终点（缺省=片源末尾，即不传 endAt）
+      volume?: number                // 0..1，缺省 1
+    }
   | { kind: 'caption'; text: string }
   | { kind: 'shape'; shape: 'rect' | 'ellipse' }
 

@@ -11,6 +11,7 @@ import type { Layer, VideoSpec } from '../src/videospec-types'
 // src/attribute 级别的断言（src 编码、muted 透传、zIndex 叠层）见 video-layer.test.tsx。
 vi.mock('remotion', () => ({
   Video: (p: Record<string, unknown>) => <video data-testid="rv" src={p.src as string} muted={p.muted as boolean} />,
+  Sequence: (p: Record<string, unknown>) => <>{p.children as React.ReactNode}</>,
   useCurrentFrame: () => 0,
   useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
 }))

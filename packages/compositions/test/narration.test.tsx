@@ -10,6 +10,7 @@ afterEach(cleanup)
 vi.mock('remotion', () => ({
   Audio: (p: Record<string, unknown>) => <audio data-testid="narration" src={p.src as string} />,
   Video: (p: Record<string, unknown>) => <video src={p.src as string} />,
+  Sequence: (p: Record<string, unknown>) => <>{p.children as React.ReactNode}</>,
   useCurrentFrame: () => 0,
   useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
 }))

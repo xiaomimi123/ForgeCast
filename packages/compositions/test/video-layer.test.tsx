@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
+import { secToFrames } from '../src/time'
 import type { Layer, VideoSpec } from '../src/videospec-types'
 
 // 本包 vitest.config.ts 关闭了 globals，@testing-library/react 的自动 afterEach
@@ -10,7 +11,21 @@ import type { Layer, VideoSpec } from '../src/videospec-types'
 afterEach(cleanup)
 
 vi.mock('remotion', () => ({
-  Video: (p: Record<string, unknown>) => <video data-testid="rv" src={p.src as string} muted={p.muted as boolean} />,
+  Video: (p: Record<string, unknown>) => (
+    <video
+      data-testid="rv"
+      src={p.src as string}
+      muted={p.muted as boolean}
+      data-start-from={p.startFrom as number}
+      data-end-at={p.endAt as number | undefined}
+      data-volume={p.volume as number}
+    />
+  ),
+  Sequence: (p: Record<string, unknown>) => (
+    <div data-testid="seq" data-from={p.from as number} data-dif={p.durationInFrames as number}>
+      {p.children as React.ReactNode}
+    </div>
+  ),
   useCurrentFrame: () => 0,
   useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
 }))
@@ -31,6 +46,60 @@ describe('video 图层', () => {
     const v = getByTestId('rv') as HTMLVideoElement
     expect(v.getAttribute('src')).toBe('clip.mp4')
     expect(v.muted).toBe(true)
+  })
+
+  it('视频图层包 <Sequence>：from/durationInFrames 来自 layer 时间', () => {
+    const { getByTestId } = render(<SpecView spec={spec([{
+      id: 'bg', kind: 'video', from: null, overridden: false, start: 3, duration: 4, track: 0,
+      content: { kind: 'video', src: 'clip.mp4', muted: true }, style: {}, effects: [],
+    }])} timeSec={3} />)
+    const seq = getByTestId('seq') as HTMLElement
+    expect(Number(seq.dataset.from)).toBe(secToFrames(3))
+    expect(Number(seq.dataset.dif)).toBe(secToFrames(4))
+  })
+
+  it('trimStart/volume 透传 startFrom/volume；缺省 0/1', () => {
+    const { getByTestId } = render(<SpecView spec={spec([{
+      id: 'bg', kind: 'video', from: null, overridden: false, start: 0, duration: 10, track: 0,
+      content: { kind: 'video', src: 'clip.mp4', muted: true, trimStart: 2.5, volume: 0.4 }, style: {}, effects: [],
+    }])} timeSec={1} />)
+    const v1 = getByTestId('rv') as HTMLVideoElement
+    expect(Number(v1.dataset.startFrom)).toBe(secToFrames(2.5))
+    expect(Number(v1.dataset.volume)).toBe(0.4)
+    cleanup()
+    const { getByTestId: getByTestId2 } = render(<SpecView spec={spec([{
+      id: 'bg2', kind: 'video', from: null, overridden: false, start: 0, duration: 10, track: 0,
+      content: { kind: 'video', src: 'clip.mp4', muted: true }, style: {}, effects: [],
+    }])} timeSec={1} />)
+    const v2 = getByTestId2('rv') as HTMLVideoElement
+    expect(Number(v2.dataset.startFrom)).toBe(0)
+    expect(Number(v2.dataset.volume)).toBe(1)
+  })
+
+  it('trimEnd 透传 endAt；缺省不传', () => {
+    const { getByTestId } = render(<SpecView spec={spec([{
+      id: 'bg', kind: 'video', from: null, overridden: false, start: 0, duration: 10, track: 0,
+      content: { kind: 'video', src: 'clip.mp4', muted: true, trimEnd: 6 }, style: {}, effects: [],
+    }])} timeSec={1} />)
+    const v = getByTestId('rv') as HTMLVideoElement
+    expect(Number(v.dataset.endAt)).toBe(secToFrames(6))
+    cleanup()
+    const { getByTestId: getByTestId2 } = render(<SpecView spec={spec([{
+      id: 'bg2', kind: 'video', from: null, overridden: false, start: 0, duration: 10, track: 0,
+      content: { kind: 'video', src: 'clip.mp4', muted: true }, style: {}, effects: [],
+    }])} timeSec={1} />)
+    const v2 = getByTestId2('rv') as HTMLVideoElement
+    expect(v2.dataset.endAt).toBeUndefined()
+  })
+
+  it('start>0 的视频图层不再从片源 0 秒起播（②Task 8 遗留还债）——断言 Sequence.from 正确', () => {
+    const { getByTestId } = render(<SpecView spec={spec([{
+      id: 'bg', kind: 'video', from: null, overridden: false, start: 5, duration: 3, track: 0,
+      content: { kind: 'video', src: 'clip.mp4', muted: true }, style: {}, effects: [],
+    }])} timeSec={5} />)
+    const seq = getByTestId('seq') as HTMLElement
+    expect(Number(seq.dataset.from)).toBe(secToFrames(5))
+    expect(Number(seq.dataset.from)).not.toBe(0)
   })
 
   it('文字图层能叠在视频图层之上（合成能力成立）', () => {
