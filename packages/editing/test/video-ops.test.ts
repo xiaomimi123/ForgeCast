@@ -220,9 +220,9 @@ describe('trimVideoLayer — 越界图层钳回', () => {
     // 真实 lowerTalk 把 hook/card/cta 全放 track 1。逐层独立钳回时，card 只被截短、
     // cta 却「保时长左移」，两者必然叠在一起 → server validateSpecPut 400 → ⌘S 与渲成片全挂。
     const spec = talkSpec()
-    // δ 上界留到 durationSec ≥ 0.6：track1 有 3 层、每层最短 0.2，再短就是物理上放不下
-    // （不删层的铁律下无解），不属于本不变量的辖区。
-    for (let d = 0; d <= 11.4; d = round1(d + 0.1)) {
+    // δ 扫到视频层自身的 0.2 下限为止。durationSec < 层数×0.2 时也不会重叠——末层的
+    // 最短时长回落只是让 end 超出 durationSec（server 不查、Remotion 裁掉，良性）。
+    for (let d = 0; d <= 11.8; d = round1(d + 0.1)) {
       const out = trimVideoLayer(spec, 'v', 'end', d)
       expectNoOverlap(out)
       expect(out.layers).toHaveLength(spec.layers.length)

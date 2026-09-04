@@ -58,7 +58,8 @@ function clampLayer(layer: Layer, limit: number, floor: number): Layer {
  *
  * 左移还带一条地板 `floor = 左边层数 × MIN_LAYER_DURATION`：不给左邻居留下最低限度的位置，
  * 它们就只能挤成重叠。地板与游标一起，保证 durationSec ≥ 同轨层数 × 0.2 时结果必然无重叠。
- * 再短就是物理无解（不删层是既有铁律，这里不为了消重叠去删用户的层）。
+ * 再短也不会产生重叠：末层的最短时长回落会让它的 end 超出 durationSec（server 不校验这条，
+ * Remotion 对超出合成时长的 Sequence 直接裁掉，良性）；不删层的铁律始终维持。
  */
 function clampLayers(layers: Layer[], durationSec: number, skipId: string): Layer[] {
   const byTrack = new Map<number, Layer[]>()
