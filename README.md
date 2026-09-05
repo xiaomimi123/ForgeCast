@@ -99,6 +99,27 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 
 > 焦点在 input / textarea / select 里，或浮层开着、批量执行中，或带 Ctrl/Cmd/Alt 时，以上单键一律不触发。
 
+## 口播合成（talk 模板，第六个模板）
+
+把**自己拍的真人口播成片**当底片，叠 ForgeCast 生成的动效层（标题 / 卖点卡 / CTA）与手动字幕，在剪辑台里裁头尾、调音量后渲成品。设计见 `docs/superpowers/specs/2026-09-06-talk-composite-design.md`。
+
+流程（**只有 Web 端有入口，CLI `forgecast video` 不支持 talk**）：
+
+1. **上传**：做内容 → 成片库 →「上传成片」上传口播 mp4/mov/m4v（落 `workspace/<slug>/uploads/`，登记为 `origin='upload'` 的视频素材）。
+2. **出片**：剪辑台右栏模板下拉选 `talk · 口播合成` → 多出的「口播素材」下拉里选刚上传的那条（没有上传素材时下拉换成提示，出片按钮禁用）→ 出片。成片时长 = ffprobe 量出的片源时长，视频层单独占一条「口播底片」轨。
+3. **剪辑台**：
+   - **裁头尾**：拖「口播底片」轨上那条 Clip 的左缘=裁头（动片源起点 `trimStart`）、右缘=裁尾；与普通图层的 resize 语义不同。`spec.durationSec` 跟着联动，越界的动效层自动钳回。
+   - **打字幕**：字幕轨空白处**双击**插一条手动字幕，在分镜文案列表里直接打字；字幕条可挪、可拖时长；**把文本清空即删除**这条字幕。
+   - **音量**：右栏图层检查器对视频层给出 `trimStart` / `trimEnd` / `volume` 数字微调（volume 0~1）。
+4. **渲成片**：走剪辑台的「渲成片」（Remotion）。
+
+几条硬边界：
+
+- **人声来自视频本身**，talk 不跑 TTS（`audio.narration` 恒 null），也不自动生成字幕——字幕全部手动打（很多平台会自动配字幕，烧进去非必需）。
+- **科技背景默认不加**（不遮人脸），需要时在渲染参数里手选；BGM 与既有链路一致（有曲库就垫，旁白 ducking 现成）。
+- talk 是 **Remotion-only**，不产 HyperFrames `index.html`。
+- 底片按「零拷贝」设计：把片源**所在目录**整体软链成 `hf/<videoId>/assets/talk-src`，spec 里 src 写 `assets/talk-src/<原文件名>`（几百 MB 的口播片不每版拷一份）。**链的必须是目录**——Remotion 的静态服务器（serve-handler 用 lstat）对「最终路径是软链的文件」一律回 404，而路径中间的软链目录由内核解析、不受影响；软链建不了的文件系统回落真拷贝（`talk-src` 建成真目录、片源拷进去，src 形态不变）+ 一条 warning。
+
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（五模板 Remotion 渲染 + 自定义模板 HyperFrames + Kokoro TTS）；`packages/compositions` 五模板的纯 React/Remotion 合成组件（零 Node 依赖，渲染与 Web 预览共用同一套组件）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/topics` 选题库（目标账号+爆款笔记+LLM 提炼的选题模式，生成文案时作为风格参考注入）；`packages/server` 本地 API
 - `apps/web` Web 控制台（单页应用，五个工位/板块通过顶部 tab 切换，不占独立 URL：找项目（候选卡片点「立项」打开右侧详情抽屉）/ 拆解需求（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容（原七 tab 收成三视图：**剪辑台**——真正的三栏编辑台本体：左栏内容队列（一条内容=一张 `ContentItem` 卡，聚合文案+封面+成片）+ 钩子筛选；中栏 9:16 播放器（@remotion/player 直播 `SpecComposition`）+ 分镜文案列表（改字失焦即重渲该镜画面、每镜可「让 LLM 重写这段文案」）；右栏检查器——图层属性（位置/字号/颜色/对齐/特效）即时生效，渲染参数（背景/BGM/情绪）暂存到本地草稿、点「用新参数重渲」才一次性提交（表头「改动 N 项」），模板/比例/字幕等需要重新生成的参数灰显只读；底部时间轴（**刻度/分镜/字幕/BGM 波形/卡点 五轨**：拖分镜移动、拖右缘改时长，吸附卡点、组内碰撞钳制；BGM 轨画当前曲子的波形峰值（`GET …/waveform`，ffmpeg 解码 ≤1000 个峰值，取不到只灰显「波形不可用」、不挡任何编辑）；卡点轨三态菱形——红实心=已用强拍、灰=检出未用（点一下把最近的分镜入点移到这一拍）、空心=手动卡点（卡点轨空白处**双击**添加、点它删除），手动卡点随 spec 落盘，换 BGM/情绪重析节拍时保留）。整条编辑链路走 `GET/PUT/reset/render/rewrite-section/pick-bgm/waveform` 七个 spec 端点，`Ctrl/Cmd+Z` 撤销、`Cmd/Ctrl+S` 保存，⋯ 菜单「重置为生成结果」按 `.orig.json` 快照逐字节回出厂。**用户须知**：撤销历史只在当前会话内有效（刷新页面即丢失，落盘的仍是最后一次保存点）；「重置为生成结果」丢弃的是磁盘上的手工改动，且此操作本身不可撤销；LLM 重写与直接改字都只换文案画面，旁白配音沿用上一版（不会重新配音，画面文字与旁白可能不一致）；换 BGM / 情绪走服务端 `POST …/pick-bgm`（选曲 + 重析节拍 + 落盘一体，librosa 不可用时**仍换曲**只是没网格可吸附），情绪下拉的选项来自 `templates/bgm/<情绪>/` 实际存在的子目录。窄屏 `<1240` 右栏收抽屉、`<1040` 左栏也收抽屉（时间轴同时降到 148 高、只留刻度/分镜/卡点三轨）。**成片库**——6 列网格批量审片（勾选批量通过 / 批量重渲，键盘流见上文「做内容工位快捷键」）+ 发布与表现数据只读回显；**模板库**——对标视频与模板资产。旧的独立「卡点」编辑器（`CutPlanEditor`）**入口已于 P2 移除**，卡点编辑全部由时间轴的卡点轨接管；组件文件与 `/api/projects/:slug/cutplan` 端点原样保留，老项目数据不丢。三视图间切换不跳出页面（切走剪辑台/切工位/打开项目详情三条路径都过「未保存改动」闸），工位面包屑压进顶部 Header，见 docs/剪辑台-实施说明.md、docs/superpowers/specs/2026-09-03-content-station-editor-design.md 与三份实施计划 docs/superpowers/plans/2026-09-0{3,4,5}-content-station-p{0,1,2}.md） / 分发营销 / 定制项目 / 选题库（目标账号清单 + 同赛道爆款笔记导入 + LLM 提炼标题结构/情绪类型，生成文案时自动引用，见 docs/superpowers/specs/2026-08-13-topic-pool-design.md）；项目详情、定制项目详情均为点卡片打开的右侧滑入抽屉，非独立页面）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）

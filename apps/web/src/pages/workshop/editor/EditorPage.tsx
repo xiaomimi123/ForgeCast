@@ -8,7 +8,7 @@ import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
-import { api, type BgmList, type ContentItemView } from '../../../api'
+import { api, type Asset, type BgmList, type ContentItemView } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
 import { useConfirm } from '../../../components/ui/Confirm'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
@@ -16,7 +16,7 @@ import type { TaskRun } from '../../../useTaskRun'
 import InspectorPane from './InspectorPane'
 import QueuePane from './QueuePane'
 import ShotList from './ShotList'
-import TimelinePane from './TimelinePane'
+import TimelinePane, { timelineHeight } from './TimelinePane'
 import { OUTLINE, SOLID, type VideoParams } from './ui'
 import { NoOrigSnapshotError, useEditorState } from './useEditorState'
 
@@ -28,9 +28,8 @@ export { BGS, MOODS, OUTLINE, SOLID, VIDEO_TPLS, type VideoParams } from './ui'
 const TOOLBAR_H = 46
 const MAT_H = 300
 const MAT_PAD = 18
-const TIMELINE_H = 186
-/** <1040 时间轴降到的高度（§4：只留分镜+卡点两轨）。见 TimelinePane 的 `compact` 注释。 */
-const TIMELINE_H_COMPACT = 148
+/** 时间轴高度（186 / <1040 时 148，talk 再多一条 26 的底片轨）由 TimelinePane 独家给出——
+ *  网格行高与它内部的 section 高度必须同源，见 `timelineHeight` 的注释。 */
 /**
  * 右栏收抽屉的阈值（§4 窄屏表：<1240 右栏收成抽屉，toolbar 出现「参数」按钮）。
  * 三栏一起摆下时中栏最小宽必须是 **560 而不是 620**：300 + 620 + 320 + 两道 8 的 gap = 1256 > 1240，
@@ -58,7 +57,7 @@ const CANVAS_W = Math.round(CANVAS_H * 0.5625)
  */
 export default function EditorPage({
   selected, hook, setHook, n, setN, busy, copyRun, videoRun, onGenerate,
-  vp, setVp, bgmList, onMakeVideo,
+  vp, setVp, bgmList, onMakeVideo, uploadAssets,
   items, selectedItemId, onSelectItem, onDeleteItem, onCloseEditor,
   leaveGuardRef, transitionExtras,
 }: {
@@ -75,6 +74,8 @@ export default function EditorPage({
   setVp: (v: VideoParams) => void
   bgmList: BgmList | undefined
   onMakeVideo: (assetId: number) => void
+  /** talk 模板的口播素材候选（本项目 `type==='video' && origin==='upload'` 的 assets），出片参数面板用 */
+  uploadAssets: Asset[]
   items: UseQueryResult<ContentItemView[]>
   selectedItemId: number | null
   onSelectItem: (item: ContentItemView) => void
@@ -318,7 +319,7 @@ export default function EditorPage({
             : leftWide
               ? `300px minmax(${MID_MIN}px,1fr)`
               : `minmax(${MID_MIN}px,1fr)`,
-          gridTemplateRows: `minmax(0,1fr) ${leftWide ? TIMELINE_H : TIMELINE_H_COMPACT}px`,
+          gridTemplateRows: `minmax(0,1fr) ${timelineHeight(ed.spec, !leftWide)}px`,
           height: 'calc(100vh - 190px)',
           minHeight: 620,
         }}
@@ -389,6 +390,7 @@ export default function EditorPage({
             <StageBody
               selected={selected} current={current} ed={ed} playerRef={playerRef}
               busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+              talkBlocked={vp.tpl === 'talk' && !vp.uploadAssetId}
             />
           </div>
 
@@ -397,7 +399,7 @@ export default function EditorPage({
             <ShotList
               slug={selected} videoId={videoId} ed={ed} playerRef={playerRef}
               currentSec={currentSec} onNotice={setNotice} onSelectLayer={setSelectedLayerId}
-              onSpecReplaced={bumpSpecEpoch} confirm={confirm}
+              onSpecReplaced={bumpSpecEpoch} confirm={confirm} compact={!leftWide}
             />
           </div>
         </section>
@@ -406,7 +408,7 @@ export default function EditorPage({
         {wide && (
           <InspectorPane
             ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
-            vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+            vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
             onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
             specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
           />
@@ -432,7 +434,7 @@ export default function EditorPage({
             <InspectorPane
               className="h-full"
               ed={ed} current={current} bgmList={bgmList} selectedLayerId={selectedLayerId}
-              vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
+              vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
               specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
             />
@@ -471,7 +473,7 @@ export default function EditorPage({
 
 /** 中栏预览区的四种状态：没选项 / 没 spec（待出片）/ 自定义模板 / 正常播放。 */
 function StageBody({
-  selected, current, ed, playerRef, busy, videoRun, onMakeVideo,
+  selected, current, ed, playerRef, busy, videoRun, onMakeVideo, talkBlocked,
 }: {
   selected: string
   current: ContentItemView | null
@@ -480,6 +482,8 @@ function StageBody({
   busy: boolean
   videoRun: TaskRun
   onMakeVideo: (assetId: number) => void
+  /** tpl==='talk' 但还没选口播素材——出片按钮跟着 InspectorPane 一起禁用，不靠后端 400 兜底 */
+  talkBlocked: boolean
 }) {
   const hint = 'max-w-[420px] text-center text-xs leading-relaxed text-[var(--fc-line)]'
   if (!selected) return <div className={hint}>先在左上角选一个项目</div>
@@ -491,7 +495,8 @@ function StageBody({
         <div className={hint}>先渲一版才能进剪辑台——剪辑台改的是「上一版成片的时间线」，还没有成片就没有可改的东西。</div>
         <button
           className="rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] px-3 py-1.5 text-sm font-medium text-[var(--fc-line)] hover:bg-white/10 disabled:opacity-40"
-          disabled={busy} onClick={() => onMakeVideo(current.copyAssetId)}>
+          disabled={busy || talkBlocked} title={talkBlocked ? '先选口播素材' : undefined}
+          onClick={() => onMakeVideo(current.copyAssetId)}>
           {videoRun.running ? '渲染中…' : '渲成片'}
         </button>
       </div>

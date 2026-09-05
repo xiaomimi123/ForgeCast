@@ -1,14 +1,16 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
 import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import {
-  addManualBeat, allBeats, deriveShots, layoutRow, moveShotBy, removeManualBeat, resizeLayer,
-  snapToBeats, type Beat, type ShotView,
+  addCaptionLayer, addManualBeat, allBeats, deriveShots, layoutRow, moveLayer, moveShotBy,
+  removeCaptionLayer, removeManualBeat, resizeLayer, snapToBeats, trimVideoLayer, updateLayerText,
+  type Beat, type ShotView,
 } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
 import { fmtTimecode } from './ShotList'
+import { isManualCaption } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /** §4 尺寸表。五条轨道的高度是**唯一**来源：轨道名列与轨道行都从这个数组渲，才不会各写各的。
@@ -19,13 +21,40 @@ import type { useEditorState } from './useEditorState'
  * 分镜/卡点轨没有时间参照物。留它之后 compact 高度 = 头32 + 刻度20 + 分镜46 + 卡点26 = 124 ≤ 148。 */
 const HEAD_H = 32
 const NAME_W = 104
-const TRACKS_ALL = [
+type TrackDef = {
+  key: 'ruler' | 'film' | 'shots' | 'caption' | 'bgm' | 'beats'
+  name: string
+  h: number
+  compact: boolean
+  /** talk 独有的轨（口播底片）——其余六模板没有视频层，这一轨不渲染也不占高度。 */
+  talkOnly?: boolean
+}
+const TRACKS_ALL: TrackDef[] = [
   { key: 'ruler', name: '刻度', h: 20, compact: true },
+  { key: 'film', name: '口播底片', h: 26, compact: true, talkOnly: true },
   { key: 'shots', name: '分镜', h: 46, compact: true },
   { key: 'caption', name: '字幕', h: 30, compact: false },
   { key: 'bgm', name: 'BGM', h: 30, compact: false },
   { key: 'beats', name: '卡点', h: 26, compact: true },
-] as const
+]
+/** 五模板下的容器高度（§4）。talk 多一条 26 的底片轨，见 `timelineHeight`。 */
+export const TIMELINE_H = 186
+export const TIMELINE_H_COMPACT = 148
+
+/** 这份 spec 需不需要底片轨：talk 且真有视频层（老 spec / 手工删层都可能没有）。 */
+export function hasFilmTrack(spec: VideoSpec | null | undefined): boolean {
+  if (!spec || isUnsupported(spec)) return false
+  return spec.template === 'talk' && spec.layers.some((l) => l.content.kind === 'video')
+}
+
+/**
+ * 时间轴容器高度。**EditorPage 的网格行高与本组件的 section 高度必须同源**——两边各写各的，
+ * talk 多出来的那一轨就会溢出网格行（时间轴被下一块盖住半条卡点轨）。
+ */
+export function timelineHeight(spec: VideoSpec | null | undefined, compact: boolean): number {
+  const base = compact ? TIMELINE_H_COMPACT : TIMELINE_H
+  return base + (hasFilmTrack(spec) ? TRACKS_ALL.find((t) => t.key === 'film')!.h : 0)
+}
 /** Clip 高 38 = 轨 46 减上下 padding 4（§5）。 */
 const CLIP_H = 38
 /** 拖拽吸附阈值（秒）。0.15 ≈ 半帧多一点，够粘上拍点又不会把人锁死在网格上。 */
@@ -39,6 +68,11 @@ type Drag =
    *  而拍点本身不会因为移分镜而变，一次算好即可。 */
   | { mode: 'move'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number; beats: number[] }
   | { mode: 'resize'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
+  /** talk 口播底片的两端裁剪。`edge` 决定 δ 的符号换算，见 `onDragMove`。 */
+  | { mode: 'trim'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; edge: 'start' | 'end' }
+  /** talk 手动字幕的挪位 / 改时长（普通图层口径：moveLayer / resizeLayer）。 */
+  | { mode: 'cap-move'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseStart: number; beats: number[] }
+  | { mode: 'cap-resize'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
 
 /**
  * 底部时间轴（实施说明 §4/§5）。容器 186：头 32 + 刻度 20 + 分镜 46 + 字幕 30 + BGM 30 + 卡点 26 = 184。
@@ -51,7 +85,12 @@ type Drag =
  *   flex 占位，于是「flex 权重 : 时间」全轨恒为 1:1，Clip 的边缘与刻度、播放头对得上。
  * - 拖拽期间走 `applyTransient`，`pointerup` 才 `commit`：**一次拖拽 = 一步 undo**。
  *   每一帧都从「按下那一刻的 base」重算，不做增量累加，中途松手/回拖都不会漂。
- * - 字幕轨只显示与点选。字幕时间来自 TTS 的 cues，拖了就和语音错位，P1 不给拖。
+ * - 字幕轨在**五模板下只显示与点选**：字幕时间来自 TTS 的 cues，拖了就和语音错位。
+ *   **talk 例外**：talk 没有 TTS（人声在底片里），字幕是用户自己打的，所以可拖、可改时长，
+ *   空白双击还能就地插一条（子项目④ Task 7）。
+ * - talk 另有一条 26 的**口播底片轨**：底片 start 恒 0、duration 恒等于 durationSec，
+ *   拖两端＝裁剪（`trimVideoLayer`）而不是移动——挪一条铺满全轨的底片没有意义。
+ *   它不进分镜轨：底片跨越整条时间轴，混进 `layoutRow` 会把与它同起点的动效分镜压成 0 宽。
  */
 export default function TimelinePane({
   slug, videoId, ed, playerRef, currentSec, selectedLayerId, onSelectLayer, onNotice, confirm, className, compact,
@@ -71,12 +110,20 @@ export default function TimelinePane({
   /** <1040（§4）：字幕/BGM 两轨隐藏，容器降到 148。EditorPage 按 matchMedia 传入。 */
   compact?: boolean
 }) {
-  const TRACKS = compact ? TRACKS_ALL.filter((t) => t.compact) : TRACKS_ALL
-  const trackH = (key: (typeof TRACKS_ALL)[number]['key']) => TRACKS_ALL.find((t) => t.key === key)!.h
-  const containerH = compact ? 148 : 186
   const spec = ed.spec
   const usable = spec && !isUnsupported(spec) ? spec : null
-  const shots = useMemo(() => (usable ? deriveShots(usable) : []), [usable])
+  /** talk 才有底片轨与可编辑字幕轨；判定同 `hasFilmTrack`（EditorPage 算行高用的也是它）。 */
+  const isTalk = hasFilmTrack(usable)
+  const film = useMemo(() => (isTalk ? usable!.layers.find((l) => l.content.kind === 'video') ?? null : null), [usable, isTalk])
+  const TRACKS = TRACKS_ALL.filter((t) => (!t.talkOnly || isTalk) && (!compact || t.compact))
+  const trackH = (key: TrackDef['key']) => TRACKS_ALL.find((t) => t.key === key)!.h
+  const containerH = timelineHeight(usable, !!compact)
+  const allShots = useMemo(() => (usable ? deriveShots(usable) : []), [usable])
+  /** 分镜轨只排非底片的分镜：底片自己占一轨（见组件头注释）。 */
+  const shots = useMemo(
+    () => (film ? allShots.filter((s) => !s.layerIds.includes(film.id)) : allShots),
+    [allShots, film],
+  )
   const captions = useMemo(
     () => (usable ? usable.layers.filter((l) => l.content.kind === 'caption') : []),
     [usable],
@@ -92,6 +139,17 @@ export default function TimelinePane({
   const [scrubbing, setScrubbing] = useState(false)
   /** 卡点轨上一次按下的时刻与位置——自己判定「双击」，见 `onBeatTrackPointerDown`。 */
   const lastTapRef = useRef<{ t: number; x: number } | null>(null)
+  /** 字幕轨（talk）的双击判定。`id` 是被按到的字幕层，`null`＝按在空白上——两者不互相触发。 */
+  const lastCapTapRef = useRef<{ id: string | null; t: number; x: number } | null>(null)
+  /** 正在就地改字的字幕层 id（talk）。新插入的字幕会自动进这个态。 */
+  const [editingCapId, setEditingCapId] = useState<string | null>(null)
+  /** Esc 取消：`onKeyDown` 里置位，随后的 `onBlur` 据此跳过提交（Esc 会先 blur 再走 onBlur）。 */
+  const capCancelRef = useRef(false)
+
+  // 换内容项 / spec 被整包换掉后，正在编辑的字幕可能已不存在——收掉编辑态，别挂着一个孤儿输入框
+  useEffect(() => {
+    if (editingCapId && !captions.some((l) => l.id === editingCapId)) setEditingCapId(null)
+  }, [captions, editingCapId])
 
   function seekToSec(sec: number) {
     if (!usable) return
@@ -137,10 +195,59 @@ export default function TimelinePane({
     capture(e.pointerId)
   }
 
+  /**
+   * talk 口播底片：**只在两端热区起拖**，拖的是裁剪不是位移。
+   * 中间按下什么也不做（底片 start 恒 0，挪它无意义）——只把它选中，右栏能出 trim/音量数字字段。
+   */
+  function startFilmDrag(e: ReactPointerEvent, layerId: string, edge: 'start' | 'end' | null) {
+    if (!usable) return
+    e.stopPropagation()
+    onSelectLayer(layerId)
+    if (!edge) return
+    ed.commit()
+    const r = areaRef.current?.getBoundingClientRect()
+    if (!r || r.width === 0 || duration <= 0) return
+    dragRef.current = { mode: 'trim', base: usable, startX: e.clientX, pxPerSec: r.width / duration, layerId, edge }
+    setDragId(layerId)
+    capture(e.pointerId)
+  }
+
+  /** talk 手动字幕：右缘热区＝改时长，其余＝挪位（与分镜 Clip 同一套口径）。 */
+  function startCaptionDrag(e: ReactPointerEvent, layer: { id: string; start: number; duration: number }, mode: 'cap-move' | 'cap-resize') {
+    if (!usable) return
+    ed.commit()
+    const r = areaRef.current?.getBoundingClientRect()
+    if (!r || r.width === 0 || duration <= 0) return
+    const pxPerSec = r.width / duration
+    dragRef.current = mode === 'cap-resize'
+      ? { mode, base: usable, startX: e.clientX, pxPerSec, layerId: layer.id, baseDuration: layer.duration }
+      : {
+        mode, base: usable, startX: e.clientX, pxPerSec, layerId: layer.id, baseStart: layer.start,
+        beats: allBeats(usable.audio.beatGrid, usable.durationSec).map((b) => b.t),
+      }
+    setDragId(layer.id)
+    capture(e.pointerId)
+  }
+
   function onDragMove(e: ReactPointerEvent) {
     const d = dragRef.current
     if (!d) return
     const deltaSec = (e.clientX - d.startX) / d.pxPerSec
+    if (d.mode === 'trim') {
+      // δ 的符号：`trimVideoLayer` 里 δ>0 恒等于「多裁掉」。左缘往右拖（+px）＝多裁头，同号；
+      // 右缘往左拖（−px）＝多裁尾，反号。两端都是「往里拖＝裁掉，往外拖＝吐回来」。
+      ed.applyTransient(trimVideoLayer(d.base, d.layerId, d.edge, d.edge === 'start' ? deltaSec : -deltaSec))
+      return
+    }
+    if (d.mode === 'cap-move') {
+      const snapped = snapToBeats(d.beats, Math.max(0, d.baseStart + deltaSec), SNAP_SEC)
+      ed.applyTransient(moveLayer(d.base, d.layerId, snapped))
+      return
+    }
+    if (d.mode === 'cap-resize') {
+      ed.applyTransient(resizeLayer(d.base, d.layerId, d.baseDuration + deltaSec))
+      return
+    }
     if (d.mode === 'move') {
       const raw = Math.max(0, d.shot.startSec + deltaSec)
       // 吸附**先于**钳制：先把「用户想放的位置」吸到拍点，再由 moveLayer 去撞邻居。
@@ -256,6 +363,61 @@ export default function TimelinePane({
     onNotice(`已在 ${fmtTimecode(t)} 加卡点`)
   }
 
+  /**
+   * 字幕轨（talk）空白**双击** = 在这里插一条手动字幕，并直接进就地编辑态。
+   * 判定方式与卡点轨同一套（指针捕获会吃掉 dblclick，见 `onBeatTrackPointerDown` 的注释）。
+   */
+  function onCaptionTrackPointerDown(e: ReactPointerEvent) {
+    if (!isTalk) return
+    const now = e.timeStamp || Date.now()
+    const prev = lastCapTapRef.current
+    if (prev && prev.id === null && now - prev.t <= DBL_MS && Math.abs(e.clientX - prev.x) <= DBL_PX) {
+      lastCapTapRef.current = null
+      addCaptionAtClientX(e.clientX)
+      return
+    }
+    lastCapTapRef.current = { id: null, t: now, x: e.clientX }
+  }
+
+  const NEW_CAPTION_TEXT = '新字幕'
+
+  function addCaptionAtClientX(clientX: number) {
+    if (!usable) return
+    const t = Math.min(Math.max(0, secAtClientX(clientX)), duration)
+    const next = addCaptionLayer(usable, t, NEW_CAPTION_TEXT)
+    // 同一引用＝什么也没加（末尾放不下最短字幕）——`addCaptionLayer` 宁可不加也不制造同轨重叠
+    if (next === usable) { onNotice('字幕轨该处放不下（离片尾太近或被相邻字幕占满）'); return }
+    ed.commit()
+    ed.apply(next)
+    // 新层一定是数组最后一条（addCaptionLayer 是 concat）——选中它并直接进编辑态，
+    // 用户双击完就能打字，不用再去点一次那条只有几十像素宽的小条。
+    const added = next.layers[next.layers.length - 1]
+    onSelectLayer(added.id)
+    setEditingCapId(added.id)
+    onNotice(`已在 ${fmtTimecode(added.start)} 加字幕`)
+  }
+
+  /**
+   * 就地改字提交。值没变就不 apply——点一下失焦不该占掉一格 undo。
+   * **清空即删**：手动字幕清空文本＝删掉这一层（否则会留下一条看不见、也没有删除入口的空层）。
+   * 五模板 TTS 的字幕层不走这条（它们与旁白一一对应，删了就对不上），空文本时丢弃编辑保留旧文本。
+   */
+  function commitCaptionText(layerId: string, text: string) {
+    const cur = ed.spec
+    if (!cur || isUnsupported(cur)) return
+    const layer = cur.layers.find((l) => l.id === layerId)
+    if (!layer || layer.content.kind !== 'caption' || layer.content.text === text) return
+    if (text.trim() === '') {
+      if (!isManualCaption(layerId)) return
+      ed.commit()
+      ed.apply(removeCaptionLayer(cur, layerId))
+      onNotice('已删除字幕（⌘/Ctrl+Z 可撤销）')
+      return
+    }
+    ed.commit()
+    ed.apply(updateLayerText(cur, layerId, text))
+  }
+
   const pct = (sec: number) => (duration > 0 ? `${(sec / duration) * 100}%` : '0%')
 
   return (
@@ -270,7 +432,11 @@ export default function TimelinePane({
         <span className="font-mono text-[12px] tabular-nums text-[var(--fc-ink)]">{fmtTimecode(currentSec)}</span>
         <span className="font-mono text-[10px] text-[var(--fc-faint)]">/ {fmtTimecode(duration)}</span>
         <span className="ml-auto font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
-          {usable ? `${shots.length} 镜 · 拖分镜移动，拖右缘改时长` : '时间轴'}
+          {!usable
+            ? '时间轴'
+            : isTalk
+              ? `${shots.length} 镜 · 底片拖两端裁剪 · 字幕轨双击加字幕`
+              : `${shots.length} 镜 · 拖分镜移动，拖右缘改时长`}
         </span>
       </div>
 
@@ -317,6 +483,24 @@ export default function TimelinePane({
               ))}
             </div>
 
+            {/* 口播底片轨 26（talk 独有）：一条铺满全轨的底片，两端热区＝裁剪 */}
+            {film && (
+              <div
+                className="relative border-b border-[var(--fc-track)]"
+                style={{ height: trackH('film'), boxSizing: 'border-box' }}
+              >
+                <FilmClip
+                  left={pct(film.start)}
+                  width={pct(film.duration)}
+                  trimStart={film.content.kind === 'video' ? film.content.trimStart ?? 0 : 0}
+                  durationSec={film.duration}
+                  selected={selectedLayerId === film.id}
+                  dragging={dragId === film.id}
+                  onPointerDown={(e, edge) => startFilmDrag(e, film.id, edge)}
+                />
+              </div>
+            )}
+
             {/* 分镜轨 46：Clip 高 38，宽用 flex 比例（§5），空隙用同口径的占位撑开 */}
             <div
               className="flex items-center border-b border-[var(--fc-track)]"
@@ -341,22 +525,38 @@ export default function TimelinePane({
               ))}
             </div>
 
-            {/* 字幕轨 30：细条，只显示 + 点选，不可拖。<1040 隐藏（§4：只留分镜+卡点两轨） */}
+            {/* 字幕轨 30：细条。五模板下只显示+点选（跟随旁白，拖了就错位）；
+                talk 下可拖 / 可改时长 / 空白双击加字幕 / 双击条目就地改字。<1040 隐藏（§4） */}
             {!compact && (
               <div
                 className="relative border-b border-[var(--fc-track)]"
                 style={{ height: trackH('caption'), boxSizing: 'border-box' }}
+                onPointerDown={onCaptionTrackPointerDown}
+                title={isTalk ? '双击空白处加一条字幕；拖动挪位，拖右缘改时长；双击字幕改字' : undefined}
               >
                 {captions.map((l) => (
                   <div
                     key={l.id}
-                    title="字幕跟随旁白，不可拖"
+                    title={isTalk ? '拖动挪位，拖右缘改时长，双击改字' : '字幕跟随旁白，不可拖'}
                     onPointerDown={(e) => {
                       e.stopPropagation()
+                      if (!isTalk) { onSelectLayer(l.id); seekToSec(l.start); return }
+                      const now = e.timeStamp || Date.now()
+                      const prev = lastCapTapRef.current
+                      if (prev && prev.id === l.id && now - prev.t <= DBL_MS && Math.abs(e.clientX - prev.x) <= DBL_PX) {
+                        lastCapTapRef.current = null
+                        setEditingCapId(l.id)
+                        return
+                      }
+                      lastCapTapRef.current = { id: l.id, t: now, x: e.clientX }
                       onSelectLayer(l.id)
                       seekToSec(l.start)
+                      const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                      startCaptionDrag(e, l, box.right - e.clientX <= EDGE_PX ? 'cap-resize' : 'cap-move')
                     }}
-                    className={`absolute cursor-pointer overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
+                    className={`absolute overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
+                      isTalk ? 'cursor-grab' : 'cursor-pointer'
+                    } ${
                       selectedLayerId === l.id
                         ? 'bg-[var(--fc-accent-tint)] text-[var(--fc-accent-deep)]'
                         : 'bg-[var(--fc-sunken)] text-[var(--fc-muted)]'
@@ -364,15 +564,59 @@ export default function TimelinePane({
                     style={{
                       left: pct(l.start), width: pct(l.duration), top: 8, height: 14,
                       boxSizing: 'border-box',
-                      border: selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
+                      border: dragId === l.id
+                        ? '1px dashed var(--fc-accent)'
+                        : selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
                     }}
                   >
                     {l.content.kind === 'caption' ? l.content.text : ''}
+                    {isTalk && (
+                      <span
+                        className="absolute right-0 top-0 h-full cursor-ew-resize"
+                        style={{ width: EDGE_PX, boxSizing: 'border-box' }}
+                      />
+                    )}
                   </div>
                 ))}
                 {captions.length === 0 && (
-                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">这条视频没有字幕图层</span>
+                  <span className="absolute left-2 top-2 text-[10px] text-[var(--fc-faint)]">
+                    {isTalk ? '双击这里加一条字幕' : '这条视频没有字幕图层'}
+                  </span>
                 )}
+                {/* 就地改字：浮在字幕条上方的小输入框。条本身常常只有几十像素宽，直接在条内
+                    放 input 打不了字，所以固定 168 宽；靠近片尾时改成右对齐，免得溢出轨道右缘。 */}
+                {isTalk && editingCapId && (() => {
+                  const l = captions.find((c) => c.id === editingCapId)
+                  if (!l) return null
+                  const nearEnd = duration > 0 && l.start / duration > 0.6
+                  return (
+                    <input
+                      // **不能用 autoFocus**：开编辑态的是 pointerdown，React 在同一个离散事件里
+                      // 同步渲出这个 input 并聚焦，随后浏览器对那次 mousedown 的**默认行为**才把焦点
+                      // 挪到被点的轨道 div 上——input 当场 blur，输入框一闪就没（实测就是这样）。
+                      // 推到下一个宏任务再聚焦，让默认行为先走完；此前它没被聚焦过，也就不会误触 onBlur。
+                      ref={(el) => {
+                        if (!el || el.dataset.fcFocused) return
+                        el.dataset.fcFocused = '1'
+                        setTimeout(() => { el.focus(); el.select() }, 0)
+                      }}
+                      className="absolute z-10 rounded-[var(--fc-r-xs)] border border-[var(--fc-accent)] bg-[var(--fc-surface-2)] px-1 text-[11px] text-[var(--fc-ink)]"
+                      style={{ ...(nearEnd ? { right: 0 } : { left: pct(l.start) }), top: 4, width: 168, height: 22, boxSizing: 'border-box' }}
+                      defaultValue={l.content.kind === 'caption' ? l.content.text : ''}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+                        if (e.key === 'Escape') { capCancelRef.current = true; e.currentTarget.blur() }
+                      }}
+                      onBlur={(e) => {
+                        const cancelled = capCancelRef.current
+                        capCancelRef.current = false
+                        if (!cancelled) commitCaptionText(l.id, e.target.value)
+                        setEditingCapId(null)
+                      }}
+                    />
+                  )
+                })()}
               </div>
             )}
 
@@ -488,6 +732,52 @@ function Clip({ shot, weight, current, dragging, onPointerDown }: {
           style={{ width: EDGE_PX, borderRight: '2px solid var(--fc-line-2)', boxSizing: 'border-box' }}
         />
       </div>
+    </div>
+  )
+}
+
+/**
+ * talk 口播底片条（26 的底片轨里那一条）。
+ *
+ * **两端各一条 8px 热区，中间不响应拖拽**：底片 start 恒 0、duration 恒等于 durationSec，
+ * 把它「挪」到别处没有任何语义；两端拖的是片源的入点/出点（`trimVideoLayer`）。
+ * 中间按下只做选中——右栏图层检查器会出 trim/音量三个数字字段，微调走那边。
+ */
+function FilmClip({ left, width, trimStart, durationSec, selected, dragging, onPointerDown }: {
+  left: string
+  width: string
+  trimStart: number
+  durationSec: number
+  selected: boolean
+  dragging: boolean
+  onPointerDown: (e: ReactPointerEvent, edge: 'start' | 'end' | null) => void
+}) {
+  const summary = `已裁头 ${trimStart.toFixed(1)}s · 片长 ${durationSec.toFixed(1)}s`
+  const handle: CSSProperties = {
+    position: 'absolute', top: 0, height: '100%', width: EDGE_PX,
+    cursor: 'ew-resize', background: 'var(--fc-accent)', opacity: dragging ? 1 : 0.55,
+    boxSizing: 'border-box',
+  }
+  return (
+    <div
+      onPointerDown={(e) => {
+        const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        const edge = e.clientX - box.left <= EDGE_PX ? 'start' : box.right - e.clientX <= EDGE_PX ? 'end' : null
+        onPointerDown(e, edge)
+      }}
+      title={`口播底片｜${summary}｜拖左缘裁头、拖右缘裁尾（往外拖是吐回来）`}
+      className="absolute flex items-center overflow-hidden px-2.5 text-[10px]"
+      style={{
+        left, width, top: 3, height: 20, boxSizing: 'border-box',
+        borderRadius: 'var(--fc-r-sm)',
+        border: dragging ? '1px dashed var(--fc-accent)' : selected ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line-2)',
+        background: dragging || selected ? 'var(--fc-accent-tint)' : 'var(--fc-sunken)',
+        color: dragging || selected ? 'var(--fc-accent-deep)' : 'var(--fc-muted)',
+      }}
+    >
+      <span className="min-w-0 flex-1 truncate">{summary}</span>
+      <span style={{ ...handle, left: 0, borderRadius: 'var(--fc-r-sm) 0 0 var(--fc-r-sm)' }} />
+      <span style={{ ...handle, right: 0, borderRadius: '0 var(--fc-r-sm) var(--fc-r-sm) 0' }} />
     </div>
   )
 }

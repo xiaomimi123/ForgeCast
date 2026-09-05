@@ -5,7 +5,7 @@ import { twCountOf } from './Text'
 import type { VideoSpec } from './videospec-types'
 
 /** 有专属 CSS 的模板。styles/<name>.css 里的选择器都作用域在 .tpl-<name> 下。 */
-const TEMPLATE_CLASSES = ['flash', 'story', 'demo', 'insight', 'changelog'] as const
+const TEMPLATE_CLASSES = ['flash', 'story', 'demo', 'insight', 'changelog', 'talk'] as const
 /** 默认模板：spec.template 可能是 `custom-<id>`（见 videospec.ts），那样 .tpl-custom-xxx 匹配不到
  *  任何 CSS，整页会静默裸奔。故未知模板一律回落到 flash 的样式，宁可长得像 flash 也不要没样式。 */
 export const FALLBACK_TEMPLATE = 'flash'

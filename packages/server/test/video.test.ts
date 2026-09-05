@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -112,5 +113,64 @@ describe('video API (stub)', () => {
     await runTask(taskId)
     const assets = await (await app.request('/api/projects/demo/assets')).json() as any[]
     expect(assets.some((a) => a.type === 'video')).toBe(true)
+  })
+})
+
+/** talk（口播合成）：body 必带 uploadAssetId，且必须指向本项目 origin='upload' 的视频素材。
+ *  片源用 ffmpeg 现合的 2s 小 mp4（管线里要真跑 ffprobe 量时长）；ffmpeg 不在则跳过。 */
+const HAS_FFMPEG = (() => {
+  try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); execFileSync('ffprobe', ['-version'], { stdio: 'ignore' }); return true } catch { return false }
+})()
+let sampleMp4 = ''
+function makeUpload(): number {
+  if (!sampleMp4) {
+    sampleMp4 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fc-talk-src-')), 'src.mp4')
+    execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=10:duration=2', '-pix_fmt', 'yuv420p', sampleMp4], { stdio: 'ignore' })
+  }
+  const dir = path.join(ctx.config.paths.workspace, 'demo', 'uploads')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.copyFileSync(sampleMp4, path.join(dir, 'talk.mp4'))
+  return Number(ctx.db.prepare(
+    "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (1, 'video', NULL, 'demo/uploads/talk.mp4', '[]', 'upload')",
+  ).run().lastInsertRowid)
+}
+async function postVideo(body: any) {
+  return app.request('/api/projects/demo/video', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+}
+
+describe('video API tpl=talk', () => {
+  it('缺 uploadAssetId → 400', async () => {
+    const res = await postVideo({ tpl: 'talk' })
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toContain('口播素材')
+  })
+  it('uploadAssetId 指向文案素材 → 400', async () => {
+    expect((await postVideo({ tpl: 'talk', uploadAssetId: 1 })).status).toBe(400)
+  })
+  it('uploadAssetId 指向 rendered 成片 → 400', async () => {
+    const id = Number(ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (1, 'video', NULL, 'demo/videos/x.mp4', '[]', 'rendered')",
+    ).run().lastInsertRowid)
+    expect((await postVideo({ tpl: 'talk', uploadAssetId: id })).status).toBe(400)
+  })
+  it('uploadAssetId 指向别的项目的 upload 素材 → 400（钉住 SQL 里的 project_id 那一维）', async () => {
+    ctx.db.prepare("INSERT INTO projects (slug) VALUES ('other')").run()
+    const otherId = (ctx.db.prepare("SELECT id FROM projects WHERE slug = 'other'").get() as any).id
+    const id = Number(ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (?, 'video', NULL, 'other/uploads/talk.mp4', '[]', 'upload')",
+    ).run(otherId).lastInsertRowid)
+    const res = await postVideo({ tpl: 'talk', uploadAssetId: id })
+    expect(res.status).toBe(400)
+  })
+
+  it.skipIf(!HAS_FFMPEG)('合法 → 入队并跑通，meta 为 {kind:video, slug, sourceAssetId: 文案 id}', async () => {
+    const upId = makeUpload()
+    const { taskId } = await (await postVideo({ tpl: 'talk', assetId: 1, uploadAssetId: upId })).json() as any
+    expect(queue.get(taskId)!.meta).toEqual({ kind: 'video', slug: 'demo', sourceAssetId: 1 })
+    await runTask(taskId)
+    const assets = await (await app.request('/api/projects/demo/assets')).json() as any[]
+    expect(assets.some((a) => a.type === 'video' && String(a.file_path).includes('/videos/talk-'))).toBe(true)
   })
 })

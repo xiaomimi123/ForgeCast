@@ -9,11 +9,7 @@ import type { Layer, VideoSpec } from '../src/videospec-types'
 // 该 hook 只在 <Composition> 树内可用。这里跟 video-layer.test.tsx 一样 mock
 // 'remotion'，只为让「不抛错」这条契约测试脱离渲染上下文也能跑；
 // src/attribute 级别的断言（src 编码、muted 透传、zIndex 叠层）见 video-layer.test.tsx。
-vi.mock('remotion', () => ({
-  Video: (p: Record<string, unknown>) => <video data-testid="rv" src={p.src as string} muted={p.muted as boolean} />,
-  useCurrentFrame: () => 0,
-  useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
-}))
+vi.mock('remotion', async () => (await import('./mocks/remotion')).makeRemotionMock())
 
 function layer(over: Partial<Layer>): Layer {
   return {

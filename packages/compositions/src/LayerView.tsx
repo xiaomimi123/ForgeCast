@@ -1,7 +1,8 @@
 import React from 'react'
-import { Video } from 'remotion'
+import { Sequence, Video } from 'remotion'
 import { styleAt } from './effects'
 import { encodePathForUrl, ImageContent } from './Image'
+import { secToFrames } from './time'
 import { TextContent } from './Text'
 import type { Layer, LayerStyle } from './videospec-types'
 
@@ -51,13 +52,29 @@ export function LayerView(
     case 'shape':
       inner = <div className={`shape shape-${layer.content.shape}`} />
       break
-    case 'video':
-      // 未包 <Sequence>：<Video> 的片源始终从 0 秒起播，故 start > 0 的 video 图层拿到的是
-      // 「片源 0 秒处的画面」而不是「时间轴 start 处对应的片源偏移」。当前五模板的 video 图层
-      // 都是整段铺满、start=0，所以不暴露；子项目④（真实素材剪辑）要按时间轴裁片段时，
-      // 必须在这里包一层 <Sequence from={secToFrames(layer.start)}> 并决定 trim 语义。
-      inner = <Video src={encodePathForUrl(layer.content.src)} muted={layer.content.muted} />
+    case 'video': {
+      // 子项目④ talk 还债：包一层 <Sequence from={secToFrames(layer.start)}>，让 <Video> 内部
+      // useCurrentFrame() 在时间轴 start 处归零，片源才会从「时间轴 start 对应的偏移」起播，
+      // 而不是从片源 0 秒硬播（②Task 8 遗留，start>0 的图层此前会跳播）。trimStart/trimEnd
+      // 只管「片源裁剪范围」，与 Sequence.from（时间轴定位）是两件事，缺省即①②行为不变。
+      const { trimStart, trimEnd, volume } = layer.content
+      inner = (
+        <Sequence from={secToFrames(layer.start)} durationInFrames={secToFrames(layer.duration)}>
+          {/* startFrom/endAt 在 remotion 4.0.519 已 deprecated（新名 trimBefore/trimAfter，
+              两套名字不可混用）。暂不迁移：四份测试的 remotion mock 都按这两个 prop 名断言
+              （见 test/mocks/remotion.tsx 与 video-layer.test.tsx 的 data-* 探针），
+              迁移得连带改断言，等下次升 remotion 大版本时一并做。 */}
+          <Video
+            src={encodePathForUrl(layer.content.src)}
+            muted={layer.content.muted}
+            startFrom={secToFrames(trimStart ?? 0)}
+            endAt={trimEnd != null ? secToFrames(trimEnd) : undefined}
+            volume={volume ?? 1}
+          />
+        </Sequence>
+      )
       break
+    }
   }
   return <div id={layer.id} className={cls} style={style}>{inner}</div>
 }

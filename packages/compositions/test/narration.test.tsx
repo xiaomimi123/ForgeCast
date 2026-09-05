@@ -7,12 +7,7 @@ afterEach(cleanup)
 
 // SpecComposition 会用 useCurrentFrame/useVideoConfig，纯 React 测试里没有 Remotion 上下文，
 // 故整包 mock；<Audio> 换成可查询的 <audio data-testid>。
-vi.mock('remotion', () => ({
-  Audio: (p: Record<string, unknown>) => <audio data-testid="narration" src={p.src as string} />,
-  Video: (p: Record<string, unknown>) => <video src={p.src as string} />,
-  useCurrentFrame: () => 0,
-  useVideoConfig: () => ({ fps: 30, width: 1080, height: 1920, durationInFrames: 360 }),
-}))
+vi.mock('remotion', async () => (await import('./mocks/remotion')).makeRemotionMock())
 
 const spec = (audio: AudioSpec): VideoSpec => ({
   version: 1, videoId: 'v', slug: 's', template: 'flash', createdAt: '',

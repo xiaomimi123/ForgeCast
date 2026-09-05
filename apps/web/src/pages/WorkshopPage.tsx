@@ -93,6 +93,10 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
 
   // 切项目时清掉上一个项目的选中项，避免右栏对着不存在的内容渲片
   useEffect(() => { setSelectedItemId(null) }, [selected])
+  // 切项目时把上一个项目挑的口播素材 id 也清掉——不清的话它在新项目的下拉里视觉上是「未选中」
+  // （id 不在新项目的候选列表里），但 vp.uploadAssetId 仍是那个 truthy 的旧 id，guard 会误判「已选」，
+  // 点出片会带着别项目的素材 id 发请求（服务端有 400 兜底，但体验糊涂：按钮明明可点却报错）。
+  useEffect(() => { setVp((v) => ({ ...v, uploadAssetId: undefined })) }, [selected])
 
   function invalidateProjectData() {
     qc.invalidateQueries({ queryKey: ['assets', selected] })
@@ -118,11 +122,25 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
 
   function makeVideo(assetId: number) {
     if (!selected) return
+    // talk 前端也拦，不靠后端 400 兜底——出片按钮/重试按钮本该已经因为没选口播素材被禁用，这里是双保险。
+    // 判断不用 vp.uploadAssetId 的 truthy——切项目后旧 id 还留着（真正的清空见上面那条 effect，
+    // 这里是防它没来得及生效，或调用方压根没走 InspectorPane 的禁用态，比如 QueuePane 的失败重试）：
+    // 只有这个 id 还在**当前项目**的候选列表里才算「真选中」。
+    const uploadAssetId = uploadAssets.some((a) => a.id === vp.uploadAssetId) ? vp.uploadAssetId : undefined
+    if (vp.tpl === 'talk' && !uploadAssetId) {
+      alert('talk 模板需要先选择口播素材')
+      return
+    }
     setActiveKey('video')
     videoRun.run(
       async () => {
         const { taskId } = await api<{ taskId: string }>(`/api/projects/${selected}/video`, {
-          method: 'POST', body: JSON.stringify({ assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg, captions: vp.captions, ratio: vp.ratio }),
+          method: 'POST', body: JSON.stringify({
+            assetId, tpl: vp.tpl, bgm: vp.bgm, mood: vp.mood, bg: vp.tpl === 'story' ? undefined : vp.bg,
+            captions: vp.captions, ratio: vp.ratio,
+            // talk 的底片是用户上传的口播视频，别的模板不带这个字段（服务端只在 tpl==='talk' 时校验它）
+            uploadAssetId: vp.tpl === 'talk' ? uploadAssetId : undefined,
+          }),
         })
         // 拿到 taskId（＝任务已入队、meta 已写）后立刻失效 content-items：
         // 派生 rendering 靠的是任务队列（server content-items.ts：pending|running ⇒ rendering），
@@ -137,6 +155,8 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
 
   const copyAssets = (assets.data ?? []).filter((a) => a.type === 'copy')
   const scriptAssets = (assets.data ?? []).filter((a) => a.type === 'script')
+  // talk 模板的口播素材候选：本项目里用户上传的视频（不含模板渲染出来的成片）
+  const uploadAssets = (assets.data ?? []).filter((a) => a.type === 'video' && a.origin === 'upload')
 
   function deleteAsset(id: number) {
     api(`/api/assets/${id}`, { method: 'DELETE' })
@@ -204,7 +224,7 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
         <EditorPage
           selected={selected} hook={hook} setHook={setHook} n={n} setN={setN}
           busy={busy} copyRun={copyRun} videoRun={videoRun} onGenerate={() => generate()}
-          vp={vp} setVp={setVp} bgmList={bgmList.data} onMakeVideo={makeVideo}
+          vp={vp} setVp={setVp} bgmList={bgmList.data} onMakeVideo={makeVideo} uploadAssets={uploadAssets}
           items={contentItems} selectedItemId={selectedItemId}
           onSelectItem={(item) => setSelectedItemId(item.id)} onDeleteItem={deleteContentItem}
           onCloseEditor={() => setSelectedItemId(null)}

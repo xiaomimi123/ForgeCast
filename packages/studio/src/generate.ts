@@ -1,9 +1,10 @@
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
 import { parseCopyOutput } from '@forgecast/copywriter'
-import { analyzeBeats, chooseBgmPath, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, resolveTechBg, scaffoldHfProject } from './hyperframes'
+import { analyzeBeats, chooseBgmPath, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, resolveTechBg, scaffoldHfAssets, scaffoldHfProject } from './hyperframes'
 import { renderRemotion } from './remotion-render'
 import type { BeatGrid, Shot } from './hyperframes'
 import { lower, type LowerPlan } from './lower'
@@ -18,6 +19,9 @@ export interface GenerateVideoInput {
   slug: string
   assetId?: number
   tpl?: string
+  /** talk 专用：口播底片的上传素材 id（assets 里 type='video' 且 origin='upload' 的行）。
+   *  talk 模板必填，其余模板忽略。 */
+  uploadAssetId?: number
   /** 渲染参数覆盖：缺省则用 ctx.config.video.* 的值。server 是长驻进程、ctx 是所有请求共享的单例，
    *  这几个覆盖值只在本次调用内生效（算一份局部 video 配置），绝不 mutate ctx.config.video——
    *  CLI 短进程里直接突变 ctx.config.video 是安全的，但 server 这样做会污染后续请求，是必须绕开的坑。 */
@@ -108,6 +112,15 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     return renderHfPipeline(ctx, {
       slug, tpl: 'demo', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, shots, shotAssets,
       sourceAssetId: Number(copy.id),
+    })
+  }
+
+  // talk：口播合成。与五模板的 renderHfPipeline **平行**的独立分支——不跑 TTS、不产 index.html，
+  // 底片是用户上传的口播视频（软链进 hf 目录），动效层叠在上面。
+  if (tpl === 'talk') {
+    return renderTalkPipeline(ctx, {
+      slug, doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress,
+      sourceAssetId: Number(copy.id), uploadAssetId: input.uploadAssetId, bgExplicit: input.bg,
     })
   }
 
@@ -233,6 +246,127 @@ export function resolveBgVariant(
 ): string | undefined {
   if (tpl === 'story') return undefined
   return resolveTechBg(bg || 'none', rand)
+}
+
+/** ffprobe 量片源时长（秒）。30s 超时；拿不到就抛——talk 的整条时间轴都从这个值算出来，
+ *  猜一个默认值只会产出「时长对不上、后半段黑屏」的成片，不如当场失败。 */
+export async function probeDurationSec(absPath: string, timeoutMs = 30_000): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const fail = (why: string) => reject(new Error(`无法读取口播素材时长：${why}`))
+    const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', absPath])
+    let out = ''
+    let err = ''
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill('SIGKILL')
+      fail(`ffprobe 超时（${timeoutMs}ms）`)
+    }, timeoutMs)
+    timer.unref?.()
+    child.stdout.on('data', (d) => { out += String(d) })
+    child.stderr.on('data', (d) => { err += String(d) })
+    child.on('error', (e) => {
+      if (settled) return
+      settled = true; clearTimeout(timer); fail(e instanceof Error ? e.message : String(e))
+    })
+    child.on('close', (code) => {
+      if (settled) return
+      settled = true; clearTimeout(timer)
+      const sec = Number.parseFloat(out.trim())
+      if (code !== 0 || !Number.isFinite(sec) || sec <= 0) fail(err.trim() || `ffprobe 退出码 ${code}，输出「${out.trim()}」`)
+      else resolve(+sec.toFixed(4))
+    })
+  })
+}
+
+/**
+ * talk（口播合成）管线：与 renderHfPipeline **平行**，不是它的一个分支。三处根本差异决定了必须分开：
+ * 1. 无 TTS——声音就在片源里，narration 恒 null、cues 恒空、captionsEnabled 恒 false
+ *    （人声字幕由剪辑台手动打，见 lower.ts 的 talk 兜底）；
+ * 2. 不产 index.html——`templates/hf/` 里没有 talk.html，readTemplate 会直接抛；talk 只走 Remotion；
+ * 3. 时长不由文案/旁白决定，而是 ffprobe 量出来的片源时长（成片就是这段口播本身）。
+ *
+ * 片源零拷贝：把片源**所在目录**整体软链成 `hf/<videoId>/assets/talk-src`，src 写
+ * `assets/talk-src/<原文件名>`（几百 MB 的口播不该每生成一版拷一份）。
+ * **必须链目录、不能链文件**：Remotion 静态服务器（serve-handler 用 lstat）对最终路径是软链的
+ * 文件一律 404，但路径中间的软链目录由内核解析、不受影响——同一条事实见 remotion-render.ts 的
+ * linkPublicDirToBundleRoot 注释；bundle 的 copy-dir 也保留目录软链（绝对化目标、不复制本体）。
+ * 软链不可用的文件系统（某些挂载卷/Windows 无权限）回落真拷贝并记一条 warning——比整条渲染失败强。
+ */
+async function renderTalkPipeline(
+  ctx: CoreCtx,
+  opts: {
+    slug: string
+    doc: ReturnType<typeof parseCopyOutput>
+    hook: string | null
+    brandName: string
+    projectId: number
+    video: VideoCfg
+    ratio: 'portrait' | 'landscape'
+    onProgress: (m: string) => void
+    sourceAssetId?: number
+    uploadAssetId?: number
+    /** 用户**显式**传的 --bg（`input.bg`），与 video.bg 不同：后者含配置默认值 'grid'。
+     *  talk 默认不加科技背景（底片是真人画面，再叠一层网格只会脏），只有显式指定才加。 */
+    bgExplicit?: string
+  },
+): Promise<GeneratedVideo> {
+  const { slug, doc, hook, brandName, projectId, video, ratio, onProgress, sourceAssetId, uploadAssetId, bgExplicit } = opts
+  if (typeof uploadAssetId !== 'number') throw new Error('talk 模板需要口播素材：请先上传口播视频并选中它')
+  const upload: any = ctx.db.prepare(
+    "SELECT * FROM assets WHERE id = ? AND project_id = ? AND type = 'video' AND origin = 'upload'",
+  ).get(uploadAssetId, projectId)
+  if (!upload) throw new Error(`口播素材不存在或不是本项目上传的视频: ${uploadAssetId}`)
+  const srcAbs = path.join(ctx.config.paths.workspace, upload.file_path)
+
+  onProgress('读取口播素材时长…')
+  const durationSec = await probeDurationSec(srcAbs)
+
+  const videoId = randomUUID()
+  const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
+  scaffoldHfAssets(hfDir)   // 建 assets/ + 字体软链；index.html 那半边 talk 不需要
+
+  const warnings: string[] = []
+  const srcBase = path.basename(srcAbs)
+  const linkDir = path.join(hfDir, 'assets', 'talk-src')
+  const videoSrc = `assets/talk-src/${srcBase}`
+  // 绝对目标：片源在 workspace/<slug>/uploads/ 下，与 hf 目录不同支，相对链没有可移植性优势
+  try {
+    fs.symlinkSync(path.dirname(srcAbs), linkDir, 'dir')
+  } catch {
+    // 回落：把 talk-src 建成真目录，片源真拷进去——src 形态不变，下游（spec/剪辑台/渲染）无感
+    fs.mkdirSync(linkDir, { recursive: true })
+    fs.copyFileSync(srcAbs, path.join(linkDir, srcBase))
+    onProgress('⚠ 文件系统不支持软链，已复制口播素材')
+    warnings.push('文件系统不支持软链，已复制口播素材')
+  }
+
+  const { grid, audioMix } = await selectBgm(ctx, video, durationSec, onProgress, hook ?? '', warnings)
+  const audioSpec: AudioSpec = {
+    narration: null,                 // 声音在片源里，不做 TTS
+    bgm: audioMix ? { src: audioMix.bgmPath, mood: video.mood || null } : null,
+    beatGrid: grid ? { t0: grid.t0, T: grid.T, bpm: grid.bpm, strongBeats: grid.strongBeats } : null,
+    captionsEnabled: false,          // 人声字幕手动打，不由 cues 自动生成
+  }
+
+  const semantic = buildSemantic(doc, 'talk', { brandName, sourceAssetId })
+  // 视频层的 from 指向 'sec-video'（lowerTalk 的跨任务约定）——这个 section 由本管线追加，
+  // buildSemantic 不产（它只认文案里的语义段）。role 借用 'demo'：片源就是"演示画面"这一类。
+  semantic.sections.push({ id: 'sec-video', role: 'demo' })
+
+  const spec = lower(semantic, {
+    videoId, slug, template: 'talk', canvas: canvasFor(ratio), durationSec,
+    cues: [], beatGrid: grid, audio: audioSpec, brandName,
+    videoSrc, sourceDurationSec: durationSec,
+  })
+  spec.warnings = warnings
+  // talk 默认无背景（见 bgExplicit 注释）；显式给了才按五模板同一套规则解析
+  const bgVariant = bgExplicit ? resolveBgVariant('talk', bgExplicit) : undefined
+  spec.bgVariant = bgVariant
+
+  return renderAndRegister(ctx, hfDir, slug, 'talk', hook, projectId, onProgress, spec, audioMix,
+    { engine: 'remotion', bgVariant })
 }
 
 /**

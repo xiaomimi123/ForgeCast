@@ -12,9 +12,15 @@
  *
  * fixture 见 fixtures/generate.ts（含重生成命令与「为什么是这批输入」）。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
+
+// talk fixture 含 video 图层——LayerView 里的 <Sequence>/<Video> 靠 remotion 的 useVideoConfig()
+// 才能渲，脱离 <Composition /> 上下文会直接抛错（见 video-layer.test.tsx 同款 mock）。
+// 这里只是让它能渲出 DOM 节点，不测 remotion 自身的时间轴换算（那是 video-layer.test.tsx 的活）。
+// 四份测试共用 mocks/remotion.tsx。
+vi.mock('remotion', async () => (await import('./mocks/remotion')).makeRemotionMock())
 import { lockTimeFor } from '../src/decode'
 import type { Layer, VideoSpec } from '../src/videospec-types'
 import flash from './fixtures/flash.json'
@@ -26,15 +32,17 @@ import demoPlan from './fixtures/demoPlan.json'
 import insight from './fixtures/insight.json'
 import flashCaptions from './fixtures/flashCaptions.json'
 import demoSpacedShots from './fixtures/demoSpacedShots.json'
+import talk from './fixtures/talk.json'
 
 const FIXTURES: Array<[string, VideoSpec]> = [
   ['flash', flash as VideoSpec], ['story', story as VideoSpec], ['changelog', changelog as VideoSpec],
   ['demo', demo as VideoSpec], ['demoCarousel', demoCarousel as VideoSpec],
   ['demoPlan', demoPlan as VideoSpec], ['insight', insight as VideoSpec],
   ['flashCaptions', flashCaptions as VideoSpec], ['demoSpacedShots', demoSpacedShots as VideoSpec],
+  ['talk', talk as VideoSpec],
 ]
 
-/** 生成 fixture 时统一用的 brandName（generate.ts 里九组都是 '品牌'）。 */
+/** 生成 fixture 时统一用的 brandName（generate.ts 里十组都是 '品牌'）。 */
 const BRAND = '品牌'
 
 /** 图层中点时刻——保证该图层一定可见，且避开入场动画的极端帧。 */
@@ -99,6 +107,14 @@ describe('fixture 集合覆盖面守护', () => {
     const needsEncoding = (p: string) => /[ #?]/.test(p) || /[^\x00-\x7F]/.test(p)
     expect(FIXTURES.some(([, s]) => s.layers.some(
       (l) => l.content.kind === 'image' && needsEncoding(l.content.src),
+    ))).toBe(true)
+  })
+  /** talk（口播合成）独有：video 图层带 trimStart。①的七组、②补的两组都不含 video 图层——
+   *  talk fixture（见 generate.ts 文件头注释）是它唯一的来源，缺了它 trimStart 相关的任何
+   *  断言/回归都会在全部 fixture 上恒真恒绿。 */
+  it('至少一组 fixture 含带 trimStart 的 video 图层', () => {
+    expect(FIXTURES.some(([, s]) => s.layers.some(
+      (l) => l.content.kind === 'video' && l.content.trimStart !== undefined,
     ))).toBe(true)
   })
 })
@@ -177,6 +193,26 @@ describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
     }
   })
 
+  it('视频图层的 src 出现、路径分段完整、且已 percent 编码', () => {
+    // 同 image 那条断言的三关写法（见上），只是查找路径换成 mock 过的 <video data-testid="rv">。
+    for (const layer of spec.layers) {
+      if (layer.content.kind !== 'video') continue
+      const raw = layer.content.src
+      const { container } = render(<SpecView spec={spec} timeSec={mid(layer)} />)
+      const el = byId(container, layer.id)?.querySelector('[data-testid="rv"]') as HTMLVideoElement
+      expect(el, `图层 ${layer.id} 未渲出 video`).not.toBeNull()
+      const src = el.getAttribute('src') ?? ''
+      // 1) 空格与 #/? 必须已编码——`#`/`?` 未编码会让浏览器把后半段当 fragment/query 截掉。
+      for (const bad of [' ', '#', '?']) {
+        expect(src, `图层 ${layer.id} 的 src 未编码 ${JSON.stringify(bad)}`).not.toContain(bad)
+      }
+      // 2) 目录分隔符 `/` 必须原样保留（整串 encodeURIComponent 会把它编成 %2F 拆掉子目录）。
+      expect(src.split('/').length, `图层 ${layer.id} 的 src 目录层级被编坏`).toBe(raw.split('/').length)
+      // 3) 解回来必须与 spec 里的原路径逐字相等——既防漏编，也防多编/编错。
+      expect(decodeURIComponent(src), `图层 ${layer.id} 的 src 与 spec 不一致`).toBe(raw)
+    }
+  })
+
   it('品牌名上屏（跨五模板丢失过，修了四轮）', () => {
     const brandLayers = spec.layers.filter((l) => (textOf(l) ?? '').includes(BRAND))
     // 九组 fixture 全部传了 brandName，任何一组一个品牌图层都没有 = lower 侧把品牌名丢了。
@@ -193,7 +229,7 @@ describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
     const root = container.firstElementChild as HTMLElement
     const cls = root.className.split(/\s+/)
     expect(cls).toContain('specRoot')
-    const known = ['flash', 'story', 'demo', 'insight', 'changelog']
+    const known = ['flash', 'story', 'demo', 'insight', 'changelog', 'talk']
     expect(cls).toContain(`tpl-${known.includes(spec.template) ? spec.template : 'flash'}`)
     expect(cls.includes('landscape')).toBe(spec.canvas.width >= spec.canvas.height)
   })

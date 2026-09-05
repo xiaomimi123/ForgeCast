@@ -19,6 +19,17 @@
  *   `encodePathForUrl` 退化成恒等函数时产出完全相同的 src，「路径未编码」的断言会恒真
  *   （这正是历史上溜过去的第 4、5 个内容回归）。故这一组的文件名带空格、中文、`#`、`?`。
  * 两组都只是**追加**，不改动那七组的任何输入。
+ *
+ * 第九组是③独有的**补洞** fixture：talk（口播合成）模板。①的七组里没有 talk——它走的是与
+ * renderHfPipeline 平行的独立管线（studio/src/generate.ts 的 runTalkPipeline），不在
+ * equivalence.test.ts 的覆盖范围内。构造方式照抄 runTalkPipeline 的跨任务约定：buildSemantic
+ * 产完 sections 后手动 push `{ id: 'sec-video', role: 'demo' }`（lowerTalk 的视频层 `from` 固定
+ * 指向这个 id，buildSemantic 自己不产，见 lower.ts 顶部 lowerTalk 注释）。
+ * `talkVideo` 图层的 `content.trimStart` 在 lower() 之后手动 patch 成 1.5——lowerTalk 本身不接
+ * trimStart 参数（初始态不裁剪，trimStart 缺省 0 由 editing 的 trimVideoLayer 事后写入），选
+ * 「lower 完手动 patch」而非给 LowerOpts 加参数，是因为覆盖守护只要「fixture 集合里至少一份
+ * video 图层带 trimStart」这一件事成立，不需要在生产管线里真的支持"lower 时预裁剪"这个从未
+ * 出现过的用例——加参数是给不存在的需求扩接口。
  */
 import { writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -104,6 +115,12 @@ const SPECS: Record<string, () => LowerOpts> = {
     videoId: 'v1', slug: 's', template: 'demo', canvas: CANVAS, durationSec: 40, cues: CUES,
     shots: SPACED_SHOTS, beatGrid: grid2(40), brandName: '品牌', audio: AUDIO_CAPTIONS,
   }),
+  // ---- ③独有的补洞 fixture：talk（口播合成），见文件头注释 ----
+  talk: () => ({
+    videoId: 'v1', slug: 's', template: 'talk', canvas: CANVAS, durationSec: 20, cues: CUES,
+    brandName: '品牌', audio: AUDIO_OFF,
+    videoSrc: 'assets/talk-source.mp4', sourceDurationSec: 20,
+  }),
 }
 
 const OUT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -113,7 +130,21 @@ const FIXED_CREATED_AT = '2026-08-31T00:00:00.000Z'
 for (const [name, optsFn] of Object.entries(SPECS)) {
   const opts = optsFn()
   const semantic = buildSemantic(DOC_FIXTURE, opts.template, { cues: CUES })
+  // talk 跨任务约定（见文件头注释 + lower.ts lowerTalk 顶部注释）：sec-video 由管线追加，
+  // buildSemantic 不产。
+  if (opts.template === 'talk') semantic.sections.push({ id: 'sec-video', role: 'demo' })
   const spec = { ...lower(semantic, opts), createdAt: FIXED_CREATED_AT }
+  if (opts.template === 'talk') {
+    // 覆盖守护要求「至少一组 video 图层带 trimStart」（见文件头注释）——lower() 本身不产
+    // trimStart，这里补手动 patch。src 同处换成带空格的路径，让 talk 组同时覆盖「video 图层的
+    // src 也要编码」——原先 'assets/talk-source.mp4' 是纯 ASCII 无空格，编码断言在它身上恒真，
+    // 与 demoSpacedShots 那组给 image src 换空格路径是同一个道理（见文件头注释）。
+    const videoLayer = spec.layers.find((l) => l.content.kind === 'video')
+    if (videoLayer && videoLayer.content.kind === 'video') {
+      videoLayer.content.trimStart = 1.5
+      videoLayer.content.src = 'assets/talk source.mp4'
+    }
+  }
   writeFileSync(join(OUT_DIR, `${name}.json`), `${JSON.stringify(spec, null, 2)}\n`)
   console.log(`${name}.json  layers=${spec.layers.length}`)
 }
