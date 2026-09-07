@@ -9,6 +9,9 @@ import type { Layer, LayerStyle } from './videospec-types'
 /** LayerStyle 通用几何/视觉属性 → 内联样式（迁自 render-html.ts styleAttr）。 */
 function geom(style: LayerStyle): React.CSSProperties {
   const s: React.CSSProperties = {}
+  // 画布拖拽排版：只有真被拖拽过（x/y 存在）的层才写 position:absolute，把它从文档流拽出来。
+  // 同上面 transform 那条教训——绝不无条件设，否则没被拖拽过的层也会被顶出文档流。
+  if (style.x !== undefined || style.y !== undefined) s.position = 'absolute'
   if (style.x !== undefined) s.left = style.x
   if (style.y !== undefined) s.top = style.y
   if (style.width !== undefined) s.width = style.width
