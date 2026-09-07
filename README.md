@@ -85,6 +85,21 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 | `Ctrl/Cmd + Z` | 撤销（一次拖拽 = 一步） |
 | `Shift + Ctrl/Cmd + Z` | 重做 |
 | `Ctrl/Cmd + S` | 保存（落盘 spec） |
+| `↑ ↓ ← →` | 选中图层微移 1px（画布坐标） |
+| `Shift + 方向键` | 选中图层微移 10px |
+| `Alt`（拖动时按住） | 临时关掉吸附 |
+
+> 方向键只在画布上选中了图层、且播放暂停、焦点不在输入框/下拉里时才接管。
+
+### 画布排版（中栏预览即所得）
+
+暂停播放后，中栏的 9:16 预览就是可编辑画布：
+
+- **直接拖动图层**改位置，**拖四角手柄**改宽度——文字/卡片/字幕层的字号按宽度比例联动（图片/形状只改宽高、不动字号）。全程播放器实时跟随，松手才落一步 undo。
+- **吸附对齐**：拖近画布中线、其他图层的左/中/右边缘、四边 60px 安全线时自动吸附（阈值 8px 画布坐标）并画出参考线；按住 `Alt` 临时禁用。
+- 图层**没被拖过就仍按模板排版走文档流**——只有真拖过的层才写下 `x/y/宽/字号` 覆盖（`position:absolute`），已出厂的老视频重渲零观感变化。
+- 拖过头也拦得住：至少留 40px 在画布内；talk 的**口播底片不可选中**（拖不动、点它=取消选中）。
+- 想回模板排版：右栏图层检查器的 **「清除位置覆盖」** 一键删掉这层的 x/y/宽/高/字号（单层重置）；整条视频回出厂仍用 ⋯ 菜单的「重置为生成结果」。
 
 **成片库批量审片**（实施说明 §7）
 
@@ -122,7 +137,7 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 
 ## 目录结构
 - `packages/core` 配置/SQLite/LLM client；`packages/copywriter` M4 文案与封面；`packages/studio` M5 视频（五模板 Remotion 渲染 + 自定义模板 HyperFrames + Kokoro TTS）；`packages/compositions` 五模板的纯 React/Remotion 合成组件（零 Node 依赖，渲染与 Web 预览共用同一套组件）；`packages/tailor` 定制项目板块（需求拆解→轮子搜索→评分→方案书）；`packages/topics` 选题库（目标账号+爆款笔记+LLM 提炼的选题模式，生成文案时作为风格参考注入）；`packages/server` 本地 API
-- `apps/web` Web 控制台（单页应用，五个工位/板块通过顶部 tab 切换，不占独立 URL：找项目（候选卡片点「立项」打开右侧详情抽屉）/ 拆解需求（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容（原七 tab 收成三视图：**剪辑台**——真正的三栏编辑台本体：左栏内容队列（一条内容=一张 `ContentItem` 卡，聚合文案+封面+成片）+ 钩子筛选；中栏 9:16 播放器（@remotion/player 直播 `SpecComposition`）+ 分镜文案列表（改字失焦即重渲该镜画面、每镜可「让 LLM 重写这段文案」）；右栏检查器——图层属性（位置/字号/颜色/对齐/特效）即时生效，渲染参数（背景/BGM/情绪）暂存到本地草稿、点「用新参数重渲」才一次性提交（表头「改动 N 项」），模板/比例/字幕等需要重新生成的参数灰显只读；底部时间轴（**刻度/分镜/字幕/BGM 波形/卡点 五轨**：拖分镜移动、拖右缘改时长，吸附卡点、组内碰撞钳制；BGM 轨画当前曲子的波形峰值（`GET …/waveform`，ffmpeg 解码 ≤1000 个峰值，取不到只灰显「波形不可用」、不挡任何编辑）；卡点轨三态菱形——红实心=已用强拍、灰=检出未用（点一下把最近的分镜入点移到这一拍）、空心=手动卡点（卡点轨空白处**双击**添加、点它删除），手动卡点随 spec 落盘，换 BGM/情绪重析节拍时保留）。整条编辑链路走 `GET/PUT/reset/render/rewrite-section/pick-bgm/waveform` 七个 spec 端点，`Ctrl/Cmd+Z` 撤销、`Cmd/Ctrl+S` 保存，⋯ 菜单「重置为生成结果」按 `.orig.json` 快照逐字节回出厂。**用户须知**：撤销历史只在当前会话内有效（刷新页面即丢失，落盘的仍是最后一次保存点）；「重置为生成结果」丢弃的是磁盘上的手工改动，且此操作本身不可撤销；LLM 重写与直接改字都只换文案画面，旁白配音沿用上一版（不会重新配音，画面文字与旁白可能不一致）；换 BGM / 情绪走服务端 `POST …/pick-bgm`（选曲 + 重析节拍 + 落盘一体，librosa 不可用时**仍换曲**只是没网格可吸附），情绪下拉的选项来自 `templates/bgm/<情绪>/` 实际存在的子目录。窄屏 `<1240` 右栏收抽屉、`<1040` 左栏也收抽屉（时间轴同时降到 148 高、只留刻度/分镜/卡点三轨）。**成片库**——6 列网格批量审片（勾选批量通过 / 批量重渲，键盘流见上文「做内容工位快捷键」）+ 发布与表现数据只读回显；**模板库**——对标视频与模板资产。旧的独立「卡点」编辑器（`CutPlanEditor`）**入口已于 P2 移除**，卡点编辑全部由时间轴的卡点轨接管；组件文件与 `/api/projects/:slug/cutplan` 端点原样保留，老项目数据不丢。三视图间切换不跳出页面（切走剪辑台/切工位/打开项目详情三条路径都过「未保存改动」闸），工位面包屑压进顶部 Header，见 docs/剪辑台-实施说明.md、docs/superpowers/specs/2026-09-03-content-station-editor-design.md 与三份实施计划 docs/superpowers/plans/2026-09-0{3,4,5}-content-station-p{0,1,2}.md） / 分发营销 / 定制项目 / 选题库（目标账号清单 + 同赛道爆款笔记导入 + LLM 提炼标题结构/情绪类型，生成文案时自动引用，见 docs/superpowers/specs/2026-08-13-topic-pool-design.md）；项目详情、定制项目详情均为点卡片打开的右侧滑入抽屉，非独立页面）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
+- `apps/web` Web 控制台（单页应用，五个工位/板块通过顶部 tab 切换，不占独立 URL：找项目（候选卡片点「立项」打开右侧详情抽屉）/ 拆解需求（只展示分析/换皮两个拆解阶段，产素材及之后交给「做内容」「分发营销」；分析/换皮清单双 tab 读写 analysis.md + rebrand-plan.md；产物落地自动推进 stage+真实计数，手动改阶段用下拉，见 docs/superpowers/specs/2026-08-10-projects-board-upgrade-design.md、2026-08-11-rebrand-web-entry-design.md、2026-08-11-decompose-page-redesign.md）/ 做内容（原七 tab 收成三视图：**剪辑台**——真正的三栏编辑台本体：左栏内容队列（一条内容=一张 `ContentItem` 卡，聚合文案+封面+成片）+ 钩子筛选；中栏 9:16 播放器（@remotion/player 直播 `SpecComposition`）+ **画布排版浮层**（暂停时直接拖动/缩放图层、吸附对齐线、方向键微移，见上文「画布排版」，设计见 docs/superpowers/specs/2026-09-07-canvas-layout-design.md）+ 分镜文案列表（改字失焦即重渲该镜画面、每镜可「让 LLM 重写这段文案」）；右栏检查器——图层属性（位置/字号/颜色/对齐/特效）即时生效、「清除位置覆盖」把单层退回模板排版，渲染参数（背景/BGM/情绪）暂存到本地草稿、点「用新参数重渲」才一次性提交（表头「改动 N 项」），模板/比例/字幕等需要重新生成的参数灰显只读；底部时间轴（**刻度/分镜/字幕/BGM 波形/卡点 五轨**：拖分镜移动、拖右缘改时长，吸附卡点、组内碰撞钳制；BGM 轨画当前曲子的波形峰值（`GET …/waveform`，ffmpeg 解码 ≤1000 个峰值，取不到只灰显「波形不可用」、不挡任何编辑）；卡点轨三态菱形——红实心=已用强拍、灰=检出未用（点一下把最近的分镜入点移到这一拍）、空心=手动卡点（卡点轨空白处**双击**添加、点它删除），手动卡点随 spec 落盘，换 BGM/情绪重析节拍时保留）。整条编辑链路走 `GET/PUT/reset/render/rewrite-section/pick-bgm/waveform` 七个 spec 端点，`Ctrl/Cmd+Z` 撤销、`Cmd/Ctrl+S` 保存，⋯ 菜单「重置为生成结果」按 `.orig.json` 快照逐字节回出厂。**用户须知**：撤销历史只在当前会话内有效（刷新页面即丢失，落盘的仍是最后一次保存点）；「重置为生成结果」丢弃的是磁盘上的手工改动，且此操作本身不可撤销；LLM 重写与直接改字都只换文案画面，旁白配音沿用上一版（不会重新配音，画面文字与旁白可能不一致）；换 BGM / 情绪走服务端 `POST …/pick-bgm`（选曲 + 重析节拍 + 落盘一体，librosa 不可用时**仍换曲**只是没网格可吸附），情绪下拉的选项来自 `templates/bgm/<情绪>/` 实际存在的子目录。窄屏 `<1240` 右栏收抽屉、`<1040` 左栏也收抽屉（时间轴同时降到 148 高、只留刻度/分镜/卡点三轨）。**成片库**——6 列网格批量审片（勾选批量通过 / 批量重渲，键盘流见上文「做内容工位快捷键」）+ 发布与表现数据只读回显；**模板库**——对标视频与模板资产。旧的独立「卡点」编辑器（`CutPlanEditor`）**入口已于 P2 移除**，卡点编辑全部由时间轴的卡点轨接管；组件文件与 `/api/projects/:slug/cutplan` 端点原样保留，老项目数据不丢。三视图间切换不跳出页面（切走剪辑台/切工位/打开项目详情三条路径都过「未保存改动」闸），工位面包屑压进顶部 Header，见 docs/剪辑台-实施说明.md、docs/superpowers/specs/2026-09-03-content-station-editor-design.md 与三份实施计划 docs/superpowers/plans/2026-09-0{3,4,5}-content-station-p{0,1,2}.md） / 分发营销 / 定制项目 / 选题库（目标账号清单 + 同赛道爆款笔记导入 + LLM 提炼标题结构/情绪类型，生成文案时自动引用，见 docs/superpowers/specs/2026-08-13-topic-pool-design.md）；项目详情、定制项目详情均为点卡片打开的右侧滑入抽屉，非独立页面）；`templates/` 提示词与封面模板（核心资产）；`workspace/<slug>/` 每项目产物；`workspace/tailor/<id>/` 定制方案书（proposal.md）
 - `designs/` 设计稿与视觉体系参照（当前主题：生产控制台，见 docs/superpowers/specs/2026-08-28-production-console-shell-design.md；此前为锻造车间主题，见 docs/superpowers/specs/2026-08-09-forge-theme-design.md）
 
 ## Docker（可选）
