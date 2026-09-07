@@ -200,8 +200,6 @@ export const deleteStylePreset = (id: number) =>
 export const listLayoutTemplates = () => api<LayoutTemplate[]>('/api/layout-templates')
 export const createLayoutTemplate = (body: { name: string; template: string; ratio: 'portrait' | 'landscape'; payload: LayoutEntry[] }) =>
   api<{ id: number }>('/api/layout-templates', { method: 'POST', body: JSON.stringify(body) })
-export const deleteLayoutTemplate = (id: number) =>
-  api<{ ok: true }>(`/api/layout-templates/${id}`, { method: 'DELETE' })
 
 export const getBrandKit = (slug: string) => api<BrandKitView>(`/api/projects/${slug}/brand-kit`)
 export const putBrandKit = (slug: string, kit: BrandKitView) =>

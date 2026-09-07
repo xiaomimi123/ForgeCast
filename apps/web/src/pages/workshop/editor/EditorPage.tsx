@@ -567,7 +567,7 @@ export default function EditorPage({
               vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
               specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
-            confirm={confirm}
+              confirm={confirm}
             />
           </div>
         </div>

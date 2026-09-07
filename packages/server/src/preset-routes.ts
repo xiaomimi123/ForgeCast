@@ -43,7 +43,7 @@ export function registerPresetRoutes(app: Hono, ctx: CoreCtx): void {
   })
 
   app.post('/api/style-presets', async (c) => {
-    const body = await c.req.json().catch(() => ({}))
+    const body = (await c.req.json().catch(() => ({}))) ?? {}
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     if (!name) return c.json({ error: '缺少预设名称' }, 400)
     if (!(LAYER_KINDS as readonly string[]).includes(body.layerKind)) {
@@ -78,7 +78,7 @@ export function registerPresetRoutes(app: Hono, ctx: CoreCtx): void {
   })
 
   app.post('/api/layout-templates', async (c) => {
-    const body = await c.req.json().catch(() => ({}))
+    const body = (await c.req.json().catch(() => ({}))) ?? {}
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     if (!name) return c.json({ error: '缺少模板名称' }, 400)
     if (!(TEMPLATES as readonly string[]).includes(body.template)) {

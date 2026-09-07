@@ -117,7 +117,7 @@ export function applyBrandKit(spec: VideoSpec, kit: BrandKit): VideoSpec {
 
     if (isCtaClass(cssClass)) {
       if (primaryColor !== undefined) style = { ...style, color: primaryColor }
-      if (ctaText !== undefined && content.kind === 'text') {
+      if (ctaText && content.kind === 'text') {
         content = { ...content, text: replaceFirstLine(content.text, ctaText) }
       }
     }

@@ -231,6 +231,14 @@ describe('applyBrandKit：ctaText 只换第一行主文案，品牌名第二行�
     })
   }
 
+  it('ctaText 是空串 → 不替换（真值判定，空串≠有意义的新文案）', () => {
+    const s = spec('flash')
+    const before = s.layers.find((l) => (l.style.cssClass ?? '').includes('cta'))!
+    const out = applyBrandKit(s, { ctaText: '' })
+    const after = out.layers.find((l) => l.id === before.id)!
+    expect(textOf(after)).toBe(textOf(before))
+  })
+
   it('无 brandName 时 CTA 只有一行，替换后仍是一行', () => {
     const s = lower(sem() as any, { ...base, brandName: undefined, template: 'flash' } as any)
     const out = applyBrandKit(s, { ctaText: '主页领资料' })
