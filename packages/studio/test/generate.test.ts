@@ -725,4 +725,32 @@ describe('generateVideo：品牌 kit / 版式模板接线', () => {
     const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
     await expect(generateVideo(fctx, { slug: 'demo', tpl: 'flash', layoutTemplateId: 999 })).resolves.toBeTruthy()
   })
+
+  it('layoutTemplateId 的 ratio 是 landscape，出片 ratio 缺省 portrait → 静默跳过，不套用', async () => {
+    const payload = [{ role: 'cta#0', style: { fontSize: 55 }, effects: [] }]
+    const info = ctx.db.prepare('INSERT INTO layout_templates (name, template, ratio, payload) VALUES (?, ?, ?, ?)')
+      .run('flash-landscape-tpl', 'flash', 'landscape', JSON.stringify(payload))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash', layoutTemplateId: Number(info.lastInsertRowid) })
+    const spec = readSpec(fctx.config.paths.workspace, out.assetId)
+    const cta = spec.layers.find((l: any) => l.style.cssClass === 'cta')
+    expect(cta.style.fontSize).not.toBe(55)
+    expect(cta.overridden).toBeFalsy()
+  })
+
+  it('layoutTemplateId 的 ratio 与出片 ratio 都是 landscape → 套用', async () => {
+    const payload = [{ role: 'cta#0', style: { fontSize: 55 }, effects: [] }]
+    const info = ctx.db.prepare('INSERT INTO layout_templates (name, template, ratio, payload) VALUES (?, ?, ?, ?)')
+      .run('flash-landscape-tpl-2', 'flash', 'landscape', JSON.stringify(payload))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, {
+      slug: 'demo', tpl: 'flash', ratio: 'landscape', layoutTemplateId: Number(info.lastInsertRowid),
+    })
+    const spec = readSpec(fctx.config.paths.workspace, out.assetId)
+    const cta = spec.layers.find((l: any) => l.style.cssClass === 'cta')
+    expect(cta.style.fontSize).toBe(55)
+    expect(cta.overridden).toBe(true)
+  })
 })

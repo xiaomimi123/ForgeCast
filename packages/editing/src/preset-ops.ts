@@ -31,10 +31,11 @@ function requireLayer(spec: VideoSpec, layerId: string): Layer {
   return layer
 }
 
-/** preset.style 剔除 x/y 后再合并（withPosition:false 时）；effects 整组替换；置 overridden。 */
+/** preset.style 剔除 cssClass（无条件——类名是角色身份不是样式值，套预设不该把目标层「变身」成
+ *  另一个角色）与 x/y（withPosition:false 时）后再合并；effects 整组替换；置 overridden。 */
 function mergeStylePreset(layer: Layer, preset: StylePresetPayload, withPosition: boolean): Layer {
-  const { x, y, ...rest } = preset.style
-  const styleDelta = withPosition ? preset.style : rest
+  const { cssClass: _cssClass, x, y, ...withoutClassAndPos } = preset.style
+  const styleDelta = withPosition ? { ...withoutClassAndPos, x, y } : withoutClassAndPos
   return {
     ...layer,
     style: { ...layer.style, ...styleDelta },

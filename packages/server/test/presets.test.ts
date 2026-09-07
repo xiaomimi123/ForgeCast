@@ -78,6 +78,23 @@ describe('风格预设 /api/style-presets', () => {
     })
     expect(res.status).toBe(400)
   })
+
+  // body 是合法 JSON 的 `null`（不是解析失败）——.catch(() => ({})) 接不住，必须靠 `?? {}` 兜底，
+  // 否则 body.name 在 null 上取值直接抛，500 而不是预期的 400。
+  it('body 是 JSON null → 400（而非 500）', async () => {
+    const res = await app.request('/api/style-presets', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'null',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('body 是合法非 null 对象时不受 ?? {} 兜底影响，正常建成', async () => {
+    const created = await json(await app.request('/api/style-presets', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'null-guard-ok', layerKind: 'text', payload: {} }),
+    }))
+    expect(typeof created.id).toBe('number')
+  })
 })
 
 describe('版式模板 /api/layout-templates', () => {
@@ -138,6 +155,22 @@ describe('版式模板 /api/layout-templates', () => {
     }))
     const list = await json(await app.request('/api/layout-templates'))
     expect(list.find((r: any) => r.id === created.id).ratio).toBe('landscape')
+  })
+
+  // 同 style-presets：body 是合法 JSON 的 `null` 时 `.catch(() => ({}))` 接不住，须靠 `?? {}` 兜底。
+  it('body 是 JSON null → 400（而非 500）', async () => {
+    const res = await app.request('/api/layout-templates', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: 'null',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('body 是合法非 null 对象时不受 ?? {} 兜底影响，正常建成', async () => {
+    const created = await json(await app.request('/api/layout-templates', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'null-guard-ok', template: 'flash', payload: [] }),
+    }))
+    expect(typeof created.id).toBe('number')
   })
 })
 
@@ -241,5 +274,30 @@ describe('POST /api/projects/:slug/video body.layoutTemplateId', () => {
       body: JSON.stringify({ layoutTemplateId: created.id }),
     })
     expect(res.status).toBe(400)
+  })
+
+  it('版式画幅是 landscape，出片 ratio 缺省 portrait → 400', async () => {
+    const created = await json(await app.request('/api/layout-templates', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'flash-landscape-tpl', template: 'flash', ratio: 'landscape', payload: [] }),
+    }))
+    // tpl 缺省回落 flash（与模板一致），ratio 缺省回落 portrait，与版式的 landscape 不匹配
+    const res = await app.request('/api/projects/demo/video', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ layoutTemplateId: created.id }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('版式画幅与出片 ratio 都是 landscape → 通过画幅校验（不再 400）', async () => {
+    const created = await json(await app.request('/api/layout-templates', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'flash-landscape-tpl-2', template: 'flash', ratio: 'landscape', payload: [] }),
+    }))
+    const res = await app.request('/api/projects/demo/video', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ layoutTemplateId: created.id, ratio: 'landscape' }),
+    })
+    expect(res.status).not.toBe(400)
   })
 })

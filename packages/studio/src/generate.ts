@@ -32,8 +32,8 @@ export interface GenerateVideoInput {
   captions?: boolean
   /** 画布比例：仅 flash 模板支持横竖屏切换，其余模板固定竖屏不受此参数影响。缺省 portrait。 */
   ratio?: 'portrait' | 'landscape'
-  /** 版式模板 id（layout_templates 表）。route 层已校验存在且 template 与本次 tpl 一致；
-   *  这里防御性再核对一遍——查无或模板不匹配一律静默跳过，不为一个可选的排版增强打断整条渲染。 */
+  /** 版式模板 id（layout_templates 表）。route 层已校验存在且 template/ratio 与本次出片一致；
+   *  这里防御性再核对一遍——查无、模板不匹配或画幅不匹配一律静默跳过，不为一个可选的排版增强打断整条渲染。 */
   layoutTemplateId?: number
   onProgress?: (msg: string) => void
 }
@@ -88,12 +88,14 @@ function resolveBrandKit(raw: string | null | undefined, onProgress: (m: string)
   }
 }
 
-/** layoutTemplateId 查表：查无或 template 与本次出片 tpl 不一致一律静默跳过（route 层已做过强校验，
- *  这里只是防御性再核对——不为一个可选的排版增强打断整条渲染）。 */
-function resolveLayoutEntries(ctx: CoreCtx, layoutTemplateId: number | undefined, tpl: string): LayoutEntry[] | undefined {
+/** layoutTemplateId 查表：查无、template 与本次出片 tpl 不一致、或 ratio 与本次出片画幅不一致
+ *  一律静默跳过（route 层已做过强校验，这里只是防御性再核对——不为一个可选的排版增强打断整条渲染）。 */
+function resolveLayoutEntries(
+  ctx: CoreCtx, layoutTemplateId: number | undefined, tpl: string, ratio: 'portrait' | 'landscape',
+): LayoutEntry[] | undefined {
   if (layoutTemplateId === undefined) return undefined
-  const row: any = ctx.db.prepare('SELECT template, payload FROM layout_templates WHERE id = ?').get(layoutTemplateId)
-  if (!row || row.template !== tpl) return undefined
+  const row: any = ctx.db.prepare('SELECT template, ratio, payload FROM layout_templates WHERE id = ?').get(layoutTemplateId)
+  if (!row || row.template !== tpl || row.ratio !== ratio) return undefined
   try {
     const entries = JSON.parse(row.payload)
     return Array.isArray(entries) ? entries as LayoutEntry[] : undefined
@@ -193,7 +195,7 @@ async function renderHfPipeline(
     sourceAssetId?: number
     /** projects.brand_kit 原始列值（未解析），自动套用；解析失败降级为无 kit + warning，见 resolveBrandKit。 */
     brandKitRaw?: string | null
-    /** 出片指定的版式模板 id；查无或模板不匹配本次 tpl 静默跳过，见 resolveLayoutEntries。 */
+    /** 出片指定的版式模板 id；查无、模板或画幅不匹配本次出片一律静默跳过，见 resolveLayoutEntries。 */
     layoutTemplateId?: number
   },
 ): Promise<GeneratedVideo> {
@@ -259,7 +261,7 @@ async function renderHfPipeline(
   spec.warnings = warnings
 
   // 版式模板：lower 收尾之后、渲染前套用——按角色对位覆盖 style/effects（见 applyLayoutTemplate 注释）。
-  const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, tpl)
+  const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, tpl, ratio)
   if (layoutEntries) spec = applyLayoutTemplate(spec, layoutEntries)
 
   const rendered = renderSpecToHtml(spec)
@@ -360,7 +362,7 @@ async function renderTalkPipeline(
     bgExplicit?: string
     /** projects.brand_kit 原始列值（未解析），自动套用；解析失败降级为无 kit + warning，见 resolveBrandKit。 */
     brandKitRaw?: string | null
-    /** 出片指定的版式模板 id；查无或模板不匹配本次 tpl 静默跳过，见 resolveLayoutEntries。 */
+    /** 出片指定的版式模板 id；查无、模板或画幅不匹配本次出片一律静默跳过，见 resolveLayoutEntries。 */
     layoutTemplateId?: number
   },
 ): Promise<GeneratedVideo> {
@@ -415,7 +417,7 @@ async function renderTalkPipeline(
   })
   spec.warnings = warnings
   // 版式模板：lower 收尾之后、渲染前套用（talk 也在 layout_templates.template 六值之列）
-  const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, 'talk')
+  const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, 'talk', ratio)
   if (layoutEntries) spec = applyLayoutTemplate(spec, layoutEntries)
   // talk 默认无背景（见 bgExplicit 注释）；显式给了才按五模板同一套规则解析
   const bgVariant = bgExplicit ? resolveBgVariant('talk', bgExplicit) : undefined

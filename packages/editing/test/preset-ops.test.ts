@@ -98,6 +98,24 @@ describe('applyStylePreset', () => {
     expect(() => applyStylePreset(spec, 'nope', preset, { withPosition: false })).toThrow()
   })
 
+  it('preset.style 带 cssClass 时套用后层的 cssClass 保持原值不被覆盖（withPosition:false）', () => {
+    const spec = fixtureSpec()
+    const presetWithClass: StylePresetPayload = { style: { ...preset.style, cssClass: 'cta' }, effects: preset.effects }
+    const next = applyStylePreset(spec, 'card-0', presetWithClass, { withPosition: false })
+    const layer = next.layers.find((l) => l.id === 'card-0')!
+    expect(layer.style.cssClass).toBe('card')
+    expect(layer.style.color).toBe('#fff') // 其余样式仍照常套用
+  })
+
+  it('preset.style 带 cssClass 时套用后层的 cssClass 保持原值不被覆盖（withPosition:true）', () => {
+    const spec = fixtureSpec()
+    const presetWithClass: StylePresetPayload = { style: { ...preset.style, cssClass: 'cta' }, effects: preset.effects }
+    const next = applyStylePreset(spec, 'card-0', presetWithClass, { withPosition: true })
+    const layer = next.layers.find((l) => l.id === 'card-0')!
+    expect(layer.style.cssClass).toBe('card')
+    expect(layer.style.x).toBe(999) // x/y 仍照常套用（withPosition:true 只剔 cssClass）
+  })
+
   it('不碰 start/duration/track 与语义层', () => {
     const spec = fixtureSpec()
     const before = snapshot(spec)
@@ -130,6 +148,18 @@ describe('applyStylePresetToKind', () => {
     const spec = fixtureSpec()
     const next = applyStylePresetToKind(spec, 'shape', preset, { withPosition: false })
     expect(next).toBe(spec)
+  })
+
+  it('preset.style 带 cssClass 时批量套用后各命中层的 cssClass 各保持原值', () => {
+    const spec = fixtureSpec()
+    const presetWithClass: StylePresetPayload = { style: { color: '#000', cssClass: 'cta' }, effects: [] }
+    const next = applyStylePresetToKind(spec, 'text', presetWithClass, { withPosition: false })
+    const card0 = next.layers.find((l) => l.id === 'card-0')!
+    const card1 = next.layers.find((l) => l.id === 'card-1')!
+    const cta0 = next.layers.find((l) => l.id === 'cta-0')!
+    expect(card0.style.cssClass).toBe('card')
+    expect(card1.style.cssClass).toBe('card')
+    expect(cta0.style.cssClass).toBe('cta') // 本来就是 cta，套用后仍是 cta（未被换成别的）
   })
 })
 
