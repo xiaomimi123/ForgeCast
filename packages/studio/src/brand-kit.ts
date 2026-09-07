@@ -39,6 +39,34 @@ const ACCENT_CLASSES = new Set(['card', 'highlightCard'])
  *  story 没有标题类层，故 titleScale 对 story 天然无效。 */
 const TITLE_CLASSES = new Set(['painT', 'hookT', 'title'])
 
+/**
+ * 标题类的**基准字号**（px）。来源：`packages/compositions/src/styles/{flash,insight,demo,talk,changelog}.css`
+ * 里各自 `.tpl-<模板> .<类名>` 的竖版 `font-size`（1080×1920 是默认画幅）：
+ *   flash.css:10      .tpl-flash .painT      100px
+ *   insight.css:7     .tpl-insight .painT    100px   ← 与 flash 同值，故 painT 单值即可
+ *   demo.css:8        .tpl-demo .hookT        96px
+ *   talk.css:16       .tpl-talk .hookT       100px   ← 与 demo 不同值，走 TITLE_BASE_BY_TEMPLATE 例外
+ *   changelog.css:8   .tpl-changelog .title   82px
+ *
+ * **漂移风险**：这是把 CSS 里的数值抄进 TS 的一份副本，改了 CSS 不会自动同步。
+ * `test/brand-kit.test.ts` 里有一条「读 CSS 文件正则抽 font-size 与本表逐项比对」的防漂移断言——
+ * 改 CSS 后那条会先红，按新值更新本表即可。
+ *
+ * **已知限制（横版）**：横版（`.landscape`）各模板另有一套更小的字号
+ * （flash 84 / insight 68 / demo 76 / talk 84 / changelog 64）。kit 写的是**行内** fontSize，
+ * 会盖掉 CSS，故横版下按竖版基准算出来的字号会偏大。当前 kit 无从得知画幅取向
+ * （VideoSpec 只有 canvas 宽高，取向判定散在渲染侧），故先按竖版基准落值；
+ * 若后续预设要支持横版，应在此按 `spec.canvas.width > spec.canvas.height` 切换第二张表。
+ */
+const TITLE_BASE_FONT_SIZE: Record<string, number> = { painT: 100, hookT: 96, title: 82 }
+/** 同名类在不同模板下字号不一致的例外（见上表）。key = template，value = { cssClass: px }。 */
+const TITLE_BASE_BY_TEMPLATE: Record<string, Record<string, number>> = { talk: { hookT: 100 } }
+
+/** 解析某模板下某标题类的基准字号；无表项则返回 undefined（该类不受 titleScale 影响）。 */
+export function titleBaseFontSize(template: string, cssClass: string): number | undefined {
+  return TITLE_BASE_BY_TEMPLATE[template]?.[cssClass] ?? TITLE_BASE_FONT_SIZE[cssClass]
+}
+
 /** 只替换文本的第一行，其余行（五模板的 `@品牌名` 第二行）原样保留。 */
 function replaceFirstLine(text: string, first: string): string {
   const rest = text.split('\n').slice(1)
@@ -67,10 +95,14 @@ export function applyBrandKit(spec: VideoSpec, kit: BrandKit): VideoSpec {
     if (accentColor !== undefined && cssClass && ACCENT_CLASSES.has(cssClass)) {
       style = { ...style, bg: accentColor }
     }
-    // titleScale 只作用于**已有显式 fontSize** 的标题层：lower 产出不写 fontSize（模板 CSS 说了算），
-    // 猜一个默认值再乘会把 CSS 的排版覆盖掉，故无 fontSize 就跳过。
-    if (titleScale !== undefined && cssClass && TITLE_CLASSES.has(cssClass) && style.fontSize !== undefined) {
-      style = { ...style, fontSize: +(style.fontSize * titleScale).toFixed(4) }
+    // titleScale：标题层写 fontSize = round(基准 × scale)。基准取值顺序——
+    // ① 该层已有显式 fontSize（剪辑台手调过字号，以用户的值为准）；
+    // ② 否则查 TITLE_BASE_FONT_SIZE（抄自模板 CSS 的竖版字号）。
+    // lower 产出本身不写 fontSize（字号归模板 CSS），所以走的基本都是 ②——没有基准表的话
+    // titleScale 就是空转，这正是引入该表的原因。
+    if (titleScale !== undefined && cssClass && TITLE_CLASSES.has(cssClass)) {
+      const base = style.fontSize ?? titleBaseFontSize(spec.template, cssClass)
+      if (base !== undefined) style = { ...style, fontSize: Math.round(base * titleScale) }
     }
 
     if (style === layer.style && content === layer.content) return layer

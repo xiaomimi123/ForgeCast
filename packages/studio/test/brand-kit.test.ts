@@ -1,5 +1,7 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyBrandKit } from '../src/brand-kit'
+import { applyBrandKit, titleBaseFontSize } from '../src/brand-kit'
 import { lower } from '../src/lower'
 import type { BrandKit, Layer, VideoSpec } from '../src/videospec'
 
@@ -91,39 +93,84 @@ describe('applyBrandKit：accentColor → card/highlightCard 层 bg', () => {
   })
 })
 
-describe('applyBrandKit：titleScale → 标题类层的显式 fontSize 乘数', () => {
+describe('applyBrandKit：titleScale → 标题类层写 round(基准 × scale)', () => {
+  // 防漂移：基准表是把模板 CSS 的字号抄进 TS 的副本，改了 CSS 不会自动同步。
+  // 这条断言直接读 CSS 文件正则抽竖版 font-size 与表逐项比对——CSS 一改它先红。
+  it('基准表与模板 CSS 的竖版 font-size 逐项一致（防 CSS 漂移）', () => {
+    const stylesDir = path.resolve(__dirname, '../../compositions/src/styles')
+    const expected: Array<[template: string, cls: string, file: string]> = [
+      ['flash', 'painT', 'flash.css'],
+      ['insight', 'painT', 'insight.css'],
+      ['demo', 'hookT', 'demo.css'],
+      ['talk', 'hookT', 'talk.css'],
+      ['changelog', 'title', 'changelog.css'],
+    ]
+    for (const [template, cls, file] of expected) {
+      const css = fs.readFileSync(path.join(stylesDir, file), 'utf8')
+      // 只认竖版规则：`.tpl-<模板> .<类> { ... font-size: Npx`（横版是 `.tpl-x.landscape .cls`）
+      const re = new RegExp(`\\.tpl-${template}\\s+\\.${cls}\\s*\\{[^}]*?font-size:\\s*(\\d+)px`)
+      const m = re.exec(css)
+      expect(m, `${file} 里找不到 .tpl-${template} .${cls} 的 font-size`).not.toBeNull()
+      expect(titleBaseFontSize(template, cls), `${template}/.${cls} 基准表与 ${file} 漂移了`).toBe(Number(m![1]))
+    }
+  })
+
+  it('非标题类不在基准表内（cta/card/chat/flowCap…）', () => {
+    for (const cls of ['cta', 'card', 'highlightCard', 'chat', 'sell', 'price', 'tag', 'brand', 'cap', 'painWrap']) {
+      expect(titleBaseFontSize('flash', cls)).toBeUndefined()
+    }
+  })
+
+  const TITLE_LAYER: Record<string, { id: string; base: number } | null> = {
+    flash: { id: 'flashHook', base: 100 },     // painT
+    insight: { id: 'insight-intro', base: 100 },  // painT
+    demo: { id: 'demo-hook', base: 96 },       // hookT
+    talk: { id: 'talkHook', base: 100 },       // hookT（talk 例外值）
+    changelog: { id: 'clTitle', base: 82 },    // title
+    story: null,                               // story 没有标题类层
+  }
+
   for (const t of TEMPLATES) {
-    it(`${t}: lower 产出的标题层没有显式 fontSize，故 titleScale 不改任何层`, () => {
+    it(`${t}: 标题层拿到 round(基准 × scale)，非标题层不动`, () => {
       const s = spec(t)
-      expect(s.layers.every((l) => l.style.fontSize === undefined)).toBe(true)
-      const out = applyBrandKit(s, { titleScale: 1.5 })
-      expect(JSON.stringify(out.layers)).toBe(JSON.stringify(s.layers))
+      expect(s.layers.every((l) => l.style.fontSize === undefined)).toBe(true)   // lower 自己不写 fontSize
+      const out = applyBrandKit(s, { titleScale: 1.25 })
+      const target = TITLE_LAYER[t]
+      for (let i = 0; i < s.layers.length; i++) {
+        const before = s.layers[i], after = out.layers[i]
+        if (target && before.id === target.id) {
+          expect(after.style.fontSize).toBe(Math.round(target.base * 1.25))
+        } else {
+          expect(JSON.stringify(after)).toBe(JSON.stringify(before))
+        }
+      }
+      if (!target) expect(JSON.stringify(out.layers)).toBe(JSON.stringify(s.layers))   // story 全不动
     })
   }
 
-  it('手调过 fontSize 的标题层（painT/hookT/title）按乘数放大；非标题层不动', () => {
-    const s = spec('flash')
-    const withSizes: VideoSpec = {
-      ...s,
-      layers: s.layers.map((l) => {
-        if (l.id === 'flashHook') return { ...l, style: { ...l.style, fontSize: 80 } }        // painT
-        if (l.id === 'flashCta') return { ...l, style: { ...l.style, fontSize: 40 } }         // cta，非标题
-        return l
-      }),
-    }
-    const out = applyBrandKit(withSizes, { titleScale: 1.25 })
-    expect(out.layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(100)
-    expect(out.layers.find((l) => l.id === 'flashCta')!.style.fontSize).toBe(40)
+  it('取整用 Math.round（96 × 1.33 = 127.68 → 128）', () => {
+    const out = applyBrandKit(spec('demo'), { titleScale: 1.33 })
+    expect(out.layers.find((l) => l.id === 'demo-hook')!.style.fontSize).toBe(128)
   })
 
-  it('hookT / title 也在标题表内', () => {
-    const d = spec('demo')
-    const dOut = applyBrandKit({ ...d, layers: d.layers.map((l) => (l.id === 'demo-hook' ? { ...l, style: { ...l.style, fontSize: 60 } } : l)) }, { titleScale: 2 })
-    expect(dOut.layers.find((l) => l.id === 'demo-hook')!.style.fontSize).toBe(120)
+  it('层已有显式 fontSize 时以它为基准（手调值优先于基准表）', () => {
+    const s = spec('flash')
+    const withSize = { ...s, layers: s.layers.map((l) => (l.id === 'flashHook' ? { ...l, style: { ...l.style, fontSize: 80 } } : l)) }
+    const out = applyBrandKit(withSize, { titleScale: 1.25 })
+    expect(out.layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(100)   // 80×1.25，不是 100×1.25
+  })
 
-    const c = spec('changelog')
-    const cOut = applyBrandKit({ ...c, layers: c.layers.map((l) => (l.id === 'clTitle' ? { ...l, style: { ...l.style, fontSize: 60 } } : l)) }, { titleScale: 0.5 })
-    expect(cOut.layers.find((l) => l.id === 'clTitle')!.style.fontSize).toBe(30)
+  it('titleScale 缺省时一个字节都不写', () => {
+    const s = spec('flash')
+    const out = applyBrandKit(s, { primaryColor: '#ff0066' })
+    expect(out.layers.every((l) => l.style.fontSize === undefined)).toBe(true)
+  })
+
+  it('overridden 的标题层仍然跳过', () => {
+    const s = spec('flash')
+    const marked = { ...s, layers: s.layers.map((l) => (l.id === 'flashHook' ? { ...l, overridden: true } : l)) }
+    const out = applyBrandKit(marked, { titleScale: 2 })
+    expect(out.layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBeUndefined()
   })
 })
 
@@ -161,7 +208,8 @@ describe('applyBrandKit：overridden 层一律跳过', () => {
     const s = spec('flash')
     const marked: VideoSpec = {
       ...s,
-      layers: s.layers.map((l) => (l.style.cssClass === 'cta' || l.style.cssClass === 'highlightCard'
+      // 三类作用对象（CTA / 强调块 / 标题）全部标成手调过
+      layers: s.layers.map((l) => (['cta', 'highlightCard', 'painT'].includes(l.style.cssClass ?? '')
         ? { ...l, overridden: true, style: { ...l.style, fontSize: 50 } }
         : l)),
     }
