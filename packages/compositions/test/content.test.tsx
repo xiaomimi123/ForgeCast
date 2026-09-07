@@ -233,4 +233,41 @@ describe.each(FIXTURES)('%s 内容断言', (_name, spec) => {
     expect(cls).toContain(`tpl-${known.includes(spec.template) ? spec.template : 'flash'}`)
     expect(cls.includes('landscape')).toBe(spec.canvas.width >= spec.canvas.height)
   })
+
+  it('不带 x/y 的层无 position 内联（文档流不受扰——画布拖拽固化前的守护线）', () => {
+    for (const layer of spec.layers) {
+      const { container } = render(<SpecView spec={spec} timeSec={mid(layer)} />)
+      const el = byId(container, layer.id) as HTMLElement
+      expect(el?.style.position, `图层 ${layer.id} 不该有 position 内联`).toBe('')
+    }
+  })
+})
+
+/**
+ * 画布拖拽排版的绝对定位语义门禁（Task 2）。
+ *
+ * 六模板（flash/story/changelog/demo/insight/talk）各挑一层，在读入的 fixture 上 patch
+ * `style.x/y`（做法同上文 generate.ts 里 talk 组给 src 打空格的先例：生成阶段之外、测试内对
+ * 深拷贝出来的 spec 打补丁），断言渲染出 `position:absolute; left:Npx; top:Npx`。
+ *
+ * 之所以不改 fixtures/*.json 本身：①②门禁红线——既有 fixture 一个字节都不改，新增断言只能走
+ * 新增变体（这里是「测试内 patch 深拷贝」这种最小变体，不产生新文件）。
+ */
+const POSITION_FIXTURES: Array<[string, VideoSpec]> = [
+  ['flash', flash as VideoSpec], ['story', story as VideoSpec], ['changelog', changelog as VideoSpec],
+  ['demo', demo as VideoSpec], ['insight', insight as VideoSpec], ['talk', talk as VideoSpec],
+]
+
+describe.each(POSITION_FIXTURES)('%s：style.x/y 触发绝对定位', (_name, spec) => {
+  it('带 x/y 的层渲出 position:absolute + left/top px', () => {
+    const patched: VideoSpec = JSON.parse(JSON.stringify(spec))
+    const layer = patched.layers[0]
+    layer.style.x = 100
+    layer.style.y = 200
+    const { container } = render(<SpecView spec={patched} timeSec={mid(layer)} />)
+    const el = byId(container, layer.id) as HTMLElement
+    expect(el?.style.position, `图层 ${layer.id} 未触发绝对定位`).toBe('absolute')
+    expect(el?.style.left).toBe('100px')
+    expect(el?.style.top).toBe('200px')
+  })
 })
