@@ -1,9 +1,11 @@
 import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { clearLayerGeometry, GEOMETRY_KEYS, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer } from '@forgecast/editing'
-import { useQuery } from '@tanstack/react-query'
+import { applyStylePreset, applyStylePresetToKind, clearLayerGeometry, GEOMETRY_KEYS, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer, type StylePresetPayload } from '@forgecast/editing'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, type Asset, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
+import { api, createStylePreset, deleteStylePreset, listStylePresets, type Asset, type BgmList, type ContentItemView, type CustomTemplate, type StylePreset } from '../../../api'
 import TaskProgress from '../../../components/TaskProgress'
+import type { ConfirmOpts } from '../../../components/ui/Confirm'
+import { usePrompt } from '../../../components/ui/Prompt'
 import type { TaskRun } from '../../../useTaskRun'
 import { BGS, MOODS, OUTLINE, VIDEO_TPLS, type VideoParams } from './ui'
 import type { useEditorState } from './useEditorState'
@@ -29,6 +31,11 @@ const EFFECTS: Array<{ type: Effect['type']; label: string }> = [
   { type: 'demote', label: '退居' },
   { type: 'exit', label: '退场' },
 ]
+
+/** 图层 kind 的人话名（预设条的文案用）。键与服务端 style_presets.layer_kind 白名单一致（不含 video）。 */
+const KIND_LABEL: Record<'text' | 'image' | 'caption' | 'shape', string> = {
+  text: '文字', image: '图片', caption: '字幕', shape: '色块',
+}
 
 /** 背景变体下拉：五个变体 + 不加背景。**不含 `random`**——random 是生成期的「随机挑一个」，
  *  写进 spec 就成了 Background 认不出的变体名（回落 grid），在剪辑台里没有意义。 */
@@ -118,7 +125,7 @@ export function mergeParamsDraft(spec: VideoSpec, draft: ParamsDraft): VideoSpec
  */
 export default function InspectorPane({
   ed, current, bgmList, selectedLayerId, vp, setVp, busy, videoRun, onMakeVideo, onNotice, onEnqueueRender, onRenderFromSpec,
-  specEpoch, slug, videoId, onSpecReplaced, className, uploadAssets,
+  specEpoch, slug, videoId, onSpecReplaced, className, uploadAssets, confirm,
 }: {
   ed: ReturnType<typeof useEditorState>
   current: ContentItemView | null
@@ -143,6 +150,8 @@ export default function InspectorPane({
   videoId: string | null
   /** spec 被服务端整包换掉后回调（bump specEpoch），同 ShotList 的 doRewrite 成功分支。 */
   onSpecReplaced: () => void
+  /** in-app 确认弹层（删预设用）——同 ShotList，由 EditorPage 的 useConfirm 统一提供。 */
+  confirm: (opts: ConfirmOpts) => Promise<boolean>
   className?: string
 }) {
   const spec = ed.spec
@@ -260,7 +269,7 @@ export default function InspectorPane({
           </div>
         ) : (
           <>
-            <LayerInspector ed={ed} spec={spec} layerId={selectedLayerId} />
+            <LayerInspector ed={ed} spec={spec} layerId={selectedLayerId} confirm={confirm} onNotice={onNotice} />
 
             <div className={GROUP} style={GROUP_PAD}>
               <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">渲染参数</div>
@@ -360,8 +369,9 @@ function BgmOptions({ list, current }: { list: BgmList | undefined; current: str
  * onChange，每次都 push 的话 undo 栈瞬间被填满，用户按十次 ⌘Z 才退回一格改动。
  * 离散型（对齐 chip / 特效开关）一次点击就是一步，直接 `apply`。
  */
-function LayerInspector({ ed, spec, layerId }: {
+function LayerInspector({ ed, spec, layerId, confirm, onNotice }: {
   ed: ReturnType<typeof useEditorState>; spec: VideoSpec; layerId: string | null
+  confirm: (opts: ConfirmOpts) => Promise<boolean>; onNotice: (msg: string) => void
 }) {
   const layer = layerId ? spec.layers.find((l) => l.id === layerId) ?? null : null
   if (!layer) {
@@ -398,6 +408,8 @@ function LayerInspector({ ed, spec, layerId }: {
         图层检查器
         <span className="ml-auto max-w-[140px] truncate normal-case text-[var(--fc-faint)]" title={layer.id}>{layer.id}</span>
       </div>
+      {/* 风格预设条：底片层（video）没有可存的品牌样式，服务端的 layerKind 白名单也把它排除在外 */}
+      {layer.kind !== 'video' && <PresetStrip ed={ed} spec={spec} layer={layer} confirm={confirm} onNotice={onNotice} />}
       <div className="space-y-2">
         {/* 视频层（talk 口播底片）没有字号/颜色/对齐这套东西——那组控件对它一项都不生效，
             与其灰显一整列不可用的字段，不如换成它真正能调的三项：裁头 / 裁尾 / 音量。 */}
@@ -653,5 +665,111 @@ function VideoParamFields({ vp, setVp, bgmList, uploadAssets }: {
         </label>
       )}
     </>
+  )
+}
+
+
+/**
+ * 风格预设条（单层）。三件事：**存**当前层的样式为预设、把预设**套**到当前层、把预设**套到全部同类层**。
+ *
+ * 「含位置」是**存的那一刻**决定的，不是套的那一刻——勾了就把 `x/y` 一起存进 payload，没勾就在存之前
+ * 剔掉。这样 payload 自己就是全部真相，套用时无条件 `withPosition: true`（payload 里没有 x/y，
+ * 展开合并自然不动目标层的位置）。反过来把开关放在套用侧的话，同一条预设在两次套用中的语义会
+ * 不一样，而列表里看不出区别——预设的意义就没了。
+ *
+ * 套用一次 = 一步 undo（`ed.apply`）。套之前先 `ed.commit()`：上面的数字/颜色框可能还挂着未
+ * 收尾的 transient 序列，不收掉会和这一步挤进同一格 undo。
+ *
+ * 删除做成下拉右侧的「×」（删当前选中的那条）而不是下拉项内嵌的小 ×——原生 `<select>` 的
+ * `<option>` 里放不了按钮，为一个删除动作换掉整个下拉（自绘浮层 + 键盘导航 + 失焦收起）不划算。
+ */
+function PresetStrip({ ed, spec, layer, confirm, onNotice }: {
+  ed: ReturnType<typeof useEditorState>; spec: VideoSpec; layer: Layer
+  confirm: (opts: ConfirmOpts) => Promise<boolean>; onNotice: (msg: string) => void
+}) {
+  const qc = useQueryClient()
+  const { prompt, element: promptEl } = usePrompt()
+  const [selId, setSelId] = useState<number | ''>('')
+  const [working, setWorking] = useState(false)
+  const kind = layer.kind as StylePreset['layerKind']
+  const list = useQuery({ queryKey: ['style-presets'], queryFn: listStylePresets, networkMode: 'always' })
+  const mine = useMemo(() => (list.data ?? []).filter((p) => p.layerKind === kind), [list.data, kind])
+  // 换到别的 kind 后原来选中的那条不在列表里了，下拉会静默显示第一条却仍持有旧 id——清掉。
+  useEffect(() => { setSelId('') }, [kind])
+  const chosen = mine.find((p) => p.id === selId) ?? null
+  const locked = working || ed.saving || ed.busy
+
+  async function doSave() {
+    const r = await prompt({
+      title: '存为风格预设',
+      body: `当前层的字号 / 颜色 / 对齐 / 透明度 / 特效会一起存下来，之后可套到别的${KIND_LABEL[kind]}层上。`,
+      label: '预设名', placeholder: '如：主标题 · 大字白',
+      checkbox: { label: '含位置（x / y）', hint: '不勾选：套用时只改观感，目标层停在原位' },
+    })
+    if (!r) return
+    const { x, y, ...noPos } = layer.style
+    const payload: StylePresetPayload = { style: r.checked ? { ...layer.style } : noPos, effects: [...layer.effects] }
+    setWorking(true)
+    try {
+      await createStylePreset({ name: r.name, layerKind: kind, payload })
+      await qc.invalidateQueries({ queryKey: ['style-presets'] })
+      onNotice(`已存为预设「${r.name}」`)
+    } catch (e) {
+      onNotice(`存预设失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally { setWorking(false) }
+  }
+
+  function doApply(all: boolean) {
+    if (!chosen) return
+    ed.commit()
+    const next = all
+      ? applyStylePresetToKind(spec, kind, chosen.payload, { withPosition: true })
+      : applyStylePreset(spec, layer.id, chosen.payload, { withPosition: true })
+    if (next === spec) { onNotice('这份预设没有可套的内容'); return }
+    ed.apply(next)
+    const n = all ? spec.layers.filter((l) => l.kind === kind).length : 1
+    onNotice(`已套用「${chosen.name}」到 ${n} 层（⌘/Ctrl+Z 可撤销）`)
+  }
+
+  async function doDelete() {
+    if (!chosen) return
+    if (!(await confirm({ title: `删除预设「${chosen.name}」？`, body: '已经套用过的图层不受影响。', danger: true }))) return
+    setWorking(true)
+    try {
+      await deleteStylePreset(chosen.id)
+      setSelId('')
+      await qc.invalidateQueries({ queryKey: ['style-presets'] })
+      onNotice('预设已删除')
+    } catch (e) {
+      onNotice(`删除失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally { setWorking(false) }
+  }
+
+  return (
+    <div className="mb-2 rounded-[var(--fc-r-sm)] bg-[var(--fc-sunken)] p-1.5">
+      <div className="flex items-center gap-1">
+        <select
+          className={`${CTRL} min-w-0 flex-1`} value={selId}
+          onChange={(e) => setSelId(e.target.value ? Number(e.target.value) : '')}
+        >
+          <option value="">{mine.length ? `选一条${KIND_LABEL[kind]}预设…` : `还没有${KIND_LABEL[kind]}预设`}</option>
+          {mine.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <button
+          className={`${OUTLINE} !h-[28px] !px-1.5 !py-0 !text-[11px]`}
+          disabled={!chosen || locked} title="删除选中的这条预设" aria-label="删除预设"
+          onClick={doDelete}
+        >×</button>
+      </div>
+      <div className="mt-1 flex items-center gap-1">
+        <button className={`${OUTLINE} !h-[26px] flex-1 !px-1 !py-0 !text-[11px]`}
+          disabled={!chosen || locked} title="套到当前选中的这一层" onClick={() => doApply(false)}>套用</button>
+        <button className={`${OUTLINE} !h-[26px] flex-1 !px-1 !py-0 !text-[11px]`}
+          disabled={!chosen || locked} title={`套到本片所有${KIND_LABEL[kind]}层`} onClick={() => doApply(true)}>全部同类</button>
+        <button className={`${OUTLINE} !h-[26px] flex-1 !px-1 !py-0 !text-[11px]`}
+          disabled={locked} onClick={doSave}>存为预设…</button>
+      </div>
+      {promptEl}
+    </div>
   )
 }
