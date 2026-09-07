@@ -8,6 +8,12 @@ import type { useEditorState } from './useEditorState'
 const SNAP_PX = 8
 /** 选中态四角手柄边长（**显示 px**，不随画布缩放变）。本任务只画，缩放逻辑是 Task 4。 */
 const HANDLE = 8
+/**
+ * 起拖阈值（显示 px）。指针在这个范围内挪动一律**只算点选**：不置 `moved`、不固化、不写 spec。
+ * 没有它的话，点一下卡片时手抖一两个像素就会把「点选高亮」变成一次真实改动（spec 变脏 + 一格 undo），
+ * 而在 148px 宽的预览里 1 显示 px ≈ 7 画布 px，抖出去的位移肉眼还看不出来——最难查的那种脏。
+ */
+const DRAG_START_PX = 3
 const round3 = (n: number) => Math.round(n * 1000) / 1000
 
 /**
@@ -30,8 +36,12 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000
  * 判据只在**第一次固化**时可信：getComputedStyle 对已定位元素返回的是**used value**，一个被我们
  * 固化过（position:absolute + top）的层，它的 bottom 也会解析成 px 而不再是 'auto'。所以调用方要用
  * 「style.y 还没有」把这条判据关进第一次（见 onDown）。
+ *
+ * **已知限制**：从 transform 还原视觉矩形时假定 `transform-origin` 是默认的元素中心（六份模板的 CSS 与
+ * LayerView 写的 transform 都没改过它）。哪天模板给某个类写了非中心的 transform-origin，那一层的命中框
+ * 会与画面错开——真出现时按 `getComputedStyle(el).transformOrigin` 解析补上即可。
  */
-interface Measured { rect: CanvasRect; tx: number; ty: number; layoutW: number; layoutH: number; needHeight: boolean }
+interface Measured { rect: CanvasRect; tx: number; ty: number; layoutW: number; layoutH: number }
 
 /**
  * 全片推镜（`#cam` 的 `translate(...)scale(1→1.06)`，见 compositions/Background.tsx）的当前值。
@@ -60,8 +70,10 @@ interface DragState {
   scale: number
   /** 同时刻其他可见图层的视觉矩形——吸附参考线的来源，按下时算一次。 */
   others: CanvasRect[]
-  /** 是否真的动过。纯点选（按下即抬起）不许固化，否则「点一下卡片高亮」就把 spec 弄脏了。 */
+  /** 是否真的动过（超过 DRAG_START_PX）。纯点选不许固化，否则「点一下卡片高亮」就把 spec 弄脏了。 */
   moved: boolean
+  /** 本次拖拽挂在 window 上的监听，收尾时按这个引用摘掉（见 onDown 的注释）。 */
+  off: () => void
 }
 
 /**
@@ -72,8 +84,10 @@ interface DragState {
  * 缩放整个合成、`#cam` 还有一层全片推镜 scale(1→1.06)，rect 系会把这两层缩放一起量进来，而 offset 系
  * 天然免疫 transform，量出来的就是画布 px。
  *
- * 测量时机：pointerdown 现取（比例）+ 可见图层集合 / spec / 播放态变化时重测一次（见 measure effect），
- * **不每帧测**——拖拽期间 spec 每帧换新对象，每帧重测是白烧 CPU，且被拖的那层位置已由 drag 状态给出。
+ * 测量时机：pointerdown 现取（原点与比例）+ `spec / currentSec / 可见集合 / 播放态`变化时重测一次
+ * （见 measure effect）。拖拽期间 spec 每帧换新对象，effect 照样每帧进来，但**开头就按 dragRef 早退**，
+ * 所以「不每帧测」靠的是那道早退而不是漏依赖——漏了 spec 才是真出事：⌘Z 撤销、右栏改 X/Y 之后 measured
+ * 还停在旧值，下一次拖拽拿 stale 基线把图层弹回撤销前的位置。
  *
  * 撤销口径沿用 TimelinePane：拖拽期间 `applyTransient`，`pointerup` 才 `commit`，一次拖拽 = 一步 undo；
  * 「文档流固化」（把测量出的 x/y/width 写进 style）也压在同一格里，⌘Z 一步回到拖之前。
@@ -92,6 +106,9 @@ export default function CanvasOverlay({
   containerRef: RefObject<HTMLDivElement>
 }) {
   const [measured, setMeasured] = useState<Record<string, Measured>>({})
+  /** 合成在容器里的左上角（显示 px，相对容器）。**不假定合成铺满容器**：横屏 spec 在 9:16 的容器里
+   *  是按宽适配、上下留黑边的，原点当成 (0,0) 会让整层浮层纵向错位半个黑边。 */
+  const [origin, setOrigin] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
   const [cam, setCam] = useState<Cam>(CAM_IDENTITY)
   const [playing, setPlaying] = useState(false)
@@ -113,15 +130,27 @@ export default function CanvasOverlay({
   const visibleKey = visible.map((l) => l.id).join(',')
 
   // 播放态：用 Player 的 play/pause 事件订阅，**不轮询**。播放中不渲命中区（观看态）。
+  // ref 在本组件首次 effect 时可能还没填上（Player 与浮层是同一次提交里挂的，谁先谁后不保证），
+  // 直接 return 会让订阅**永久缺席**——播放时命中区照旧铺着。故按帧重试到拿到 ref 为止。
   useEffect(() => {
-    const p = playerRef.current
-    if (!p) return
-    setPlaying(p.isPlaying())
+    let raf = 0
+    let tries = 0
+    let p: PlayerRef | null = null
     const on = () => setPlaying(true)
     const off = () => setPlaying(false)
-    p.addEventListener('play', on)
-    p.addEventListener('pause', off)
-    return () => { p.removeEventListener('play', on); p.removeEventListener('pause', off) }
+    const attach = () => {
+      p = playerRef.current
+      if (!p) { if (tries++ < 60) raf = requestAnimationFrame(attach); return }
+      setPlaying(p.isPlaying())
+      p.addEventListener('play', on)
+      p.addEventListener('pause', off)
+    }
+    attach()
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      p?.removeEventListener('play', on)
+      p?.removeEventListener('pause', off)
+    }
   }, [playerRef, spec.canvas.width])
 
   /**
@@ -134,8 +163,8 @@ export default function CanvasOverlay({
     // 合成根：offsetParent 链的终点。Player 首帧还没挂上时它是 null——调用方按 false 重试。
     const root = container.querySelector<HTMLElement>('.specRoot')
     if (!root) return false
-    const r = container.getBoundingClientRect()
-    if (r.width === 0) return false
+    const box = stageBox(container, root)
+    if (!box) return false
     const next: Record<string, Measured> = {}
     for (const l of visible) {
       const el = container.querySelector<HTMLElement>(`#${CSS.escape(l.id)}`)
@@ -143,13 +172,16 @@ export default function CanvasOverlay({
       const m = measureLayer(root, el)
       if (m) next[l.id] = m
     }
-    setScale(r.width / spec.canvas.width)
+    setScale(box.scale)
+    setOrigin({ x: box.x, y: box.y })
     setCam(camOf(root))
     setMeasured(next)
     return true
   }
+  // 写 ref 是副作用，不能在 render 阶段做（StrictMode 下 render 会跑两次；并发渲染还可能丢弃这次结果）。
+  // 声明在 measure effect **之前**：同一次提交里 effect 按声明序执行，所以下面那个 effect 读到的一定是新的。
   const measureRef = useRef(doMeasure)
-  measureRef.current = doMeasure
+  useEffect(() => { measureRef.current = doMeasure })
 
   useEffect(() => {
     if (playing) { setMeasured({}); return }
@@ -163,9 +195,10 @@ export default function CanvasOverlay({
     }
     run()
     return () => { if (raf) cancelAnimationFrame(raf) }
-    // currentSec 也在依赖里（控制器裁决）：推镜随时刻变，且拖不同时刻的图层要按那一刻的布局量。
-    // 播放中上面已提前 return，所以这不会变成「每帧测」——播放时一次也不测。
-  }, [playing, visibleKey, currentSec, nonce])
+    // 依赖里必须有 `spec` 本体：⌘Z 撤销、右栏改 X/Y 都只换 spec 引用，可见集合与 currentSec 一动不动，
+    // 漏了它 measured 就停在旧值，下一次拖拽会拿 stale 基线把图层弹回撤销前的位置。
+    // 拖拽期间 spec 每帧换新对象，effect 照样进来，但开头 `dragRef.current` 早退，不会真的重测。
+  }, [playing, visibleKey, currentSec, nonce, spec])
 
   // 点在图层命中区之外（画面空白 / 视频层 / 播放器控制条）＝取消选中。
   // 用容器上的**原生**监听而不是铺一层 pointer-events:auto 的背板：背板会把 Player 自己的
@@ -184,43 +217,78 @@ export default function CanvasOverlay({
     return () => c.removeEventListener('pointerdown', onDown)
   }, [containerRef, onSelectLayer])
 
+  /** ed 的最新引用。卸载清理（下面那个 effect）跑在最后一次渲染之后，闭包捕获的 ed 会是过期的那份。 */
+  const edRef = useRef(ed)
+  useEffect(() => { edRef.current = ed })
+
+  // 拖拽中被卸载（切内容项 / loading 翻转 / 中途开播）：pointerup 永远不会到达，
+  // 不收尾的话 transient 序列的基线一直攥在 useEditorState 手里，`undo/redo` 被 `dragging()` 判定
+  // 为「拖拽中」而**永久失效**——用户此后按 ⌘Z 一动不动，且看不出为什么。故卸载时强制收尾。
+  useEffect(() => () => {
+    const d = dragRef.current
+    if (!d) return
+    dragRef.current = null
+    d.off()
+    if (d.moved) edRef.current.commit()
+  }, [])
+
   function onDown(e: ReactPointerEvent<HTMLDivElement>, layerId: string) {
+    // 服务端读改写在途（重写这段 / 渲成片）或正在落盘时不许拖：那几条路径会整包换掉或写回 spec，
+    // 此刻改本地 spec 等于和它们赛跑。与右栏/时间轴按钮的 disabled 同一道闸。
+    if (ed.busy || ed.saving) return
     e.preventDefault()
     onSelectLayer(layerId)
     const s = ed.spec
     const m = measured[layerId]
     const container = containerRef.current
-    if (!s || !m || !container) return
+    const root = container?.querySelector<HTMLElement>('.specRoot') ?? null
+    if (!s || !m || !container || !root) return
+    const box = stageBox(container, root)
+    if (!box) return
     // 先收掉右栏输入框可能还没收尾的 transient 序列（pointerdown 早于 blur），
     // 否则这次拖拽会和上一次数值编辑挤进同一格 undo。姿势同 TimelinePane.startDrag。
     ed.commit()
-    const r = container.getBoundingClientRect()
-    if (r.width === 0) return
+    const target = e.currentTarget
+    // move/up 挂 **window** 而不是 hitbox：指针捕获失败（某些浏览器/合成事件下 setPointerCapture 会抛）
+    // 时事件不会再回到 hitbox，挂在它身上的 move/up 就此失联，拖拽卡在半途、dragRef 再也收不了尾。
+    // 挂 window 则捕获成功与否行为都一样（捕获只是把事件重定向到 hitbox，照样冒泡到 window）。
+    const move = (ev: PointerEvent) => onMove(ev)
+    const up = (ev: PointerEvent) => onUp(ev)
+    const off = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      try { if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId) } catch { /* 已释放/元素已卸载 */ }
+    }
     dragRef.current = {
       layerId, base: s, startX: e.clientX, startY: e.clientY,
       rect: m.rect, tx: m.tx, ty: m.ty, layoutW: m.layoutW, layoutH: m.layoutH,
-      // 只有第一次固化才补 height，理由见 Measured 的注释（computed bottom 对已定位元素是 used value）
-      needHeight: m.needHeight && s.layers.find((l) => l.id === layerId)?.style.y === undefined,
-      scale: (r.width / s.canvas.width) * cam.s,
+      // 要不要补 height：现场探一次（见 heightWouldCollapse）。一次拖拽只探一次，不进逐层测量。
+      needHeight: heightWouldCollapse(container.querySelector<HTMLElement>(`#${CSS.escape(layerId)}`)),
+      scale: box.scale * cam.s,
       others: visible.filter((l) => l.id !== layerId).map((l) => measured[l.id]?.rect).filter((x): x is CanvasRect => !!x),
       moved: false,
+      off,
     }
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 捕获失败就退回冒泡，行为不变 */ }
+    try { target.setPointerCapture(e.pointerId) } catch { /* 捕获失败也无妨：move/up 挂在 window 上 */ }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
-  function onMove(e: ReactPointerEvent<HTMLDivElement>) {
+  function onMove(e: PointerEvent) {
     const d = dragRef.current
     if (!d) return
-    const raw: CanvasRect = {
-      x: d.rect.x + (e.clientX - d.startX) / d.scale,
-      y: d.rect.y + (e.clientY - d.startY) / d.scale,
-      w: d.rect.w, h: d.rect.h,
-    }
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    // 起拖阈值：没越过就当纯点选，一个字都不写（见 DRAG_START_PX）
+    if (!d.moved && Math.hypot(dx, dy) < DRAG_START_PX) return
+    d.moved = true
+    const raw: CanvasRect = { x: d.rect.x + dx / d.scale, y: d.rect.y + dy / d.scale, w: d.rect.w, h: d.rect.h }
     // 吸附**先于**钳制：先把「用户想放的位置」吸到参考线，再由钳制把出界的拉回来。
     // 反过来会把刚钳到边上的位置又吸走，重新推出画布。（同 TimelinePane 的先吸后钳。）
     const snapped = snapPosition(raw, d.others, canvas, SNAP_PX, e.altKey)
     const clamped = clampToCanvas({ ...raw, x: snapped.x, y: snapped.y }, canvas)
-    d.moved = true
     setDrag({ id: d.layerId, rect: { ...raw, x: clamped.x, y: clamped.y } })
     // 被钳制拉走的那个轴上，参考线已经不成立了——还画着就是在骗人
     setGuides(snapped.guides.filter((g) => (g.axis === 'x' ? clamped.x === snapped.x : clamped.y === snapped.y)))
@@ -232,23 +300,26 @@ export default function CanvasOverlay({
     }))
   }
 
-  function onUp(e: ReactPointerEvent<HTMLDivElement>) {
+  function onUp(_e?: PointerEvent | ReactPointerEvent<HTMLDivElement>) {
     const d = dragRef.current
     if (!d) return
     dragRef.current = null
+    d.off()
     setDrag(null)
     setGuides([])
     setNonce((n) => n + 1)
-    // 一次拖拽收成一步 undo（没动过则 transient 序列压根没开，commit 是空操作）
+    // 一次拖拽收成一步 undo（没越过起拖阈值则 transient 序列压根没开，commit 是空操作）
     if (d.moved) ed.commit()
-    try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* 同上 */ }
   }
 
   if (playing) return null
 
   const px = (v: number) => v * scale
   /** 浮层整体套上与 `#cam` 相同的推镜（translate 要换算到显示 px；缩放原点同为几何中心）。 */
-  const camStyle = { width: px(canvas.w), height: px(canvas.h), transform: `translate(${px(cam.e)}px, ${px(cam.f)}px) scale(${cam.s})`, transformOrigin: '50% 50%' } as const
+  const camStyle = {
+    position: 'absolute', left: origin.x, top: origin.y, width: px(canvas.w), height: px(canvas.h),
+    transform: `translate(${px(cam.e)}px, ${px(cam.f)}px) scale(${cam.s})`, transformOrigin: '50% 50%',
+  } as const
   const rectOf = (id: string): CanvasRect | null =>
     (drag && drag.id === id ? drag.rect : measured[id]?.rect) ?? null
   const sel = selectedLayerId ? rectOf(selectedLayerId) : null
@@ -270,7 +341,7 @@ export default function CanvasOverlay({
           position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none',
         }}
       >
-        <div style={{ position: 'absolute', left: 0, top: 0, ...camStyle }}>
+        <div style={camStyle}>
           {visible.map((l) => {
             const r = rectOf(l.id)
             if (!r) return null
@@ -280,9 +351,9 @@ export default function CanvasOverlay({
                 data-canvas-hit={l.id}
                 title="拖动改位置（按住 Alt 关掉吸附）"
                 onPointerDown={(e) => onDown(e, l.id)}
-                onPointerMove={onMove}
-                onPointerUp={onUp}
-                onPointerCancel={onUp}
+                // move/up 挂在 window 上（见 onDown）。这里只兜一手「捕获被系统收走」：
+                // 元素被移除/别处抢走捕获时收尾，不至于留下一个永远收不了尾的 transient 序列。
+                onLostPointerCapture={() => onUp()}
                 style={{
                   position: 'absolute', left: px(r.x), top: px(r.y), width: px(r.w), height: px(r.h),
                   pointerEvents: 'auto', cursor: 'move',
@@ -295,7 +366,7 @@ export default function CanvasOverlay({
 
       {/* 视觉层：吸附线 + 选中框 + 四角手柄。全程不吃指针（手柄的缩放交互是 Task 4） */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, ...camStyle }}>
+        <div style={camStyle}>
           {guides.map((g, i) => (
             <div
               key={`${g.axis}-${g.pos}-${i}`}
@@ -346,10 +417,51 @@ function measureLayer(root: HTMLElement, el: HTMLElement): Measured | null {
   const w = lw * m.a
   const h = lh * m.d
   const rect: CanvasRect = { x: x + lw / 2 + m.e - w / 2, y: y + lh / 2 + m.f - h / 2, w, h }
-  return {
-    rect, tx: rect.x - x, ty: rect.y - y, layoutW: lw, layoutH: lh,
-    needHeight: getComputedStyle(el).bottom !== 'auto',
-  }
+  return { rect, tx: rect.x - x, ty: rect.y - y, layoutW: lw, layoutH: lh }
+}
+
+/**
+ * 「给这个元素写一个 top，它的高度会不会跟着变？」——会变就必须连 height 一起固化。
+ *
+ * 直接探而不是靠 `getComputedStyle` 的 top/bottom 判：**Chrome 对任何已定位元素返回的都是 used value**
+ * （实测 `.cap` 明明只写了 `bottom:150px`，computed top 也是 `1615.22px`），单看这两个值区分不出
+ * 「作者写的是 bottom」还是「作者写的是 top」。而我们真正关心的只有一件事：写 top 之后高度变不变。
+ * 于是把 used top 挪 1px 写进 inline，量一次高，再原样还原——一次同步的读改读，React 看不见，
+ * 用户也看不见（没有跨帧的中间态）。静态流内元素直接 false（它压根没有 bottom 约束）。
+ */
+function heightWouldCollapse(el: HTMLElement | null): boolean {
+  if (!el) return false
+  const cs = getComputedStyle(el)
+  if (cs.position !== 'absolute' && cs.position !== 'fixed') return false
+  if (cs.bottom === 'auto') return false
+  const top = parseFloat(cs.top)
+  if (!Number.isFinite(top)) return false
+  const h0 = el.offsetHeight
+  const prev = el.style.top
+  el.style.top = `${top + 1}px`
+  const h1 = el.offsetHeight
+  el.style.top = prev
+  return h1 !== h0
+}
+
+/**
+ * 合成在容器里的位置与缩放（显示 px，相对容器左上角）。
+ *
+ * **不能拿容器自己的宽算**：Player 按合成宽高比适配容器，横屏 spec（1920×1080）放进 9:16 的容器里是
+ * 按宽适配、上下留黑边的——把原点当成容器左上角、比例当成 `容器宽/画布宽`，整层浮层就会纵向错位
+ * 半个黑边。故一律以 `.specRoot`（合成根，absolute inset:0，正好是合成的可视矩形）现算：
+ * 布局宽 `offsetWidth` 是画布 px，屏幕宽 `rect.width` 是显示 px，两者的比就是缩放。
+ *
+ * **就绪判据**：Player 的缩放是挂在祖先上的 transform，首帧里可能还没写上，此刻 rect 宽 == 布局宽
+ * （比例算出来是 1，命中框会撑成画布那么大铺满整个剪辑台）。合成不可能比容器还宽，故用「装得下容器」
+ * 当就绪判据，没就绪返回 null 让调用方下一帧重试。
+ */
+function stageBox(container: HTMLElement, root: HTMLElement): { x: number; y: number; scale: number } | null {
+  const c = container.getBoundingClientRect()
+  const r = root.getBoundingClientRect()
+  if (r.width === 0 || root.offsetWidth === 0 || c.width === 0) return null
+  if (r.width > c.width + 1 || r.height > c.height + 1) return null
+  return { x: r.left - c.left, y: r.top - c.top, scale: r.width / root.offsetWidth }
 }
 
 /** `#cam` 当前的推镜变换（缩放 + 平移，见 Cam）。找不到/解析不了就当没推镜。 */
