@@ -13,6 +13,7 @@ import { StatusTag } from '../../../components/ContentCard'
 import { useConfirm } from '../../../components/ui/Confirm'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
 import type { TaskRun } from '../../../useTaskRun'
+import CanvasOverlay from './CanvasOverlay'
 import InspectorPane from './InspectorPane'
 import QueuePane from './QueuePane'
 import ShotList from './ShotList'
@@ -391,6 +392,7 @@ export default function EditorPage({
               selected={selected} current={current} ed={ed} playerRef={playerRef}
               busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
               talkBlocked={vp.tpl === 'talk' && !vp.uploadAssetId}
+              currentSec={currentSec} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
             />
           </div>
 
@@ -474,6 +476,7 @@ export default function EditorPage({
 /** 中栏预览区的四种状态：没选项 / 没 spec（待出片）/ 自定义模板 / 正常播放。 */
 function StageBody({
   selected, current, ed, playerRef, busy, videoRun, onMakeVideo, talkBlocked,
+  currentSec, selectedLayerId, onSelectLayer,
 }: {
   selected: string
   current: ContentItemView | null
@@ -484,7 +487,13 @@ function StageBody({
   onMakeVideo: (assetId: number) => void
   /** tpl==='talk' 但还没选口播素材——出片按钮跟着 InspectorPane 一起禁用，不靠后端 400 兜底 */
   talkBlocked: boolean
+  /** 以下三项给画布浮层（CanvasOverlay）：它按当前时刻挑可见图层、画选中框、写回位置。 */
+  currentSec: number
+  selectedLayerId: string | null
+  onSelectLayer: (layerId: string | null) => void
 }) {
+  // hooks 必须在所有 early return 之前：下面有六个分支状态，ref 挂在钩子里才不会时有时无。
+  const stageRef = useRef<HTMLDivElement>(null)
   const hint = 'max-w-[420px] text-center text-xs leading-relaxed text-[var(--fc-line)]'
   if (!selected) return <div className={hint}>先在左上角选一个项目</div>
   if (!current) return <div className={hint}>在左栏队列里点一条内容进入剪辑台</div>
@@ -511,7 +520,8 @@ function StageBody({
     return <div className={hint}>自定义模板暂不支持剪辑——它的画面由 LLM 产出的模板 HTML 直接渲染，没有走图层模型（spec 的 layers 是空的）。</div>
   }
   return (
-    <div style={{ width: CANVAS_W, height: CANVAS_H }}>
+    // 相对定位容器：画布浮层（选中框/命中区/吸附线）铺在 Player 上，坐标原点就是画布左上角
+    <div ref={stageRef} style={{ position: 'relative', width: CANVAS_W, height: CANVAS_H }}>
       <Player
         ref={playerRef}
         component={SpecComposition}
@@ -522,6 +532,11 @@ function StageBody({
         compositionHeight={spec.canvas.height}
         style={{ width: '100%', height: '100%' }}
         controls
+      />
+      <CanvasOverlay
+        spec={spec} currentSec={currentSec} playerRef={playerRef}
+        selectedLayerId={selectedLayerId} onSelectLayer={onSelectLayer}
+        ed={ed} containerRef={stageRef}
       />
     </div>
   )
