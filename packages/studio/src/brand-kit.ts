@@ -74,11 +74,21 @@ const TITLE_BASE_LANDSCAPE: Record<string, Record<string, number>> = {
   changelog: { title: 64 },
 }
 
+/** 有专属 CSS / 专属 lower 分支的模板。与 `SpecView.tsx:8` 的 TEMPLATE_CLASSES 同一份名单。 */
+const KNOWN_TEMPLATES = new Set(['flash', 'story', 'demo', 'insight', 'changelog', 'talk'])
+
 /** 解析某模板/某取向下某标题类的基准字号；无表项则返回 undefined（该类不受 titleScale 影响）。
- *  `landscape` 由调用方按 `canvas.width > canvas.height` 判定（正方形算竖版——CSS 的
- *  `.landscape` 类同样只在宽大于高时挂上）。 */
+ *
+ *  未知模板（`custom-<id>`，见 videospec.ts）回落到 flash——与渲染侧 `SpecView.tsx:14 templateClass`
+ *  的回落同一口径：custom 走的正是 `lower()` 的 default 分支（= lowerFlash，真产 painT 层），
+ *  渲染时也挂 `.tpl-flash` 的 CSS，所以它的标题基准字号就是 flash 的那一份。不回落的话 custom
+ *  查表落空、titleScale 对 custom 空转。
+ *
+ *  `landscape` 由调用方按 `canvas.width >= canvas.height` 判定（正方形算横版——与
+ *  `SpecView.tsx:55` 挂 `.landscape` 类的判定同口径；kit 写的行内字号会盖掉 CSS，两处分叉就会错配）。 */
 export function titleBaseFontSize(template: string, cssClass: string, landscape = false): number | undefined {
-  return (landscape ? TITLE_BASE_LANDSCAPE : TITLE_BASE_PORTRAIT)[template]?.[cssClass]
+  const t = KNOWN_TEMPLATES.has(template) ? template : 'flash'
+  return (landscape ? TITLE_BASE_LANDSCAPE : TITLE_BASE_PORTRAIT)[t]?.[cssClass]
 }
 
 /** 只替换文本的第一行，其余行（五模板的 `@品牌名` 第二行）原样保留。 */
@@ -95,8 +105,9 @@ export function applyBrandKit(spec: VideoSpec, kit: BrandKit): VideoSpec {
   }
 
   // 画幅取向决定标题基准字号取哪张表（横版各模板字号更小）。kit 写的是**行内** fontSize、会盖掉
-  // CSS，所以这里必须跟 CSS 的 `.landscape` 判定同口径，否则横版会落一个偏大的字号。
-  const landscape = spec.canvas.width > spec.canvas.height
+  // CSS，所以这里必须跟渲染侧挂 `.landscape` 类的判定逐字同口径（`SpecView.tsx:55` 是
+  // `width >= height`，正方形算横版），否则两处分叉时会落一个与实际 CSS 不匹配的字号。
+  const landscape = spec.canvas.width >= spec.canvas.height
 
   const layers = spec.layers.map((layer): Layer => {
     if (layer.overridden) return layer            // 手调过的层：kit 不碰
@@ -115,7 +126,7 @@ export function applyBrandKit(spec: VideoSpec, kit: BrandKit): VideoSpec {
     }
     // titleScale：标题层写 fontSize = round(基准 × scale)。基准取值顺序——
     // ① 该层已有显式 fontSize（剪辑台手调过字号，以用户的值为准）；
-    // ② 否则查 TITLE_BASE_FONT_SIZE（抄自模板 CSS 的竖版字号）。
+    // ② 否则查 TITLE_BASE_PORTRAIT / TITLE_BASE_LANDSCAPE（抄自模板 CSS，按画幅取向选表）。
     // lower 产出本身不写 fontSize（字号归模板 CSS），所以走的基本都是 ②——没有基准表的话
     // titleScale 就是空转，这正是引入该表的原因。
     if (titleScale !== undefined && cssClass && TITLE_CLASSES.has(cssClass)) {

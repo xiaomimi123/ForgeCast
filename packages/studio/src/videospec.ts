@@ -112,7 +112,7 @@ export interface AudioSpec {
 export interface BrandKit {
   primaryColor?: string           // CTA 类层的文字色
   accentColor?: string            // card / highlightCard 类层的背景色
-  titleScale?: number             // 标题类层的 fontSize 乘数（仅作用于已有显式 fontSize 的层）
+  titleScale?: number             // 标题类层的 fontSize 乘数
   ctaText?: string                // CTA 主文案（只换第一行，品牌名第二行保留）
 }
 

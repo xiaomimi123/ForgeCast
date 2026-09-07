@@ -195,9 +195,19 @@ describe('applyBrandKit：titleScale → 标题类层写 round(基准 × scale)'
     }
   })
 
-  it('正方形画幅算竖版（与 CSS 的 .landscape 只在宽>高时挂上同口径）', () => {
+  it('正方形画幅算横版（与 SpecView.tsx:55 的 width >= height 挂 .landscape 同口径）', () => {
     const s = lower(sem() as any, { ...base0, template: 'flash', canvas: { width: 1080, height: 1080 } } as any)
-    expect(applyBrandKit(s, { titleScale: 1 }).layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(100)
+    expect(applyBrandKit(s, { titleScale: 1 }).layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(84)
+  })
+
+  it('custom-<id> 模板回落到 flash 基准（lower 的 default 分支就是 lowerFlash，真产 painT 层）', () => {
+    const s = lower(sem() as any, { ...base0, template: 'custom-42' } as any)
+    expect(s.layers.find((l) => l.id === 'flashHook')!.style.cssClass).toBe('painT')
+    expect(applyBrandKit(s, { titleScale: 1.5 }).layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(150)
+    // 横版同样回落 flash（84 × 1.5 = 126）
+    const land = lower(sem() as any, { ...base0, template: 'custom-42', canvas: { width: 1920, height: 1080 } } as any)
+    expect(applyBrandKit(land, { titleScale: 1.5 }).layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(126)
+    expect(titleBaseFontSize('custom-42', 'painT')).toBe(100)
   })
 
   it('overridden 的标题层仍然跳过', () => {
