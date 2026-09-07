@@ -42,9 +42,9 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000
  * （实测高度 21→41px，深色底条整片变高）。补一个显式 height 让 bottom 被忽略即可。反过来，普通
  * 文档流图层（bottom 是 auto）**不写** height：那会把「文字变长自动撑高」这条也一起冻死。
  *
- * 判据只在**第一次固化**时可信：getComputedStyle 对已定位元素返回的是**used value**，一个被我们
- * 固化过（position:absolute + top）的层，它的 bottom 也会解析成 px 而不再是 'auto'。所以调用方要用
- * 「style.y 还没有」把这条判据关进第一次（见 onDown）。
+ * 判据**自守，不需要调用方门控**：`heightWouldCollapse` 先按 `bottom === 'auto'` 挡掉没有底部约束的层，
+ * 再拿「把 top 挪 1px 高度变不变」实测一次（见该函数）。已经固化过的层再探一遍只会得到同样的答案，
+ * 而且 `setLayerStyle` 是合并式的 patch——判成 false 时不写 height，也不会把上一次写下的 height 抹掉。
  *
  * **已知限制**：从 transform 还原视觉矩形时假定 `transform-origin` 是默认的元素中心（六份模板的 CSS 与
  * LayerView 写的 transform 都没改过它）。哪天模板给某个类写了非中心的 transform-origin，那一层的命中框
@@ -112,9 +112,10 @@ interface DragState {
   resizeHeight: boolean
   /** resize：宽度变化是否联动字号（text/caption 才联动；image/shape 只改宽高）。 */
   scalesFont: boolean
-  /** resize：最后一帧用的比例 / 视觉左缘 / 字号——松手时的下缘校正要用同一组参数重算（见 onUp）。 */
+  /** resize：最后一帧用的比例 / 视觉左上角 / 字号——松手时的高度校正要用同一组参数重算（见 fixBottomEdge）。 */
   lastR: number
   lastX: number
+  lastY: number
   lastFont: number | undefined
   /** 按下那一刻的 spec，每帧都从它重算（不做增量累加，中途回拖不漂）——同 TimelinePane。 */
   base: VideoSpec
@@ -392,7 +393,7 @@ export default function CanvasOverlay({
       // needHeight 的层（如 bottom 定位的字幕条）本来就得有显式高度，缩放时按比例跟着走。
       resizeHeight: !scalesFont || needHeight,
       scalesFont,
-      lastR: 1, lastX: m.rect.x, lastFont: undefined,
+      lastR: 1, lastX: m.rect.x, lastY: m.rect.y, lastFont: undefined,
       baseFont: el ? parseFloat(getComputedStyle(el).fontSize) || 0 : 0,
       scale: box.scale * cam.s,
       others: visible.filter((l) => l.id !== layerId).map((l) => measured[l.id]?.rect).filter((x): x is CanvasRect => !!x),
@@ -454,31 +455,46 @@ export default function CanvasOverlay({
     // 松手时的下缘校正要用同一组参数重算一次（见 onUp），故记下来。
     d.lastR = r
     d.lastX = x
+    d.lastY = y
     d.lastFont = fontSize
     ed.applyTransient(setLayerStyle(d.base, d.layerId, geometryPatch(d, x, y, { r, height: d.resizeHeight, fontSize })))
   }
 
   /**
-   * 上侧手柄缩**文字层**时的下缘校正。
+   * 缩放松手时的**高度校正**：把「按比例估的高度」换成浏览器重排后的真实高度。
    *
-   * 缩放期间没法知道文字层的真实新高度（换行要等浏览器重排），`onResize` 只能按比例估一个 `h`，
-   * 而「抓上边 ⇒ 下缘不动」这条正是靠 h 算出来的 y。多行文本换行位置一跳，估算能差一整行，
-   * 且这个误差会跟着 `patch.y` 一起 **commit 进 spec**，不只是拖拽时的视觉抖动。
+   * 缩放期间没法知道文字层的真实新高度（换行要等重排），`onResize` 只能按比例估一个 `h`。它有两处会
+   * 把误差**写进 spec**（不只是拖拽时的视觉抖动）：
+   * - 抓上侧手柄时「下缘不动」的 y 是由这个 h 算出来的——多行文本换行位置一跳，能差一整行；
+   * - 需要显式高度的文字/字幕层（`.cap` 那种 bottom 定位的，见 `needHeight`）会把 `layoutH × r` 直接
+   *   冻进 `style.height`——字号联动之后真实高度并不等比（行高取整、换行数变化），底条要么留一截空、
+   *   要么把最后一行压出去。
    *
-   * 松手这一刻 DOM 已按最后一帧重排完，此时重测一次真实高度、把 y 按「下缘 = 原下缘」重算，
-   * 再补一次 `applyTransient`——仍在同一段 transient 序列里，所以还是**一步 undo**。
-   * 只对 `!resizeHeight`（高度交给字号和换行的层）做：写死了 height 的层高度就是估算值本身，没有误差。
+   * 松手这一刻 DOM 已按最后一帧重排完，此时重测一次再补一发 `applyTransient`——仍在同一段 transient
+   * 序列里，所以依旧是**一步 undo**。
+   *
+   * `image`/`shape`（`!scalesFont`）不在校正范围内：它们的「等比改宽高」本来就是要写死的那个值，
+   * 量出来也只会原样量回我们写下的数，校正是空转。
    */
   function fixBottomEdge(d: DragState) {
-    if (d.mode !== 'resize' || !d.fromTop || d.resizeHeight || !d.moved) return
+    if (d.mode !== 'resize' || !d.moved) return
+    /** 高度由字号和换行决定、却被我们写成显式值的那一支——要拿「内容自然高」把它换掉。 */
+    const refitHeight = d.scalesFont && d.resizeHeight
+    if (!d.fromTop && !refitHeight) return
     const container = containerRef.current
     const root = container?.querySelector<HTMLElement>('.specRoot')
     const el = container?.querySelector<HTMLElement>(`#${CSS.escape(d.layerId)}`)
     if (!root || !el) return
     const m = measureLayer(root, el)
-    if (!m) return
-    const y = d.rect.y + d.rect.h - m.rect.h
-    ed.applyTransient(setLayerStyle(d.base, d.layerId, geometryPatch(d, d.lastX, y, { r: d.lastR, fontSize: d.lastFont })))
+    const lh = el.offsetHeight
+    if (!m || !lh) return
+    /** 布局高 → 视觉高的比（该层自身 transform 的纵向缩放，一般是 1）。 */
+    const a = m.rect.h / lh
+    const layoutH = refitHeight ? naturalHeight(el) : lh
+    const y = d.fromTop ? d.rect.y + d.rect.h - layoutH * a : d.lastY
+    const patch = geometryPatch(d, d.lastX, y, { r: d.lastR, fontSize: d.lastFont })
+    if (d.resizeHeight) patch.height = round3(refitHeight ? layoutH : d.layoutH * d.lastR)
+    ed.applyTransient(setLayerStyle(d.base, d.layerId, patch))
   }
 
   function onUp(_e?: PointerEvent | ReactPointerEvent<HTMLDivElement>) {
@@ -505,6 +521,7 @@ export default function CanvasOverlay({
   const rectOf = (id: string): CanvasRect | null =>
     (drag && drag.id === id ? drag.rect : measured[id]?.rect) ?? null
   const sel = selectedLayerId ? rectOf(selectedLayerId) : null
+  const selKind = selectedLayerId ? spec.layers.find((l) => l.id === selectedLayerId)?.content.kind : undefined
 
   return (
     <>
@@ -531,7 +548,9 @@ export default function CanvasOverlay({
               <div
                 key={l.id}
                 data-canvas-hit={l.id}
-                title="拖动改位置（按住 Alt 关掉吸附）"
+                // tooltip 只给选中层：命中区铺满整个图层，人人都挂 title 的话，鼠标在画面上一停就弹一条
+                // 黄条盖住画面（还正好挡住你要对齐的那块）。选中之后才提示，此时用户确实在找拖拽手感。
+                title={l.id === selectedLayerId ? '拖动改位置（按住 Alt 关掉吸附）' : undefined}
                 onPointerDown={(e) => onDown(e, l.id)}
                 // move/up 挂在 window 上（见 onDown）。这里只兜一手「捕获被系统收走」：
                 // 元素被移除/别处抢走捕获时收尾，不至于留下一个永远收不了尾的 transient 序列。
@@ -568,7 +587,9 @@ export default function CanvasOverlay({
                 <div
                   key={`${hx}-${hy}`}
                   data-canvas-hit={selectedLayerId}
-                  title="拖动改宽（文字层字号同比联动）"
+                  data-canvas-handle=""
+                  // 文案跟着层的类型走：说「字号同比联动」而选中的是图片/形状层，就是在描述一件不会发生的事
+                  title={selKind === 'image' || selKind === 'shape' ? '拖动改宽（等比改高）' : '拖动改宽（字号同比联动）'}
                   onPointerDown={(e) => { e.stopPropagation(); onDown(e, selectedLayerId, 'resize', hx === 0, hy === 0) }}
                   onLostPointerCapture={() => onUp()}
                   style={{
@@ -638,6 +659,26 @@ function heightWouldCollapse(el: HTMLElement | null): boolean {
   const h1 = el.offsetHeight
   el.style.top = prev
   return h1 !== h0
+}
+
+/**
+ * 「这个元素的内容自然高是多少？」——即把我们写下的 `height` 拿掉、也不让 `bottom` 参与约束时的高度。
+ *
+ * 不能直接读 `offsetHeight`：需要显式高度的层（`.cap` 那种 `bottom` 定位的）上，`offsetHeight` 就是我们
+ * 刚写进去的那个估算值，量回来只会原样得到它。也不能只清 `height`：top 与 bottom 同时成立时 CSS 会
+ * 反过来去算 height，字幕条又会被抻到贴底（见 `Measured` 的说明）。故两者一起临时置 auto。
+ *
+ * 同 `heightWouldCollapse`：一次同步的读改读，改完原样还原，React 与用户都看不见中间态。
+ */
+function naturalHeight(el: HTMLElement): number {
+  const h0 = el.style.height
+  const b0 = el.style.bottom
+  el.style.height = 'auto'
+  el.style.bottom = 'auto'
+  const h = el.offsetHeight
+  el.style.height = h0
+  el.style.bottom = b0
+  return h
 }
 
 /**
