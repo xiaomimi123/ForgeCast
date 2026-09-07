@@ -1,5 +1,5 @@
 import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { clearLayerGeometry, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer } from '@forgecast/editing'
+import { clearLayerGeometry, GEOMETRY_KEYS, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer } from '@forgecast/editing'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
@@ -380,7 +380,7 @@ function LayerInspector({ ed, spec, layerId }: {
   const num = (v: string): number | undefined => (v === '' ? undefined : Number(v))
 
   /** 画布拖拽/缩放写下的几何覆盖。全都没有＝这层还在模板的文档流里，「清除」无事可做。 */
-  const hasGeometry = (['x', 'y', 'width', 'height', 'fontSize'] as const).some((k) => st[k] !== undefined)
+  const hasGeometry = GEOMETRY_KEYS.some((k) => st[k] !== undefined)
 
   const numField = (label: string, key: 'x' | 'y' | 'width' | 'height' | 'fontSize') => (
     <Field label={label}>

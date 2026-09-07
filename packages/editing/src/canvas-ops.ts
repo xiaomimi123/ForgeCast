@@ -79,8 +79,10 @@ export function clampToCanvas(
   return { x: round3(x), y: round3(y) }
 }
 
-/** style 里属于「排版几何」的字段——回文档流时全部删掉。 */
-const GEOMETRY_KEYS = ['x', 'y', 'width', 'height', 'fontSize'] as const
+/** style 里属于「排版几何」的字段——回文档流时全部删掉。
+ *  导出是给 UI 用的：右栏「清除位置覆盖」要按同一套键判断「这层有没有覆盖」，
+ *  两边各抄一份数组的话，将来加一个几何字段就会出现「清得掉但按钮是灰的」。 */
+export const GEOMETRY_KEYS = ['x', 'y', 'width', 'height', 'fontSize'] as const
 
 /** 单层排版重置：从 style 删除 x/y/width/height/fontSize（回文档流）。全都没有时返回原 spec 引用。 */
 export function clearLayerGeometry(spec: VideoSpec, layerId: string): VideoSpec {

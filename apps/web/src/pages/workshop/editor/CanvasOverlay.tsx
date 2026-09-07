@@ -72,6 +72,29 @@ interface Measured {
  * 若不跟着推，用户会发现框和卡片错开一截。故：坐标算 / 存都在 offset 系，**只有渲染**时把浮层整体套上
  * 同一个推镜变换；指针位移换算也要除掉它（屏幕上动 1px，画布里只动 1/s px）。
  */
+/**
+ * 「视觉位置 → 写进 style 的几何 patch」的**唯一**出口。拖动 / 缩放 / 键盘微移三条写回路径都走它，
+ * 免得 `- tx - mx` 这类修正项在三处各抄一份（margin 那条就是漏抄一处才被发现的，见 Measured.mx）。
+ *
+ * `vx/vy` 是目标**视觉**左上角（画布坐标），`r` 是缩放比（拖动/微移恒为 1）。
+ * `tx` 随 r 缩、`ty` 不缩、margin 都不缩——三者的理由见 `onResize` 的注释。
+ */
+function geometryPatch(
+  src: { tx: number; ty: number; mx: number; my: number; layoutW: number; layoutH: number },
+  vx: number, vy: number,
+  opts: { r?: number; height?: boolean; fontSize?: number } = {},
+): Partial<LayerStyle> {
+  const r = opts.r ?? 1
+  const patch: Partial<LayerStyle> = {
+    x: round3(vx - src.tx * r - src.mx),
+    y: round3(vy - src.ty - src.my),
+    width: round3(src.layoutW * r),
+  }
+  if (opts.height) patch.height = round3(src.layoutH * r)
+  if (opts.fontSize !== undefined) patch.fontSize = opts.fontSize
+  return patch
+}
+
 interface Cam { s: number; e: number; f: number }
 const CAM_IDENTITY: Cam = { s: 1, e: 0, f: 0 }
 
@@ -89,6 +112,10 @@ interface DragState {
   resizeHeight: boolean
   /** resize：宽度变化是否联动字号（text/caption 才联动；image/shape 只改宽高）。 */
   scalesFont: boolean
+  /** resize：最后一帧用的比例 / 视觉左缘 / 字号——松手时的下缘校正要用同一组参数重算（见 onUp）。 */
+  lastR: number
+  lastX: number
+  lastFont: number | undefined
   /** 按下那一刻的 spec，每帧都从它重算（不做增量累加，中途回拖不漂）——同 TimelinePane。 */
   base: VideoSpec
   startX: number
@@ -289,8 +316,11 @@ export default function CanvasOverlay({
     if (!dir) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     if (!selectedLayerId || playing || blocked || ed.busy || ed.saving || dragRef.current) return
+    // 用 closest 而不是只看 target 自己的 tagName：右栏的下拉（背景变体/BGM/情绪）是 `<select>`，
+    // 漏了它的话，聚焦下拉按 ↓ 会「既翻不动选项、又把图层挪 1px」；closest 还顺手覆盖了包了一层
+    // 壳的控件（点在 label/包装 div 上但焦点在里面的 input）。
     const t = e.target as HTMLElement | null
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+    if (t?.closest?.('input, textarea, select, [contenteditable]')) return
     const s = ed.spec
     const m = measured[selectedLayerId]
     const container = containerRef.current
@@ -301,11 +331,8 @@ export default function CanvasOverlay({
     const c = clampToCanvas(raw, canvas)
     // 收掉右栏输入框可能还没收尾的 transient 序列（同 onDown），免得这一下微移挤进上一次数值编辑那格。
     ed.commit()
-    ed.apply(setLayerStyle(s, selectedLayerId, {
-      x: round3(c.x - m.tx - m.mx), y: round3(c.y - m.ty - m.my), width: round3(m.layoutW),
-      ...(heightWouldCollapse(container.querySelector<HTMLElement>(`#${CSS.escape(selectedLayerId)}`))
-        ? { height: round3(m.layoutH) } : null),
-    }))
+    const needHeight = heightWouldCollapse(container.querySelector<HTMLElement>(`#${CSS.escape(selectedLayerId)}`))
+    ed.apply(setLayerStyle(s, selectedLayerId, geometryPatch(m, c.x, c.y, { height: needHeight })))
   }
   // 闭包每次渲染都换新（measured/ed/selectedLayerId 都会变），放进 ref 由一个常挂的监听转发，
   // 免得每帧摘挂一次 window 监听。姿势同上面的 measureRef。
@@ -365,6 +392,7 @@ export default function CanvasOverlay({
       // needHeight 的层（如 bottom 定位的字幕条）本来就得有显式高度，缩放时按比例跟着走。
       resizeHeight: !scalesFont || needHeight,
       scalesFont,
+      lastR: 1, lastX: m.rect.x, lastFont: undefined,
       baseFont: el ? parseFloat(getComputedStyle(el).fontSize) || 0 : 0,
       scale: box.scale * cam.s,
       others: visible.filter((l) => l.id !== layerId).map((l) => measured[l.id]?.rect).filter((x): x is CanvasRect => !!x),
@@ -396,10 +424,7 @@ export default function CanvasOverlay({
     setGuides(snapped.guides.filter((g) => (g.axis === 'x' ? clamped.x === snapped.x : clamped.y === snapped.y)))
     // 固化与位移写在**同一次** applyTransient 里：width 必须一起写死，否则 position:absolute 之后
     // 宽度从「文档流里的整行」塌成内容宽，文字换行、观感全变。style.x 存的是 left，故要减掉 transform。
-    ed.applyTransient(setLayerStyle(d.base, d.layerId, {
-      x: round3(clamped.x - d.tx - d.mx), y: round3(clamped.y - d.ty - d.my), width: round3(d.layoutW),
-      ...(d.needHeight ? { height: round3(d.layoutH) } : null),
-    }))
+    ed.applyTransient(setLayerStyle(d.base, d.layerId, geometryPatch(d, clamped.x, clamped.y, { height: d.needHeight })))
   }
 
   /**
@@ -424,13 +449,36 @@ export default function CanvasOverlay({
     const x = d.fromLeft ? d.rect.x + d.rect.w - w : d.rect.x
     const y = d.fromTop ? d.rect.y + d.rect.h - h : d.rect.y
     setDrag({ id: d.layerId, rect: { x, y, w, h } })
-    const patch: Partial<LayerStyle> = {
-      x: round3(x - d.tx * r - d.mx), y: round3(y - d.ty - d.my), width: round3(d.layoutW * r),
-    }
-    if (d.resizeHeight) patch.height = round3(d.layoutH * r)
     // 字号取整：spec 里留一串 23.9997 既没意义，也会让右栏的数字框变得没法看。
-    if (d.scalesFont && d.baseFont > 0) patch.fontSize = Math.round(d.baseFont * r)
-    ed.applyTransient(setLayerStyle(d.base, d.layerId, patch))
+    const fontSize = d.scalesFont && d.baseFont > 0 ? Math.round(d.baseFont * r) : undefined
+    // 松手时的下缘校正要用同一组参数重算一次（见 onUp），故记下来。
+    d.lastR = r
+    d.lastX = x
+    d.lastFont = fontSize
+    ed.applyTransient(setLayerStyle(d.base, d.layerId, geometryPatch(d, x, y, { r, height: d.resizeHeight, fontSize })))
+  }
+
+  /**
+   * 上侧手柄缩**文字层**时的下缘校正。
+   *
+   * 缩放期间没法知道文字层的真实新高度（换行要等浏览器重排），`onResize` 只能按比例估一个 `h`，
+   * 而「抓上边 ⇒ 下缘不动」这条正是靠 h 算出来的 y。多行文本换行位置一跳，估算能差一整行，
+   * 且这个误差会跟着 `patch.y` 一起 **commit 进 spec**，不只是拖拽时的视觉抖动。
+   *
+   * 松手这一刻 DOM 已按最后一帧重排完，此时重测一次真实高度、把 y 按「下缘 = 原下缘」重算，
+   * 再补一次 `applyTransient`——仍在同一段 transient 序列里，所以还是**一步 undo**。
+   * 只对 `!resizeHeight`（高度交给字号和换行的层）做：写死了 height 的层高度就是估算值本身，没有误差。
+   */
+  function fixBottomEdge(d: DragState) {
+    if (d.mode !== 'resize' || !d.fromTop || d.resizeHeight || !d.moved) return
+    const container = containerRef.current
+    const root = container?.querySelector<HTMLElement>('.specRoot')
+    const el = container?.querySelector<HTMLElement>(`#${CSS.escape(d.layerId)}`)
+    if (!root || !el) return
+    const m = measureLayer(root, el)
+    if (!m) return
+    const y = d.rect.y + d.rect.h - m.rect.h
+    ed.applyTransient(setLayerStyle(d.base, d.layerId, geometryPatch(d, d.lastX, y, { r: d.lastR, fontSize: d.lastFont })))
   }
 
   function onUp(_e?: PointerEvent | ReactPointerEvent<HTMLDivElement>) {
@@ -438,6 +486,7 @@ export default function CanvasOverlay({
     if (!d) return
     dragRef.current = null
     d.off()
+    fixBottomEdge(d)
     setDrag(null)
     setGuides([])
     setNonce((n) => n + 1)
