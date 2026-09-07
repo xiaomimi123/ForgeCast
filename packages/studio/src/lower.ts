@@ -16,7 +16,8 @@
 import type { BeatGrid, Shot } from './hyperframes'
 import { gridBeats, planCutTimes, snapStarts } from './hyperframes'
 import type { Cue } from './tts'
-import type { AudioSpec, Effect, Layer, LayerContent, Section, Semantic, VideoSpec } from './videospec'
+import type { AudioSpec, BrandKit, Effect, Layer, LayerContent, Section, Semantic, VideoSpec } from './videospec'
+import { applyBrandKit } from './brand-kit'
 
 export interface LowerPlan {
   grid: { t0: number; T: number }
@@ -43,6 +44,8 @@ export interface LowerOpts {
    *  时 durationSec 会短于片源）。落进视频层 content.sourceDurationSec/trimEnd，
    *  消费方是 editing 的 trimVideoLayer——吐尾不得越过片源物理末尾。 */
   sourceDurationSec?: number
+  /** 品牌 kit：lower 收尾统一套用（applyBrandKit）。缺省/空对象 ⇒ 恒等，产出与不传时逐字节一致。 */
+  brandKit?: BrandKit
 }
 
 // ---- section 查找辅助：与 props.ts 里同样的「按稳定 id 查」路径，缺失时给安全默认值，不抛错 ----
@@ -573,7 +576,7 @@ export function lower(semantic: Semantic, opts: LowerOpts): VideoSpec {
   // opts.audio.captionsEnabled 为 false；这里再兜底一次，双重保险不依赖调用方守约。
   if (opts.audio.captionsEnabled && opts.template !== 'talk') layers = layers.concat(captionLayers(opts.cues))
 
-  return {
+  const spec: VideoSpec = {
     version: 1,
     videoId: opts.videoId,
     slug: opts.slug,
@@ -586,4 +589,6 @@ export function lower(semantic: Semantic, opts: LowerOpts): VideoSpec {
     audio: opts.audio,
     warnings: [],
   }
+  // 收尾统一套品牌 kit：空/未传时 applyBrandKit 返回原引用，产出与本功能上线前逐字节一致。
+  return opts.brandKit ? applyBrandKit(spec, opts.brandKit) : spec
 }
