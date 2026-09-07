@@ -2,7 +2,7 @@ import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/compositio
 import { applyStylePreset, applyStylePresetToKind, clearLayerGeometry, GEOMETRY_KEYS, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer, type StylePresetPayload } from '@forgecast/editing'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, createStylePreset, deleteStylePreset, listStylePresets, type Asset, type BgmList, type ContentItemView, type CustomTemplate, type StylePreset } from '../../../api'
+import { api, createStylePreset, deleteStylePreset, listLayoutTemplates, listStylePresets, type Asset, type BgmList, type ContentItemView, type CustomTemplate, type LayoutTemplate, type StylePreset } from '../../../api'
 import TaskProgress from '../../../components/TaskProgress'
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { usePrompt } from '../../../components/ui/Prompt'
@@ -584,20 +584,37 @@ function VideoParamFields({ vp, setVp, bgmList, uploadAssets }: {
   const templates = useQuery({
     queryKey: ['templates'], queryFn: () => api<CustomTemplate[]>('/api/templates'), networkMode: 'always',
   })
+  const layoutTemplates = useQuery({
+    queryKey: ['layout-templates'], queryFn: listLayoutTemplates, networkMode: 'always',
+  })
   const tplOptions = [
     ...VIDEO_TPLS,
     ...(templates.data ?? []).map((t) => ({ value: `custom-${t.id}`, label: `${t.name}（对标拆解 · ${t.aspect_ratio === 'portrait' ? '竖屏' : '横屏'}）` })),
   ]
+  // 只列「模板与当前出片模板一致、比例与当前画布比例一致」的版式——跨模板/跨比例套用会与服务端的
+  // tpl 精确匹配校验失配（400），套了也没有对应的角色位置/样式可用
+  const matchingLayoutTemplates = (layoutTemplates.data ?? []).filter(
+    (t: LayoutTemplate) => t.template === vp.tpl && t.ratio === vp.ratio,
+  )
   const sel = 'mt-1 w-full rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] p-1.5 text-sm'
   const isTalk = vp.tpl === 'talk'
   return (
     <>
       <div>
         <label className="text-xs text-[var(--fc-muted)]">模板</label>
-        <select className={sel} value={vp.tpl} onChange={(e) => setVp({ ...vp, tpl: e.target.value })}>
+        {/* 切模板：套用中的版式很可能与新模板失配，一并清掉 */}
+        <select className={sel} value={vp.tpl} onChange={(e) => setVp({ ...vp, tpl: e.target.value, layoutTemplateId: undefined })}>
           {tplOptions.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
         {vp.tpl === 'demo' && <p className="mt-1 text-xs text-[var(--fc-faint)]">需先在项目详情页上传 shots/ 截图</p>}
+      </div>
+      <div>
+        <label className="text-xs text-[var(--fc-muted)]">排版模板</label>
+        <select className={sel} value={vp.layoutTemplateId ?? ''}
+          onChange={(e) => setVp({ ...vp, layoutTemplateId: e.target.value ? Number(e.target.value) : undefined })}>
+          <option value="">不套用</option>
+          {matchingLayoutTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
       </div>
       {isTalk && (
         <div>
@@ -623,10 +640,10 @@ function VideoParamFields({ vp, setVp, bgmList, uploadAssets }: {
         <label className="text-xs text-[var(--fc-muted)]">画布比例</label>
         <div className="mt-1 flex items-center gap-4 text-sm">
           <label className="flex items-center gap-1">
-            <input type="radio" checked={vp.ratio === 'portrait'} onChange={() => setVp({ ...vp, ratio: 'portrait' })} /> 竖屏 9:16
+            <input type="radio" checked={vp.ratio === 'portrait'} onChange={() => setVp({ ...vp, ratio: 'portrait', layoutTemplateId: undefined })} /> 竖屏 9:16
           </label>
           <label className="flex items-center gap-1">
-            <input type="radio" checked={vp.ratio === 'landscape'} onChange={() => setVp({ ...vp, ratio: 'landscape' })} /> 横屏 16:9
+            <input type="radio" checked={vp.ratio === 'landscape'} onChange={() => setVp({ ...vp, ratio: 'landscape', layoutTemplateId: undefined })} /> 横屏 16:9
           </label>
         </div>
       </div>

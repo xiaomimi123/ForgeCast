@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, type AutoScoutStatus, type SettingsView } from '../api'
+import { api, getBrandKit, putBrandKit, type AutoScoutStatus, type BrandKitView, type Project, type SettingsView } from '../api'
 
 // 可编辑草稿：key 字段留空=不改（占位显示已存打码值）
 interface Draft {
@@ -161,7 +161,124 @@ export default function SettingsPage() {
       </section>
 
       <AutoScoutSection />
+
+      <BrandKitSection />
     </div>
+  )
+}
+
+// key 字段留空=不改，与顶部 Draft 同惯例；但这里空字段的语义更强——PUT 前会把空串键整个剔除
+// （见 buildPutBody），所以「清空再保存」＝把该字段从 kit 里删掉，回到未设置状态。
+interface KitDraft { primaryColor: string; accentColor: string; titleScale: string; ctaText: string }
+const emptyKitDraft: KitDraft = { primaryColor: '', accentColor: '', titleScale: '', ctaText: '' }
+
+/** 空字段（含空串）不进 PUT body——服务端整体覆盖存储的 kit，不注入的键就等于清空该字段。 */
+function buildPutBody(d: KitDraft): BrandKitView {
+  const body: BrandKitView = {}
+  if (d.primaryColor.trim()) body.primaryColor = d.primaryColor.trim()
+  if (d.accentColor.trim()) body.accentColor = d.accentColor.trim()
+  if (d.titleScale.trim()) body.titleScale = Number(d.titleScale)
+  if (d.ctaText.trim()) body.ctaText = d.ctaText
+  return body
+}
+
+/** PUT 400 时后端回 `{error: "..."}`；api() 把整个响应体拼进 Error.message，这里剥出人话部分。 */
+function extractErrorMessage(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  const jsonStart = raw.indexOf('{')
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart))
+      if (typeof parsed.error === 'string') return parsed.error
+    } catch { /* 不是 JSON，走兜底 */ }
+  }
+  return raw
+}
+
+/** 品牌 kit 编辑块（设计文档「排版工作台第二期C」）：按项目维护主色/强调色/标题缩放/CTA 文案，
+ *  出片时套用到品牌预设层。项目选择沿用 WorkshopPage 顶部下拉的既有模式（列表第一项默认选中）。 */
+function BrandKitSection() {
+  const qc = useQueryClient()
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') })
+  const [slug, setSlug] = useState('')
+  const selected = slug || projects.data?.[0]?.slug || ''
+
+  const kit = useQuery({
+    queryKey: ['brand-kit', selected],
+    queryFn: () => getBrandKit(selected),
+    enabled: !!selected,
+  })
+  const [d, setD] = useState<KitDraft>(emptyKitDraft)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  // 载入（或切项目）后回填草稿；titleScale 数字转字符串，未设置的字段留空串。
+  // 不在这里 setSaved(false)——save 成功后会 invalidate 查询触发这个 effect 再跑一次，
+  // 若在这跟着清掉 saved，"已保存" 提示会跟着刷新一闪而过，用户看不到确认。
+  useEffect(() => {
+    const k = kit.data
+    if (!k) { setD(emptyKitDraft); return }
+    setD({
+      primaryColor: k.primaryColor ?? '', accentColor: k.accentColor ?? '',
+      titleScale: k.titleScale !== undefined ? String(k.titleScale) : '', ctaText: k.ctaText ?? '',
+    })
+  }, [kit.data])
+
+  // 切项目：单独清掉「已保存」提示与错误提示，不依赖 kit.data 那条 effect
+  useEffect(() => { setSaved(false); setError('') }, [selected])
+
+  const set = (patch: Partial<KitDraft>) => { setD((p) => ({ ...p, ...patch })); setSaved(false); setError('') }
+
+  const save = useMutation({
+    mutationFn: () => putBrandKit(selected, buildPutBody(d)),
+    onSuccess: () => { setSaved(true); setError(''); qc.invalidateQueries({ queryKey: ['brand-kit', selected] }) },
+    onError: (e) => { setSaved(false); setError(extractErrorMessage(e)) },
+  })
+
+  return (
+    <section className="space-y-3 card-forge p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium">品牌 Kit（出片套用）</h3>
+        <select className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" value={selected}
+          onChange={(e) => setSlug(e.target.value)}>
+          {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
+        </select>
+      </div>
+      {!selected ? (
+        <p className="text-xs text-faint">还没有项目，先去「找项目」立项一个。</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="主色" hint="#RRGGBB">
+              <div className="flex items-center gap-2">
+                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(d.primaryColor) ? d.primaryColor : '#000000'}
+                  onChange={(e) => set({ primaryColor: e.target.value })} className="h-8 w-10 shrink-0 rounded border-[1.5px] border-ink bg-card" />
+                <input className={inputCls} value={d.primaryColor} placeholder="#RRGGBB（留空不改）" onChange={(e) => set({ primaryColor: e.target.value })} />
+              </div>
+            </Field>
+            <Field label="强调色" hint="#RRGGBB">
+              <div className="flex items-center gap-2">
+                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(d.accentColor) ? d.accentColor : '#000000'}
+                  onChange={(e) => set({ accentColor: e.target.value })} className="h-8 w-10 shrink-0 rounded border-[1.5px] border-ink bg-card" />
+                <input className={inputCls} value={d.accentColor} placeholder="#RRGGBB（留空不改）" onChange={(e) => set({ accentColor: e.target.value })} />
+              </div>
+            </Field>
+            <Field label="标题缩放" hint="0.5–2，留空不改">
+              <input type="number" min={0.5} max={2} step={0.1} className={inputCls} value={d.titleScale}
+                onChange={(e) => set({ titleScale: e.target.value })} />
+            </Field>
+            <Field label="CTA 文案" hint="≤60 字，留空不改">
+              <input className={inputCls} value={d.ctaText} onChange={(e) => set({ ctaText: e.target.value })} />
+            </Field>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="btn-fire px-4 py-1.5 text-sm disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
+            {saved && <span className="text-sm text-green-600">已保存</span>}
+            {error && <span className="text-sm text-red-600">⚠ {error}</span>}
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 

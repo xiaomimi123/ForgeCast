@@ -140,6 +140,7 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
             captions: vp.captions, ratio: vp.ratio,
             // talk 的底片是用户上传的口播视频，别的模板不带这个字段（服务端只在 tpl==='talk' 时校验它）
             uploadAssetId: vp.tpl === 'talk' ? uploadAssetId : undefined,
+            layoutTemplateId: vp.layoutTemplateId,
           }),
         })
         // 拿到 taskId（＝任务已入队、meta 已写）后立刻失效 content-items：

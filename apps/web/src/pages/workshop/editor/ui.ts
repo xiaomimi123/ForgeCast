@@ -36,6 +36,9 @@ export const BGS = [
 export interface VideoParams {
   tpl: string; bgm: string; mood: string; bg: string; captions: boolean; ratio: 'portrait' | 'landscape'
   uploadAssetId?: number
+  /** 套用的版式模板（layout_templates.id）。可选——「不套用」不带这个字段。切 tpl/ratio 时要清掉，
+   *  否则可能带着与新 tpl/ratio 失配的旧值发请求（服务端按 tpl 精确匹配，失配 400）。 */
+  layoutTemplateId?: number
 }
 
 /** 实心（黑）与描边两套按钮 class——同屏只能有一个用 SOLID，见 docs/剪辑台-实施说明.md §7 */
