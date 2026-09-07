@@ -20,6 +20,7 @@ import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
 import { buildContentItems } from './content-items'
 import { readAutoScoutCfg } from './scheduler'
+import { registerPresetRoutes } from './preset-routes'
 import { registerSpecRoutes } from './spec-routes'
 
 // 可通过 PATCH 修改的项目字段白名单
@@ -258,6 +259,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   // 剪辑台：spec 读写 + orig 快照重置。必须在 SPA `/*` 兜底之前挂载（本仓出过注册在兜底后
   // Docker 下全 404 的事故），跟 content-items 挂在一起。
   registerSpecRoutes(app, ctx, queue)
+  // 预设/版式模板/品牌 kit CRUD。同理必须在 SPA `/*` 兜底前挂载。
+  registerPresetRoutes(app, ctx)
 
   function assetAbsPath(id: string): { row: any; abs: string } | null {
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(id)
@@ -643,6 +646,15 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       ).get(uploadAssetId, project.id)
       if (!upload) return c.json({ error: '所选素材不是本项目上传的口播视频' }, 400)
     }
+    // 版式模板：仅 typeof number 通过前置校验；查无 404；套用的模板与本次出片 tpl 不一致时 400——
+    // 版式（各角色层的位置/样式）是按同一模板的角色表对位提取的，跨模板套没有对应关系，套了也白套。
+    const layoutTemplateId = body.layoutTemplateId
+    if (layoutTemplateId !== undefined) {
+      if (typeof layoutTemplateId !== 'number') return c.json({ error: 'layoutTemplateId 必须是数字' }, 400)
+      const row: any = ctx.db.prepare('SELECT template FROM layout_templates WHERE id = ?').get(layoutTemplateId)
+      if (!row) return c.json({ error: '版式模板不存在' }, 404)
+      if (row.template !== tpl) return c.json({ error: `版式模板套用的是 ${row.template} 模板，与当前出片模板 ${tpl} 不匹配` }, 400)
+    }
     const ratio = body.ratio === 'landscape' ? 'landscape' : 'portrait'
     const taskId = queue.enqueue((log) => generateVideo(ctx, {
       slug,
@@ -654,6 +666,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       bg: typeof body.bg === 'string' ? body.bg : undefined,
       captions: typeof body.captions === 'boolean' ? body.captions : undefined,
       ratio,
+      layoutTemplateId,
       onProgress: log,
     }), { kind: 'video', slug, sourceAssetId: typeof body.assetId === 'number' ? body.assetId : undefined })
     return c.json({ taskId })

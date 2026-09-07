@@ -665,3 +665,64 @@ describe.skipIf(!HAS_FFMPEG)('generateVideo tpl=talk（口播合成，stub）', 
       .rejects.toThrow(/无法读取口播素材时长/)
   })
 })
+
+/** Task 3：出片链路接线——projects.brand_kit 自动注入 LowerOpts.brandKit；layoutTemplateId 查表
+ *  → lower 后 applyLayoutTemplate → 渲染前套用。两者都走 renderHfPipeline 统一管线。 */
+describe('generateVideo：品牌 kit / 版式模板接线', () => {
+  function readSpec(workspace: string, assetId: number) {
+    const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(assetId)
+    return JSON.parse(fs.readFileSync(path.join(workspace, row.spec_path), 'utf8'))
+  }
+
+  it('projects.brand_kit 有值 → 自动套用（CTA 层文字色随 primaryColor）', async () => {
+    ctx.db.prepare('UPDATE projects SET brand_kit = ? WHERE slug = ?')
+      .run(JSON.stringify({ primaryColor: '#112233' }), 'demo')
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const spec = readSpec(fctx.config.paths.workspace, out.assetId)
+    const cta = spec.layers.find((l: any) => l.style.cssClass === 'cta')
+    expect(cta.style.color).toBe('#112233')
+  })
+
+  it('projects.brand_kit 是脏 JSON → parse 失败降级为无 kit，不炸出片，warnings 记一条', async () => {
+    ctx.db.prepare("UPDATE projects SET brand_kit = 'not-json' WHERE slug = 'demo'").run()
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash' })
+    const spec = readSpec(fctx.config.paths.workspace, out.assetId)
+    expect(spec.warnings).toEqual(expect.arrayContaining([expect.stringContaining('品牌 kit 解析失败')]))
+  })
+
+  it('layoutTemplateId 命中且 template 与出片 tpl 一致 → lower 后套用（角色对位覆盖 style，overridden 置位）', async () => {
+    const payload = [{ role: 'cta#0', style: { fontSize: 55 }, effects: [] }]
+    const info = ctx.db.prepare('INSERT INTO layout_templates (name, template, payload) VALUES (?, ?, ?)')
+      .run('flash-tpl', 'flash', JSON.stringify(payload))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash', layoutTemplateId: Number(info.lastInsertRowid) })
+    const spec = readSpec(fctx.config.paths.workspace, out.assetId)
+    const cta = spec.layers.find((l: any) => l.style.cssClass === 'cta')
+    expect(cta.style.fontSize).toBe(55)
+    expect(cta.overridden).toBe(true)
+  })
+
+  it('layoutTemplateId 命中但 template 与出片 tpl 不一致 → 静默跳过，不套用', async () => {
+    const payload = [{ role: 'cta#0', style: { fontSize: 55 }, effects: [] }]
+    const info = ctx.db.prepare('INSERT INTO layout_templates (name, template, payload) VALUES (?, ?, ?)')
+      .run('story-tpl', 'story', JSON.stringify(payload))
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    const out = await generateVideo(fctx, { slug: 'demo', tpl: 'flash', layoutTemplateId: Number(info.lastInsertRowid) })
+    const spec = readSpec(fctx.config.paths.workspace, out.assetId)
+    const cta = spec.layers.find((l: any) => l.style.cssClass === 'cta')
+    expect(cta.style.fontSize).not.toBe(55)
+    expect(cta.overridden).toBeFalsy()
+  })
+
+  it('layoutTemplateId 查无该行 → 静默跳过，不抛错', async () => {
+    const config = loadConfig(root, { FORGECAST_VIDEO_MODE: 'stub', FORGECAST_TTS_MODE: 'stub' })
+    const fctx: CoreCtx = { db: ctx.db, config, llm: ctx.llm }
+    await expect(generateVideo(fctx, { slug: 'demo', tpl: 'flash', layoutTemplateId: 999 })).resolves.toBeTruthy()
+  })
+})

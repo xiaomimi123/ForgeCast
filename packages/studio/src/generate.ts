@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { advanceStage, type CoreCtx } from '@forgecast/core'
+import { applyLayoutTemplate, type LayoutEntry } from '@forgecast/editing'
 import { parseCopyOutput } from '@forgecast/copywriter'
 import { analyzeBeats, chooseBgmPath, injectAudioCaptions, injectTechFx, fillAccents, fillTemplate, mixAudio, pickBgm, readShots, readTemplate, renderHyperframes, resolveTechBg, scaffoldHfAssets, scaffoldHfProject } from './hyperframes'
 import { renderRemotion } from './remotion-render'
@@ -13,7 +14,7 @@ import { renderSpecToHtml } from './render-html'
 import { synthesizeVoice } from './tts'
 import { ASPECT_DIMENSIONS, bucketCuesBySegments, computeSegmentWindows, customTemplateHtmlPath } from './custom-template'
 import type { Pacing } from './benchmark'
-import { MIN_DURATION, type AudioSpec, type VideoSpec } from './videospec'
+import { MIN_DURATION, type AudioSpec, type BrandKit, type VideoSpec } from './videospec'
 
 export interface GenerateVideoInput {
   slug: string
@@ -31,6 +32,9 @@ export interface GenerateVideoInput {
   captions?: boolean
   /** 画布比例：仅 flash 模板支持横竖屏切换，其余模板固定竖屏不受此参数影响。缺省 portrait。 */
   ratio?: 'portrait' | 'landscape'
+  /** 版式模板 id（layout_templates 表）。route 层已校验存在且 template 与本次 tpl 一致；
+   *  这里防御性再核对一遍——查无或模板不匹配一律静默跳过，不为一个可选的排版增强打断整条渲染。 */
+  layoutTemplateId?: number
   onProgress?: (msg: string) => void
 }
 export interface GeneratedVideo { assetId: number; filePath: string }
@@ -68,6 +72,34 @@ async function selectBgm(
 
 function canvasFor(ratio: 'portrait' | 'landscape'): { width: number; height: number } {
   return ASPECT_DIMENSIONS[ratio]
+}
+
+/** projects.brand_kit 列有值时自动解析为 LowerOpts.brandKit。parse 失败按「无 kit」处理并打警告——
+ *  一条脏 JSON 不该把整条出片链路炸掉。 */
+function resolveBrandKit(raw: string | null | undefined, onProgress: (m: string) => void, warnings: string[]): BrandKit | undefined {
+  if (!raw) return undefined
+  try {
+    const kit = JSON.parse(raw)
+    return kit && typeof kit === 'object' ? kit as BrandKit : undefined
+  } catch {
+    onProgress('⚠ 品牌 kit 解析失败，本次出片不套用')
+    warnings.push('品牌 kit 解析失败，本次出片不套用')
+    return undefined
+  }
+}
+
+/** layoutTemplateId 查表：查无或 template 与本次出片 tpl 不一致一律静默跳过（route 层已做过强校验，
+ *  这里只是防御性再核对——不为一个可选的排版增强打断整条渲染）。 */
+function resolveLayoutEntries(ctx: CoreCtx, layoutTemplateId: number | undefined, tpl: string): LayoutEntry[] | undefined {
+  if (layoutTemplateId === undefined) return undefined
+  const row: any = ctx.db.prepare('SELECT template, payload FROM layout_templates WHERE id = ?').get(layoutTemplateId)
+  if (!row || row.template !== tpl) return undefined
+  try {
+    const entries = JSON.parse(row.payload)
+    return Array.isArray(entries) ? entries as LayoutEntry[] : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** 取 copy 素材 → 解析 → 按 tpl 组装参数（flash 三段文字 / story 气泡+TTS配音字幕）→ 写 props.json → 渲染 mp4 → 登记 video 素材 */
@@ -111,7 +143,7 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     for (const sh of shots) shotAssets[sh.rel] = fs.readFileSync(path.join(ctx.config.paths.workspace, slug, 'shots', sh.rel))
     return renderHfPipeline(ctx, {
       slug, tpl: 'demo', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, shots, shotAssets,
-      sourceAssetId: Number(copy.id),
+      sourceAssetId: Number(copy.id), brandKitRaw: project.brand_kit, layoutTemplateId: input.layoutTemplateId,
     })
   }
 
@@ -121,15 +153,22 @@ export async function generateVideo(ctx: CoreCtx, input: GenerateVideoInput): Pr
     return renderTalkPipeline(ctx, {
       slug, doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress,
       sourceAssetId: Number(copy.id), uploadAssetId: input.uploadAssetId, bgExplicit: input.bg,
+      brandKitRaw: project.brand_kit, layoutTemplateId: input.layoutTemplateId,
     })
   }
 
   if (tpl === 'changelog' || tpl === 'insight' || tpl === 'story') {
-    return renderHfPipeline(ctx, { slug, tpl, doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, sourceAssetId: Number(copy.id) })
+    return renderHfPipeline(ctx, {
+      slug, tpl, doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress,
+      sourceAssetId: Number(copy.id), brandKitRaw: project.brand_kit, layoutTemplateId: input.layoutTemplateId,
+    })
   }
 
   // 兜底：未知 tpl 与 tpl==='flash' 一样都走 flash（原版行为，见下方分支硬编码 'flash'）
-  return renderHfPipeline(ctx, { slug, tpl: 'flash', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress, sourceAssetId: Number(copy.id) })
+  return renderHfPipeline(ctx, {
+    slug, tpl: 'flash', doc, hook: copy.hook, brandName, projectId: project.id, video, ratio, onProgress,
+    sourceAssetId: Number(copy.id), brandKitRaw: project.brand_kit, layoutTemplateId: input.layoutTemplateId,
+  })
 }
 
 /**
@@ -152,9 +191,13 @@ async function renderHfPipeline(
     shots?: Shot[]
     shotAssets?: Record<string, Buffer>
     sourceAssetId?: number
+    /** projects.brand_kit 原始列值（未解析），自动套用；解析失败降级为无 kit + warning，见 resolveBrandKit。 */
+    brandKitRaw?: string | null
+    /** 出片指定的版式模板 id；查无或模板不匹配本次 tpl 静默跳过，见 resolveLayoutEntries。 */
+    layoutTemplateId?: number
   },
 ): Promise<GeneratedVideo> {
-  const { slug, tpl, doc, hook, brandName, projectId, video, ratio, onProgress, shots = [], shotAssets, sourceAssetId } = opts
+  const { slug, tpl, doc, hook, brandName, projectId, video, ratio, onProgress, shots = [], shotAssets, sourceAssetId, brandKitRaw, layoutTemplateId } = opts
   const videoId = randomUUID()
   const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
 
@@ -207,12 +250,17 @@ async function renderHfPipeline(
     captionsEnabled: video.captions,
   }
 
+  const brandKit = resolveBrandKit(brandKitRaw, onProgress, warnings)
   const semantic = buildSemantic(doc, tpl, { cues: voice.cues, brandName, sourceAssetId })
-  const spec = lower(semantic, {
+  let spec = lower(semantic, {
     videoId, slug, template: tpl, canvas, durationSec: duration, cues: voice.cues,
-    beatGrid: grid, shots, plan, audio: audioSpec, brandName,
+    beatGrid: grid, shots, plan, audio: audioSpec, brandName, brandKit,
   })
   spec.warnings = warnings
+
+  // 版式模板：lower 收尾之后、渲染前套用——按角色对位覆盖 style/effects（见 applyLayoutTemplate 注释）。
+  const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, tpl)
+  if (layoutEntries) spec = applyLayoutTemplate(spec, layoutEntries)
 
   const rendered = renderSpecToHtml(spec)
   const ratioSuffix = ratio === 'landscape' ? '-landscape' : ''
@@ -310,9 +358,13 @@ async function renderTalkPipeline(
     /** 用户**显式**传的 --bg（`input.bg`），与 video.bg 不同：后者含配置默认值 'grid'。
      *  talk 默认不加科技背景（底片是真人画面，再叠一层网格只会脏），只有显式指定才加。 */
     bgExplicit?: string
+    /** projects.brand_kit 原始列值（未解析），自动套用；解析失败降级为无 kit + warning，见 resolveBrandKit。 */
+    brandKitRaw?: string | null
+    /** 出片指定的版式模板 id；查无或模板不匹配本次 tpl 静默跳过，见 resolveLayoutEntries。 */
+    layoutTemplateId?: number
   },
 ): Promise<GeneratedVideo> {
-  const { slug, doc, hook, brandName, projectId, video, ratio, onProgress, sourceAssetId, uploadAssetId, bgExplicit } = opts
+  const { slug, doc, hook, brandName, projectId, video, ratio, onProgress, sourceAssetId, uploadAssetId, bgExplicit, brandKitRaw, layoutTemplateId } = opts
   if (typeof uploadAssetId !== 'number') throw new Error('talk 模板需要口播素材：请先上传口播视频并选中它')
   const upload: any = ctx.db.prepare(
     "SELECT * FROM assets WHERE id = ? AND project_id = ? AND type = 'video' AND origin = 'upload'",
@@ -355,12 +407,16 @@ async function renderTalkPipeline(
   // buildSemantic 不产（它只认文案里的语义段）。role 借用 'demo'：片源就是"演示画面"这一类。
   semantic.sections.push({ id: 'sec-video', role: 'demo' })
 
-  const spec = lower(semantic, {
+  const brandKit = resolveBrandKit(brandKitRaw, onProgress, warnings)
+  let spec = lower(semantic, {
     videoId, slug, template: 'talk', canvas: canvasFor(ratio), durationSec,
-    cues: [], beatGrid: grid, audio: audioSpec, brandName,
+    cues: [], beatGrid: grid, audio: audioSpec, brandName, brandKit,
     videoSrc, sourceDurationSec: durationSec,
   })
   spec.warnings = warnings
+  // 版式模板：lower 收尾之后、渲染前套用（talk 也在 layout_templates.template 六值之列）
+  const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, 'talk')
+  if (layoutEntries) spec = applyLayoutTemplate(spec, layoutEntries)
   // talk 默认无背景（见 bgExplicit 注释）；显式给了才按五模板同一套规则解析
   const bgVariant = bgExplicit ? resolveBgVariant('talk', bgExplicit) : undefined
   spec.bgVariant = bgVariant
