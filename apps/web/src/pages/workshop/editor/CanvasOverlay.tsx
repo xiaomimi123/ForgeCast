@@ -1,4 +1,4 @@
-import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
+import type { LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import { clampToCanvas, setLayerStyle, snapPosition, type CanvasRect, type SnapGuide } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
@@ -6,8 +6,17 @@ import type { useEditorState } from './useEditorState'
 
 /** 吸附命中阈值（画布 px）。与 `snapPosition` 的默认值一致，写在这里是为了 Alt 旁路那一行读得懂。 */
 const SNAP_PX = 8
-/** 选中态四角手柄边长（**显示 px**，不随画布缩放变）。本任务只画，缩放逻辑是 Task 4。 */
+/** 选中态四角手柄边长（**显示 px**，不随画布缩放变）。 */
 const HANDLE = 8
+/** 缩放的宽度下限（画布 px）。比这更窄的层在 1080 宽的画布里是一条缝，选都选不回来。 */
+const MIN_WIDTH = 40
+/** 方向键微移步长（画布 px）；按住 Shift 走 NUDGE_FAST。 */
+const NUDGE = 1
+const NUDGE_FAST = 10
+/** 方向键 → 单位位移。写成表而不是四个 if，键盘分支里只剩一次查表。 */
+const ARROWS: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 }, ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
+}
 /**
  * 起拖阈值（显示 px）。指针在这个范围内挪动一律**只算点选**：不置 `moved`、不固化、不写 spec。
  * 没有它的话，点一下卡片时手抖一两个像素就会把「点选高亮」变成一次真实改动（spec 变脏 + 一格 undo），
@@ -41,7 +50,19 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000
  * LayerView 写的 transform 都没改过它）。哪天模板给某个类写了非中心的 transform-origin，那一层的命中框
  * 会与画面错开——真出现时按 `getComputedStyle(el).transformOrigin` 解析补上即可。
  */
-interface Measured { rect: CanvasRect; tx: number; ty: number; layoutW: number; layoutH: number }
+interface Measured {
+  rect: CanvasRect; tx: number; ty: number; layoutW: number; layoutH: number
+  /**
+   * 该层**自身的 margin**（画布 px）。写 `style.top/left` 时必须减掉它。
+   *
+   * 绝对定位的元素，margin 仍然生效：最终位置是「包含块原点 + top + margin-top」。而 `offsetTop`
+   * 量到的是加过 margin 之后的位置。两边不扣掉的话，写回的 top 会比目标位置多一份 margin——
+   * 每写一次多漂一次（changelog 的 `.title` 有 44px 上边距，方向键按一下漂 45px 就是这么来的；
+   * 拖拽同样中招，只是一次手势只写一次，看着像「一按下就跳一下」）。
+   * flash/story/demo/insight 的首层 margin 恰好是 0，所以 Task 3 的自测没撞上。
+   */
+  mx: number; my: number
+}
 
 /**
  * 全片推镜（`#cam` 的 `translate(...)scale(1→1.06)`，见 compositions/Background.tsx）的当前值。
@@ -56,6 +77,18 @@ const CAM_IDENTITY: Cam = { s: 1, e: 0, f: 0 }
 
 interface DragState {
   layerId: string
+  /** `move`＝拖整层改 x/y；`resize`＝拖四角手柄改宽（文字层顺带联动字号）。 */
+  mode: 'move' | 'resize'
+  /** resize：抓的是左侧 / 上侧的手柄吗——决定对角哪个点固定不动。 */
+  fromLeft: boolean
+  fromTop: boolean
+  /** resize：按下那一刻该层的 computed font-size（画布 px）。0＝解析不出，此次不联动字号。 */
+  baseFont: number
+  /** resize：等比缩放时要不要一起写 height。文字/caption 不写（高度该由字号与换行自己决定），
+   *  image/shape 与「写 top 会塌高」的层（needHeight）必须写。 */
+  resizeHeight: boolean
+  /** resize：宽度变化是否联动字号（text/caption 才联动；image/shape 只改宽高）。 */
+  scalesFont: boolean
   /** 按下那一刻的 spec，每帧都从它重算（不做增量累加，中途回拖不漂）——同 TimelinePane。 */
   base: VideoSpec
   startX: number
@@ -65,6 +98,9 @@ interface DragState {
   ty: number
   layoutW: number
   layoutH: number
+  /** 该层自身的 margin（见 Measured.mx）。写 top/left 时要减掉。 */
+  mx: number
+  my: number
   needHeight: boolean
   /** 显示 px → 画布 px 的换算比（containerWidth / canvas.width），按下时现取。 */
   scale: number
@@ -93,7 +129,7 @@ interface DragState {
  * 「文档流固化」（把测量出的 x/y/width 写进 style）也压在同一格里，⌘Z 一步回到拖之前。
  */
 export default function CanvasOverlay({
-  spec, currentSec, playerRef, selectedLayerId, onSelectLayer, ed, containerRef,
+  spec, currentSec, playerRef, selectedLayerId, onSelectLayer, ed, containerRef, blocked = false,
 }: {
   /** 权威 spec（`ed.spec`，不是 previewSpec）——写回要用它；两者的图层 id/时间完全一致。 */
   spec: VideoSpec
@@ -104,6 +140,11 @@ export default function CanvasOverlay({
   ed: ReturnType<typeof useEditorState>
   /** 包住 Player 的相对定位容器：既是测量的宿主，也是浮层的坐标原点。 */
   containerRef: RefObject<HTMLDivElement>
+  /**
+   * confirm 弹层是否开着。开着时方向键微移要让路——与 EditorPage 里 ⌘Z 的 `confirmOpenRef` 同一道门：
+   * 弹层通常正在问「要不要保存/丢弃」，此刻不该再被键盘悄悄改动 spec。
+   */
+  blocked?: boolean
 }) {
   const [measured, setMeasured] = useState<Record<string, Measured>>({})
   /** 合成在容器里的左上角（显示 px，相对容器）。**不假定合成铺满容器**：横屏 spec 在 9:16 的容器里
@@ -232,7 +273,55 @@ export default function CanvasOverlay({
     if (d.moved) edRef.current.commit()
   }, [])
 
-  function onDown(e: ReactPointerEvent<HTMLDivElement>, layerId: string) {
+  /**
+   * 方向键微移：选中层 ±1px（Shift ±10px）。**一次按键 = 一步 undo**（直接 `apply`，不走 transient）
+   * ——长按连发会压出一串 undo，但比「连按十下只能撤销一下」好：微移本来就是逐格试位置的动作。
+   *
+   * 让路的四道门：输入框/textarea/contentEditable 聚焦（那时方向键是光标移动）、confirm 弹层开着、
+   * 服务端读改写在途（busy/saving，同拖拽那道闸）、以及正在拖拽中。带修饰键（⌘/Ctrl/Alt）的一律不接，
+   * 免得吃掉浏览器或后续可能新增的组合键。
+   *
+   * 位置一律从 `measured`（视觉矩形）现算而不是读 `style.x + 1`：这样未固化的层第一次按方向键就会
+   * 被就地固化（写 x/y/width），与拖拽的固化口径完全一致，不必分两条路。
+   */
+  function onKey(e: KeyboardEvent) {
+    const dir = ARROWS[e.key]
+    if (!dir) return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (!selectedLayerId || playing || blocked || ed.busy || ed.saving || dragRef.current) return
+    const t = e.target as HTMLElement | null
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+    const s = ed.spec
+    const m = measured[selectedLayerId]
+    const container = containerRef.current
+    if (!s || !m || !container) return
+    e.preventDefault()
+    const step = e.shiftKey ? NUDGE_FAST : NUDGE
+    const raw: CanvasRect = { ...m.rect, x: m.rect.x + dir.x * step, y: m.rect.y + dir.y * step }
+    const c = clampToCanvas(raw, canvas)
+    // 收掉右栏输入框可能还没收尾的 transient 序列（同 onDown），免得这一下微移挤进上一次数值编辑那格。
+    ed.commit()
+    ed.apply(setLayerStyle(s, selectedLayerId, {
+      x: round3(c.x - m.tx - m.mx), y: round3(c.y - m.ty - m.my), width: round3(m.layoutW),
+      ...(heightWouldCollapse(container.querySelector<HTMLElement>(`#${CSS.escape(selectedLayerId)}`))
+        ? { height: round3(m.layoutH) } : null),
+    }))
+  }
+  // 闭包每次渲染都换新（measured/ed/selectedLayerId 都会变），放进 ref 由一个常挂的监听转发，
+  // 免得每帧摘挂一次 window 监听。姿势同上面的 measureRef。
+  const keyRef = useRef(onKey)
+  useEffect(() => { keyRef.current = onKey })
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyRef.current(e)
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  /**
+   * 一次手势的起点，拖动与缩放共用：`mode==='move'` 是整层平移，`'resize'` 是四角手柄改宽。
+   * 两者的基线（按下那刻的 spec / 视觉矩形 / 布局宽高 / 换算比）完全一样，差别只在 onMove 怎么算。
+   */
+  function onDown(e: ReactPointerEvent<HTMLDivElement>, layerId: string, mode: 'move' | 'resize' = 'move', fromLeft = false, fromTop = false) {
     // 服务端读改写在途（重写这段 / 渲成片）或正在落盘时不许拖：那几条路径会整包换掉或写回 spec，
     // 此刻改本地 spec 等于和它们赛跑。与右栏/时间轴按钮的 disabled 同一道闸。
     if (ed.busy || ed.saving) return
@@ -260,11 +349,23 @@ export default function CanvasOverlay({
       window.removeEventListener('pointercancel', up)
       try { if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId) } catch { /* 已释放/元素已卸载 */ }
     }
+    const el = container.querySelector<HTMLElement>(`#${CSS.escape(layerId)}`)
+    // 要不要补 height：现场探一次（见 heightWouldCollapse）。一次手势只探一次，不进逐层测量。
+    const needHeight = heightWouldCollapse(el)
+    const kind = s.layers.find((l) => l.id === layerId)?.content.kind
+    // 文字与字幕按字号联动（宽变大字也变大，观感才是「整体放大」）；image/shape 没有字号可联动，
+    // 改的是宽高本身。缺省按文字处理：新出现的图层类型多半是带字的。
+    const scalesFont = kind !== 'image' && kind !== 'shape'
     dragRef.current = {
-      layerId, base: s, startX: e.clientX, startY: e.clientY,
-      rect: m.rect, tx: m.tx, ty: m.ty, layoutW: m.layoutW, layoutH: m.layoutH,
-      // 要不要补 height：现场探一次（见 heightWouldCollapse）。一次拖拽只探一次，不进逐层测量。
-      needHeight: heightWouldCollapse(container.querySelector<HTMLElement>(`#${CSS.escape(layerId)}`)),
+      layerId, mode, fromLeft, fromTop,
+      base: s, startX: e.clientX, startY: e.clientY,
+      rect: m.rect, tx: m.tx, ty: m.ty, layoutW: m.layoutW, layoutH: m.layoutH, mx: m.mx, my: m.my,
+      needHeight,
+      // 文字层的高度让字号与换行自己决定，别写死；image/shape 必须等比写高，
+      // needHeight 的层（如 bottom 定位的字幕条）本来就得有显式高度，缩放时按比例跟着走。
+      resizeHeight: !scalesFont || needHeight,
+      scalesFont,
+      baseFont: el ? parseFloat(getComputedStyle(el).fontSize) || 0 : 0,
       scale: box.scale * cam.s,
       others: visible.filter((l) => l.id !== layerId).map((l) => measured[l.id]?.rect).filter((x): x is CanvasRect => !!x),
       moved: false,
@@ -284,6 +385,7 @@ export default function CanvasOverlay({
     // 起拖阈值：没越过就当纯点选，一个字都不写（见 DRAG_START_PX）
     if (!d.moved && Math.hypot(dx, dy) < DRAG_START_PX) return
     d.moved = true
+    if (d.mode === 'resize') { onResize(d, dx); return }
     const raw: CanvasRect = { x: d.rect.x + dx / d.scale, y: d.rect.y + dy / d.scale, w: d.rect.w, h: d.rect.h }
     // 吸附**先于**钳制：先把「用户想放的位置」吸到参考线，再由钳制把出界的拉回来。
     // 反过来会把刚钳到边上的位置又吸走，重新推出画布。（同 TimelinePane 的先吸后钳。）
@@ -295,9 +397,40 @@ export default function CanvasOverlay({
     // 固化与位移写在**同一次** applyTransient 里：width 必须一起写死，否则 position:absolute 之后
     // 宽度从「文档流里的整行」塌成内容宽，文字换行、观感全变。style.x 存的是 left，故要减掉 transform。
     ed.applyTransient(setLayerStyle(d.base, d.layerId, {
-      x: round3(clamped.x - d.tx), y: round3(clamped.y - d.ty), width: round3(d.layoutW),
+      x: round3(clamped.x - d.tx - d.mx), y: round3(clamped.y - d.ty - d.my), width: round3(d.layoutW),
       ...(d.needHeight ? { height: round3(d.layoutH) } : null),
     }))
+  }
+
+  /**
+   * 四角手柄的缩放。**只看横向位移**：一个比例 r 同时决定宽、（等比的）高与字号，
+   * 纵向再掺一脚就会出现「拖出的框和真实渲染结果对不上」——文字层的高度本来就由字号和换行决定，
+   * 用户拖出来的高度不可能被兑现，不如从一开始就只认宽度这一维（四个角的手感因此完全一致）。
+   *
+   * 固定点是被抓那个角的对角：抓左侧则右缘不动、抓上侧则下缘不动。
+   *
+   * `tx`（自身 transform 的横向位移）要**跟着比例缩**：它在实际模板里都是按元素宽算出来的
+   * （`.cap` 的 translateX(-50%) 就是 -w/2），宽变 r 倍位移也变 r 倍。不缩的话，字幕条一放大就向右漂
+   * （实测放大 5% 左缘漂 29 画布 px）。`ty` **不缩**：纵向位移在模板里是 slideUp 那种固定 px 的入场
+   * 位移，与尺寸无关，跟着缩会让图层在缩放时莫名上下窜（实测放大 12% 窜 2px）。唯一不吻合的是入场
+   * 缩放动画带来的那点 ty，但那是个转瞬即逝的中间态，缩不缩都不准。
+   */
+  function onResize(d: DragState, dxPx: number) {
+    const dx = dxPx / d.scale
+    const w = Math.max(MIN_WIDTH, d.fromLeft ? d.rect.w - dx : d.rect.w + dx)
+    const r = d.rect.w > 0 ? w / d.rect.w : 1
+    // 文字层的真实新高度要等重排后才知道，这里按同比例给个预览高度（松手重测就对齐了）。
+    const h = d.rect.h * r
+    const x = d.fromLeft ? d.rect.x + d.rect.w - w : d.rect.x
+    const y = d.fromTop ? d.rect.y + d.rect.h - h : d.rect.y
+    setDrag({ id: d.layerId, rect: { x, y, w, h } })
+    const patch: Partial<LayerStyle> = {
+      x: round3(x - d.tx * r - d.mx), y: round3(y - d.ty - d.my), width: round3(d.layoutW * r),
+    }
+    if (d.resizeHeight) patch.height = round3(d.layoutH * r)
+    // 字号取整：spec 里留一串 23.9997 既没意义，也会让右栏的数字框变得没法看。
+    if (d.scalesFont && d.baseFont > 0) patch.fontSize = Math.round(d.baseFont * r)
+    ed.applyTransient(setLayerStyle(d.base, d.layerId, patch))
   }
 
   function onUp(_e?: PointerEvent | ReactPointerEvent<HTMLDivElement>) {
@@ -364,7 +497,7 @@ export default function CanvasOverlay({
         </div>
       </div>
 
-      {/* 视觉层：吸附线 + 选中框 + 四角手柄。全程不吃指针（手柄的缩放交互是 Task 4） */}
+      {/* 视觉层：吸附线 + 选中框 + 四角手柄。除手柄自己外不吃指针 */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
         <div style={camStyle}>
           {guides.map((g, i) => (
@@ -375,15 +508,26 @@ export default function CanvasOverlay({
                 : { position: 'absolute', top: px(g.pos), left: 0, height: 1, width: '100%', background: 'var(--fc-accent)' }}
             />
           ))}
-          {sel && (
+          {sel && selectedLayerId && (
             <div style={{ position: 'absolute', left: px(sel.x), top: px(sel.y), width: px(sel.w), height: px(sel.h), outline: '1px solid var(--fc-accent)' }}>
-              {/* 四角手柄：本任务只显示（缩放是 Task 4），故不吃指针 */}
-              {([['0%', '0%', 'nwse-resize'], ['100%', '0%', 'nesw-resize'], ['0%', '100%', 'nesw-resize'], ['100%', '100%', 'nwse-resize']] as const).map(([l, t, cur]) => (
+              {/*
+                四角手柄。带 `data-canvas-hit` 是为了不被容器上那道「点空白＝取消选中」的原生监听误伤
+                （它按 closest('[data-canvas-hit]') 放行），否则点手柄的第一下会先把选中态清掉、
+                连带把手柄自己从 DOM 里撤走，缩放永远起不来。
+              */}
+              {([[0, 0, 'nwse-resize'], [1, 0, 'nesw-resize'], [0, 1, 'nesw-resize'], [1, 1, 'nwse-resize']] as const).map(([hx, hy, cur]) => (
                 <div
-                  key={`${l}-${t}`}
+                  key={`${hx}-${hy}`}
+                  data-canvas-hit={selectedLayerId}
+                  title="拖动改宽（文字层字号同比联动）"
+                  onPointerDown={(e) => { e.stopPropagation(); onDown(e, selectedLayerId, 'resize', hx === 0, hy === 0) }}
+                  onLostPointerCapture={() => onUp()}
                   style={{
-                    position: 'absolute', left: l, top: t, width: HANDLE, height: HANDLE,
-                    marginLeft: -HANDLE / 2, marginTop: -HANDLE / 2, cursor: cur,
+                    // 手柄画在选中框**内侧**而不是骑在角上：浮层整层 `overflow:hidden` 裁到画布边缘，
+                    // 骑在角上的话，铺满画布宽的图层（模板里一大半是这种）右侧那两个手柄有一半被裁掉，
+                    // 剩下的几 px 几乎点不中——自测里 flash 的 `.painT` 就是这么拖不动的。
+                    position: 'absolute', left: `${hx * 100}%`, top: `${hy * 100}%`, width: HANDLE, height: HANDLE,
+                    marginLeft: hx ? -HANDLE : 0, marginTop: hy ? -HANDLE : 0, cursor: cur, pointerEvents: 'auto',
                     background: 'var(--fc-surface)', border: '1px solid var(--fc-accent)',
                   }}
                 />
@@ -417,7 +561,10 @@ function measureLayer(root: HTMLElement, el: HTMLElement): Measured | null {
   const w = lw * m.a
   const h = lh * m.d
   const rect: CanvasRect = { x: x + lw / 2 + m.e - w / 2, y: y + lh / 2 + m.f - h / 2, w, h }
-  return { rect, tx: rect.x - x, ty: rect.y - y, layoutW: lw, layoutH: lh }
+  const cs = getComputedStyle(el)
+  const mx = parseFloat(cs.marginLeft) || 0
+  const my = parseFloat(cs.marginTop) || 0
+  return { rect, tx: rect.x - x, ty: rect.y - y, layoutW: lw, layoutH: lh, mx, my }
 }
 
 /**

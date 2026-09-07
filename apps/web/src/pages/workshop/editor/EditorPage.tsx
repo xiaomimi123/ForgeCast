@@ -393,6 +393,7 @@ export default function EditorPage({
               busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo}
               talkBlocked={vp.tpl === 'talk' && !vp.uploadAssetId}
               currentSec={currentSec} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+              confirmOpen={confirmOpen}
             />
           </div>
 
@@ -476,7 +477,7 @@ export default function EditorPage({
 /** 中栏预览区的四种状态：没选项 / 没 spec（待出片）/ 自定义模板 / 正常播放。 */
 function StageBody({
   selected, current, ed, playerRef, busy, videoRun, onMakeVideo, talkBlocked,
-  currentSec, selectedLayerId, onSelectLayer,
+  currentSec, selectedLayerId, onSelectLayer, confirmOpen,
 }: {
   selected: string
   current: ContentItemView | null
@@ -491,6 +492,8 @@ function StageBody({
   currentSec: number
   selectedLayerId: string | null
   onSelectLayer: (layerId: string | null) => void
+  /** confirm 弹层开着——画布浮层的方向键微移要跟着让路，同 ⌘Z 那道门。 */
+  confirmOpen: boolean
 }) {
   // hooks 必须在所有 early return 之前：下面有六个分支状态，ref 挂在钩子里才不会时有时无。
   const stageRef = useRef<HTMLDivElement>(null)
@@ -536,7 +539,7 @@ function StageBody({
       <CanvasOverlay
         spec={spec} currentSec={currentSec} playerRef={playerRef}
         selectedLayerId={selectedLayerId} onSelectLayer={onSelectLayer}
-        ed={ed} containerRef={stageRef}
+        ed={ed} containerRef={stageRef} blocked={confirmOpen}
       />
     </div>
   )

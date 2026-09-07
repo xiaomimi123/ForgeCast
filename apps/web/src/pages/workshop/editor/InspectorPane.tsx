@@ -1,5 +1,5 @@
 import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer } from '@forgecast/editing'
+import { clearLayerGeometry, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer } from '@forgecast/editing'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, type Asset, type BgmList, type ContentItemView, type CustomTemplate } from '../../../api'
@@ -379,6 +379,9 @@ function LayerInspector({ ed, spec, layerId }: {
   /** 数字输入：空串＝不设这一项（回落模板默认），不是 0。 */
   const num = (v: string): number | undefined => (v === '' ? undefined : Number(v))
 
+  /** 画布拖拽/缩放写下的几何覆盖。全都没有＝这层还在模板的文档流里，「清除」无事可做。 */
+  const hasGeometry = (['x', 'y', 'width', 'height', 'fontSize'] as const).some((k) => st[k] !== undefined)
+
   const numField = (label: string, key: 'x' | 'y' | 'width' | 'height' | 'fontSize') => (
     <Field label={label}>
       <input
@@ -447,6 +450,19 @@ function LayerInspector({ ed, spec, layerId }: {
               {(st.opacity ?? 1).toFixed(2)}
             </span>
           </div>
+        </Field>
+        {/* 单层排版重置：把画布上拖/缩出来的 x/y/宽/高/字号一次删干净，让这层退回模板的文档流位置。
+            全片重置在别处，这里只管当前这一层。 */}
+        <Field label="排版">
+          <button
+            className={`${OUTLINE} !px-2 !py-0.5 !text-[11px]`}
+            disabled={!hasGeometry}
+            title={hasGeometry
+              ? '删掉 x / y / 宽 / 高 / 字号，这层回到模板排版'
+              : '这层没有位置覆盖，本来就在模板排版里'}
+            // 先收掉上面数字框可能还没失焦的 transient 序列，免得这一步和它挤进同一格 undo
+            onClick={() => { ed.commit(); ed.apply(clearLayerGeometry(spec, layer.id)) }}
+          >清除位置覆盖</button>
         </Field>
       </>
         )}
