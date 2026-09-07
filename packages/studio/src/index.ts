@@ -16,3 +16,6 @@ export * from './rewrite'
 // 互相引用，从未进过包的公共表面——@forgecast/studio 的 `import type { VideoSpec } from '@forgecast/studio'`
 // 在此之前无法解析。
 export type { VideoSpec, Semantic, Section, Layer, LayerContent, LayerStyle, Effect, AudioSpec } from './videospec'
+// 品牌 kit：类型 + 套用函数（Task 3/4 的预设落地要用）。
+export type { BrandKit } from './videospec'
+export { applyBrandKit } from './brand-kit'

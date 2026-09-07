@@ -106,6 +106,16 @@ export interface AudioSpec {
   captionsEnabled: boolean
 }
 
+/** 品牌 kit：预设级的批量观感覆盖，由 `applyBrandKit`（brand-kit.ts）套到 spec 图层上。
+ *  字段全部可选；空 kit 是恒等变换（返回原 spec 引用）。各字段的作用目标（cssClass 表）与
+ *  「overridden 层跳过」的理由见 brand-kit.ts 顶部注释。 */
+export interface BrandKit {
+  primaryColor?: string           // CTA 类层的文字色
+  accentColor?: string            // card / highlightCard 类层的背景色
+  titleScale?: number             // 标题类层的 fontSize 乘数
+  ctaText?: string                // CTA 主文案（只换第一行，品牌名第二行保留）
+}
+
 /** 各模板的最短成片时长（秒）。原先硬编码散落在 generate.ts 五个分支里。
  *  `talk` 是预留常量，**暂无读取方**：口播成片时长 = ffprobe 实测的片源时长（见 generate.ts
  *  renderTalkPipeline），补到 6s 只会在片源后面挂一段黑屏。 */

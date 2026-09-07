@@ -1,3 +1,5 @@
+import type { LayoutEntry, StylePresetPayload } from '@forgecast/editing'
+
 export interface Project {
   id: number; slug: string; candidate_id: number | null
   brand_name: string | null; target_buyer: string | null
@@ -172,3 +174,33 @@ export const ASSET_STATUS_LABEL: Record<string, string> = {
 export const PLATFORM_LABEL: Record<string, string> = {
   douyin: '抖音', xiaohongshu: '小红书', xhs: '小红书', bilibili: 'B 站', wechat: '视频号', kuaishou: '快手',
 }
+
+// ── 预设与品牌 kit（设计文档「排版工作台第二期C」）──────────────────────────────
+/** 风格预设行。`layerKind` 白名单与服务端一致（`Layer['kind']` 去掉 video——底片层不套品牌样式）。 */
+export interface StylePreset {
+  id: number; name: string; layerKind: 'text' | 'image' | 'caption' | 'shape'
+  payload: StylePresetPayload; createdAt: string
+}
+/** 版式模板行。`template` 是六个内置模板之一，`ratio` 由存的那一刻的画布取向推得。 */
+export interface LayoutTemplate {
+  id: number; name: string; template: string; ratio: 'portrait' | 'landscape'
+  payload: LayoutEntry[]; createdAt: string
+}
+/** 项目品牌 kit。GET 在未设置时回 `{}`（不是 404），字段全 optional。 */
+export interface BrandKitView {
+  primaryColor?: string; accentColor?: string; titleScale?: number; ctaText?: string
+}
+
+export const listStylePresets = () => api<StylePreset[]>('/api/style-presets')
+export const createStylePreset = (body: { name: string; layerKind: StylePreset['layerKind']; payload: StylePresetPayload }) =>
+  api<{ id: number }>('/api/style-presets', { method: 'POST', body: JSON.stringify(body) })
+export const deleteStylePreset = (id: number) =>
+  api<{ ok: true }>(`/api/style-presets/${id}`, { method: 'DELETE' })
+
+export const listLayoutTemplates = () => api<LayoutTemplate[]>('/api/layout-templates')
+export const createLayoutTemplate = (body: { name: string; template: string; ratio: 'portrait' | 'landscape'; payload: LayoutEntry[] }) =>
+  api<{ id: number }>('/api/layout-templates', { method: 'POST', body: JSON.stringify(body) })
+
+export const getBrandKit = (slug: string) => api<BrandKitView>(`/api/projects/${slug}/brand-kit`)
+export const putBrandKit = (slug: string, kit: BrandKitView) =>
+  api<BrandKitView>(`/api/projects/${slug}/brand-kit`, { method: 'PUT', body: JSON.stringify(kit) })

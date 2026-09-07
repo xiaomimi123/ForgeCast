@@ -173,6 +173,15 @@ CREATE TABLE IF NOT EXISTS custom_templates (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content='knowledge_atoms', content_rowid='id');
+CREATE TABLE IF NOT EXISTS style_presets (
+  id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, layer_kind TEXT NOT NULL,
+  payload TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS layout_templates (
+  id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, template TEXT NOT NULL,
+  ratio TEXT NOT NULL DEFAULT 'portrait', payload TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）
   ensureColumn(db, 'assets', 'published_url', 'TEXT')
@@ -195,5 +204,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS atoms_fts USING fts5(content, topic, content=
   ensureColumn(db, 'projects', 'rebrand_exec_result', 'TEXT')
   // 迁移：视频素材包路径（VideoSpec JSON，workspace 相对路径），供剪辑台定位可编辑的视频
   ensureColumn(db, 'assets', 'spec_path', 'TEXT')
+  // 迁移：项目品牌 kit（JSON blob：主色/强调色/标题倍数/CTA 文案），出片时自动套用
+  ensureColumn(db, 'projects', 'brand_kit', 'TEXT')
   return db
 }

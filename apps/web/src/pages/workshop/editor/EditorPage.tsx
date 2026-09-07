@@ -6,11 +6,18 @@
 import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
-import { useQueryClient, type UseQueryResult } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
-import { api, type Asset, type BgmList, type ContentItemView } from '../../../api'
+import { applyLayoutTemplate, extractLayoutTemplate } from '@forgecast/editing'
+// 深导入 `src/brand-kit`（而非包入口 `@forgecast/studio`）：入口把 @remotion/renderer、
+// better-sqlite3 这些 Node 侧的东西一并拉进来，浏览器包里放不下也跑不了。brand-kit.ts 自己
+// 只 `import type` videospec，是一支纯函数——同 `@forgecast/compositions/src/SpecComposition`
+// 的深导入先例。**别顺手改成包入口**。
+import { applyBrandKit } from '@forgecast/studio/src/brand-kit'
+import { api, createLayoutTemplate, getBrandKit, listLayoutTemplates, type Asset, type BgmList, type ContentItemView, type LayoutTemplate } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
 import { useConfirm } from '../../../components/ui/Confirm'
+import { usePrompt } from '../../../components/ui/Prompt'
 import { isUnsupported, videoIdFromSpecPath } from '../../../lib/rebase'
 import type { TaskRun } from '../../../useTaskRun'
 import CanvasOverlay from './CanvasOverlay'
@@ -106,6 +113,10 @@ export default function EditorPage({
   const [currentSec, setCurrentSec] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  /** 「版式」下拉（存版式 / 套版式 / 应用品牌 kit）。与 ⋯ 各自独立一份开合 + 各自的外点关闭。 */
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false)
+  const layoutMenuRef = useRef<HTMLDivElement>(null)
+  const { prompt, element: promptEl } = usePrompt()
   const [notice, setNotice] = useState<string | null>(null)
   /**
    * 重置端点 404 的兜底。**主判据是 `ed.hasOrig`（GET spec 带回来的，进场即知）**——这个 state
@@ -137,7 +148,7 @@ export default function EditorPage({
 
   // 换内容项时复位这条内容独有的临时状态
   useEffect(() => {
-    setCurrentSec(0); setMenuOpen(false); setNotice(null); setResetUnavailable(false); setSelectedLayerId(null)
+    setCurrentSec(0); setMenuOpen(false); setLayoutMenuOpen(false); setNotice(null); setResetUnavailable(false); setSelectedLayerId(null)
   }, [videoId])
   const bumpSpecEpoch = useCallback(() => setSpecEpoch((v) => v + 1), [])
 
@@ -151,6 +162,15 @@ export default function EditorPage({
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!layoutMenuOpen) return
+    function onDown(e: MouseEvent) {
+      if (!layoutMenuRef.current?.contains(e.target as Node)) setLayoutMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [layoutMenuOpen])
 
   // 播放头：Player 的 frameupdate 是 imperative API，只能在 ref 就绪后订阅
   useEffect(() => {
@@ -261,6 +281,85 @@ export default function EditorPage({
   }
 
   /**
+   * 画幅取向：**与渲染侧同一口径**（`width >= height` 即横屏，见 studio 的 kit/模板基准字号表）。
+   * 存版式时记进 `ratio`，套用时按 `template + ratio` 双筛——同一套模板在竖屏和横屏下的
+   * 坐标/字号完全不是一回事，混着套等于把一份 9:16 的排版拍到 16:9 的画布上。
+   */
+  const specRatio: 'portrait' | 'landscape' = ed.spec && ed.spec.canvas.width >= ed.spec.canvas.height ? 'landscape' : 'portrait'
+  /** 服务端 layout_templates.template 的六值白名单。custom-* 走独立管线、不是 Layer 模型，存不了版式。 */
+  const canSaveLayout = !!ed.spec && ['flash', 'story', 'demo', 'changelog', 'insight', 'talk'].includes(ed.spec.template)
+  const layouts = useQuery({
+    queryKey: ['layout-templates'], queryFn: listLayoutTemplates, networkMode: 'always',
+  })
+  const matchedLayouts: LayoutTemplate[] = (layouts.data ?? []).filter(
+    (t) => !!ed.spec && t.template === ed.spec.template && t.ratio === specRatio,
+  )
+  /** 三个版式动作共用的闸门：没 spec / 正在存盘 / 服务端读改写在途时全都点不动。 */
+  const layoutLocked = !ed.spec || ed.saving || ed.busy || busy
+
+  async function doSaveLayout() {
+    const spec = ed.spec
+    if (!spec) return
+    const r = await prompt({
+      title: '存为版式模板',
+      body: `会记下当前 ${spec.template} · ${specRatio === 'landscape' ? '横屏' : '竖屏'} 每一层的位置 / 字号 / 颜色 / 特效，之后可套到同模板同画幅的另一条视频上。`,
+      label: '版式名', placeholder: '如：大字标题版',
+    })
+    if (!r) return
+    try {
+      await createLayoutTemplate({
+        name: r.name, template: spec.template, ratio: specRatio, payload: extractLayoutTemplate(spec),
+      })
+      await qc.invalidateQueries({ queryKey: ['layout-templates'] })
+      setNotice(`已存为版式「${r.name}」`)
+    } catch (e) {
+      setNotice(`存版式失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /**
+   * 套版式：`applyLayoutTemplate` 按角色键对位，条目多了/层数少了都静默跳过——所以两条视频的
+   * 卡片数不一样也能套，多出来的那张卡保持原样。命中层置 `overridden`，一次 `ed.apply` = 一步 undo。
+   */
+  function doApplyLayout(t: LayoutTemplate) {
+    const spec = ed.spec
+    if (!spec) return
+    ed.commit()
+    const next = applyLayoutTemplate(spec, t.payload)
+    if (next === spec) { setNotice(`「${t.name}」里没有能对上当前画面的图层`); return }
+    const hit = next.layers.filter((l, i) => l !== spec.layers[i]).length
+    ed.apply(next)
+    setNotice(`已套用版式「${t.name}」，命中 ${hit} 层（⌘/Ctrl+Z 可撤销）`)
+  }
+
+  /**
+   * 手动刷品牌 kit。**`applyBrandKit` 会跳过 `overridden: true` 的层**——手调过、或刚被
+   * 套过样式预设/版式的层都带这个标记。这是刻意规则（kit 是预设级批量套用，不覆盖用户的选择），
+   * 所以这里如实把被跳过的层数报出来，免得用户以为按钮没生效。
+   */
+  async function doApplyKit() {
+    const spec = ed.spec
+    if (!spec) return
+    try {
+      const kit = await getBrandKit(selected)
+      if (Object.keys(kit).length === 0) { setNotice('这个项目还没设置品牌 kit'); return }
+      ed.commit()
+      const skipped = spec.layers.filter((l) => l.overridden).length
+      const tail = skipped ? `；${skipped} 层因手调/套版式被跳过` : ''
+      const next = applyBrandKit(spec, kit)
+      // **不能用 `next === spec` 判空转**：applyBrandKit 只在 kit 整个为空时返回原引用，非空 kit
+      // 哪怕一层都没改也会返回一个新对象（内层 Layer 才是按需复用引用的）。逐层比引用才数得出
+      // 真正被改的层——否则「全被跳过」会误报成「已应用」，还白压一格什么都没变的 undo。
+      const touched = next.layers.filter((l, i) => l !== spec.layers[i]).length
+      if (touched === 0) { setNotice(`品牌 kit 没有可套用的图层${tail}`); return }
+      ed.apply(next)
+      setNotice(`已应用品牌 kit：${touched} 层${tail}（⌘/Ctrl+Z 可撤销）`)
+    } catch (e) {
+      setNotice(`应用品牌 kit 失败：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /**
    * 编辑态的「渲成片」：走 `POST /specs/:videoId/render`（renderFromSpec，只渲当前 spec），
    * **不是**旧的 `POST /video` 全管线——后者会重新 lower，把剪辑台上的手工改动整段覆盖掉。
    * 脏的时候先落盘再入队：端点读的是磁盘上的 spec，不先存等于渲了个旧版本。
@@ -360,6 +459,33 @@ export default function EditorPage({
               {ed.saving && <span className="font-mono text-[10px] text-[var(--fc-faint)]">保存中…</span>}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              <div className="relative" ref={layoutMenuRef}>
+                <button className={OUTLINE} disabled={layoutLocked}
+                  onClick={() => setLayoutMenuOpen((v) => !v)}
+                  title="存/套整片版式，或按项目品牌 kit 刷一遍">版式</button>
+                {layoutMenuOpen && (
+                  <div className="absolute right-0 z-20 mt-1 w-60 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] py-1 text-sm shadow-lg">
+                    <button className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)] disabled:text-[var(--fc-line-2)]"
+                      disabled={!canSaveLayout}
+                      title={canSaveLayout ? '把当前每一层的排版存成模板' : '对标拆解模板（custom-*）不走图层模型，存不了版式'}
+                      onClick={() => { setLayoutMenuOpen(false); doSaveLayout() }}>存为版式…</button>
+                    <div className="mt-1 border-t border-[var(--fc-line)] px-3 pb-0.5 pt-1.5 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-faint)]">
+                      套用版式（{ed.spec?.template} · {specRatio === 'landscape' ? '横屏' : '竖屏'}）
+                    </div>
+                    {matchedLayouts.length === 0 ? (
+                      <div className="px-3 py-1.5 text-[11px] leading-relaxed text-[var(--fc-faint)]">还没有同模板同画幅的版式</div>
+                    ) : matchedLayouts.map((t) => (
+                      <button key={t.id} className="block w-full truncate px-3 py-1.5 text-left hover:bg-[var(--fc-bg)]"
+                        title={t.name} onClick={() => { setLayoutMenuOpen(false); doApplyLayout(t) }}>{t.name}</button>
+                    ))}
+                    <div className="mt-1 border-t border-[var(--fc-line)] pt-1">
+                      <button className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)]"
+                        title="按项目品牌 kit 刷一遍主色/强调色/标题字号/CTA；手调过的层会跳过"
+                        onClick={() => { setLayoutMenuOpen(false); doApplyKit() }}>应用品牌 kit</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <button className={OUTLINE} disabled={!current}
                 onClick={() => { confirmLeave().then((ok) => { if (ok) onCloseEditor() }) }}
                 title="这版不要了：退出编辑态，回队列重做">打回重做</button>
@@ -414,6 +540,7 @@ export default function EditorPage({
             vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
             onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
             specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
+            confirm={confirm}
           />
         )}
 
@@ -440,6 +567,7 @@ export default function EditorPage({
               vp={vp} setVp={setVp} busy={busy} videoRun={videoRun} onMakeVideo={onMakeVideo} uploadAssets={uploadAssets}
               onNotice={setNotice} onEnqueueRender={enqueueRender} onRenderFromSpec={doRenderFromSpec}
               specEpoch={specEpoch} slug={selected} videoId={videoId} onSpecReplaced={bumpSpecEpoch}
+              confirm={confirm}
             />
           </div>
         </div>
@@ -470,6 +598,7 @@ export default function EditorPage({
 
       {transitionExtras}
       {confirmEl}
+      {promptEl}
     </div>
   )
 }

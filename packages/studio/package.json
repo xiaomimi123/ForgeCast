@@ -10,6 +10,7 @@
     "@forgecast/compositions": "workspace:*",
     "@forgecast/copywriter": "workspace:*",
     "@forgecast/core": "workspace:*",
+    "@forgecast/editing": "workspace:*",
     "@remotion/bundler": "4.0.519",
     "@remotion/renderer": "4.0.519"
   },

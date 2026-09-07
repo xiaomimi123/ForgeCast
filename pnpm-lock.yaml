@@ -57,6 +57,9 @@ importers:
       '@forgecast/editing':
         specifier: workspace:*
         version: link:../../packages/editing
+      '@forgecast/studio':
+        specifier: workspace:*
+        version: link:../../packages/studio
       '@remotion/player':
         specifier: 4.0.519
         version: 4.0.519(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -328,6 +331,9 @@ importers:
       '@forgecast/core':
         specifier: workspace:*
         version: link:../core
+      '@forgecast/editing':
+        specifier: workspace:*
+        version: link:../editing
       '@remotion/bundler':
         specifier: 4.0.519
         version: 4.0.519(lightningcss@1.32.0)(postcss@8.5.19)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
