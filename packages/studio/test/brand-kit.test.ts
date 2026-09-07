@@ -23,6 +23,8 @@ const sem = () => ({
     { id: 'cta', role: 'cta', text: '点个关注' },
   ],
 })
+/** base 的别名：横版用例的循环里 `base` 被解构成数值基准字号，会遮蔽这份 opts。 */
+const base0 = base
 const TEMPLATES = ['flash', 'story', 'demo', 'changelog', 'insight', 'talk']
 function spec(template: string): VideoSpec {
   return lower(sem() as any, { ...base, template, videoSrc: 'assets/talk.mp4', sourceDurationSec: 30 } as any)
@@ -95,23 +97,35 @@ describe('applyBrandKit：accentColor → card/highlightCard 层 bg', () => {
 
 describe('applyBrandKit：titleScale → 标题类层写 round(基准 × scale)', () => {
   // 防漂移：基准表是把模板 CSS 的字号抄进 TS 的副本，改了 CSS 不会自动同步。
-  // 这条断言直接读 CSS 文件正则抽竖版 font-size 与表逐项比对——CSS 一改它先红。
-  it('基准表与模板 CSS 的竖版 font-size 逐项一致（防 CSS 漂移）', () => {
-    const stylesDir = path.resolve(__dirname, '../../compositions/src/styles')
-    const expected: Array<[template: string, cls: string, file: string]> = [
-      ['flash', 'painT', 'flash.css'],
-      ['insight', 'painT', 'insight.css'],
-      ['demo', 'hookT', 'demo.css'],
-      ['talk', 'hookT', 'talk.css'],
-      ['changelog', 'title', 'changelog.css'],
-    ]
-    for (const [template, cls, file] of expected) {
-      const css = fs.readFileSync(path.join(stylesDir, file), 'utf8')
-      // 只认竖版规则：`.tpl-<模板> .<类> { ... font-size: Npx`（横版是 `.tpl-x.landscape .cls`）
-      const re = new RegExp(`\\.tpl-${template}\\s+\\.${cls}\\s*\\{[^}]*?font-size:\\s*(\\d+)px`)
-      const m = re.exec(css)
-      expect(m, `${file} 里找不到 .tpl-${template} .${cls} 的 font-size`).not.toBeNull()
-      expect(titleBaseFontSize(template, cls), `${template}/.${cls} 基准表与 ${file} 漂移了`).toBe(Number(m![1]))
+  // 这条断言直接读 CSS 文件正则抽 font-size（竖版 + 横版各一遍）与表逐项比对——CSS 一改它先红。
+  const CSS_TITLES: Array<[template: string, cls: string, file: string]> = [
+    ['flash', 'painT', 'flash.css'],
+    ['insight', 'painT', 'insight.css'],
+    ['demo', 'hookT', 'demo.css'],
+    ['talk', 'hookT', 'talk.css'],
+    ['changelog', 'title', 'changelog.css'],
+  ]
+  function cssFontSize(file: string, template: string, cls: string, landscape: boolean): number {
+    const css = fs.readFileSync(path.resolve(__dirname, '../../compositions/src/styles', file), 'utf8')
+    // 竖版规则是 `.tpl-x .cls`（\s+ 分隔），横版是 `.tpl-x.landscape .cls`——两者互不误命中
+    const sel = landscape ? `\\.tpl-${template}\\.landscape\\s+\\.${cls}` : `\\.tpl-${template}\\s+\\.${cls}`
+    const m = new RegExp(`${sel}\\s*\\{[^}]*?font-size:\\s*(\\d+)px`).exec(css)
+    expect(m, `${file} 里找不到 ${landscape ? '横版' : '竖版'} .${cls}（${template}）的 font-size`).not.toBeNull()
+    return Number(m![1])
+  }
+
+  for (const landscape of [false, true]) {
+    it(`基准表与模板 CSS 的${landscape ? '横' : '竖'}版 font-size 逐项一致（防 CSS 漂移）`, () => {
+      for (const [template, cls, file] of CSS_TITLES) {
+        expect(titleBaseFontSize(template, cls, landscape), `${template}/.${cls} ${landscape ? '横' : '竖'}版基准与 ${file} 漂移了`)
+          .toBe(cssFontSize(file, template, cls, landscape))
+      }
+    })
+  }
+
+  it('横版与竖版基准确实是两套值（不是同一张表读两遍）', () => {
+    for (const [template, cls] of CSS_TITLES) {
+      expect(titleBaseFontSize(template, cls, true)).toBeLessThan(titleBaseFontSize(template, cls, false)!)
     }
   })
 
@@ -164,6 +178,26 @@ describe('applyBrandKit：titleScale → 标题类层写 round(基准 × scale)'
     const s = spec('flash')
     const out = applyBrandKit(s, { primaryColor: '#ff0066' })
     expect(out.layers.every((l) => l.style.fontSize === undefined)).toBe(true)
+  })
+
+  it('横版画幅（width > height）按横版基准算：flash 84 / insight 68 / demo 76 / talk 84 / changelog 64', () => {
+    const cases: Array<[template: string, id: string, base: number]> = [
+      ['flash', 'flashHook', 84], ['insight', 'insight-intro', 68], ['demo', 'demo-hook', 76],
+      ['talk', 'talkHook', 84], ['changelog', 'clTitle', 64],
+    ]
+    for (const [t, id, base] of cases) {
+      const s = lower(sem() as any, {
+        ...base0, template: t, canvas: { width: 1920, height: 1080 },
+        videoSrc: 'assets/talk.mp4', sourceDurationSec: 30,
+      } as any)
+      const out = applyBrandKit(s, { titleScale: 1.5 })
+      expect(out.layers.find((l) => l.id === id)!.style.fontSize, `${t} 横版基准应为 ${base}`).toBe(Math.round(base * 1.5))
+    }
+  })
+
+  it('正方形画幅算竖版（与 CSS 的 .landscape 只在宽>高时挂上同口径）', () => {
+    const s = lower(sem() as any, { ...base0, template: 'flash', canvas: { width: 1080, height: 1080 } } as any)
+    expect(applyBrandKit(s, { titleScale: 1 }).layers.find((l) => l.id === 'flashHook')!.style.fontSize).toBe(100)
   })
 
   it('overridden 的标题层仍然跳过', () => {
