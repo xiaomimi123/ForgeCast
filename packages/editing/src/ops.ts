@@ -5,7 +5,11 @@
 import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/studio'
 
 /** Effect['type'] 的运行时镜像。类型层的联合在运行时消失，用户输入（拖拽面板的按钮 id）必须在这里过一遍。 */
-const EFFECT_TYPES: ReadonlyArray<Effect['type']> = ['decode', 'fadeIn', 'slideUp', 'pulse', 'demote', 'exit']
+const EFFECT_TYPES: ReadonlyArray<Effect['type']> = [
+  'decode', 'fadeIn', 'slideUp', 'pulse', 'demote', 'exit',
+  // 特效库 Task 2 新增的三种进场动画。漏在这里 = Inspector 勾选框一点就 throw。
+  'zoomIn', 'slideIn', 'blurIn',
+]
 
 /** 最短图层时长（秒）。低于这个值在时间轴上点不中，也没有观感意义。 */
 export const MIN_LAYER_DURATION = 0.2
@@ -35,9 +39,20 @@ export function updateLayerText(spec: VideoSpec, layerId: string, text: string):
   return replaceLayer(spec, layerId, edited(layer, { content: { kind, text } }))
 }
 
+/**
+ * 合并样式 patch。**patch 里值为 `undefined` 的键 = 从 style 删掉这一项**（回落模板默认），
+ * 不是「把它设成 undefined」——单纯 `{...style, ...patch}` 会把键留在对象上（值 undefined），
+ * `'k' in style` / `Object.keys` 就读到假阳性；落盘时 JSON.stringify 恰好抹掉，于是内存与
+ * 磁盘两份 style 形状不一致。Inspector 的「清空输入框 / 清除按钮」全靠这条语义。
+ */
 export function setLayerStyle(spec: VideoSpec, layerId: string, patch: Partial<LayerStyle>): VideoSpec {
   const layer = requireLayer(spec, layerId)
-  return replaceLayer(spec, layerId, edited(layer, { style: { ...layer.style, ...patch } }))
+  const style: LayerStyle = { ...layer.style }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete (style as Record<string, unknown>)[key]
+    else (style as Record<string, unknown>)[key] = value
+  }
+  return replaceLayer(spec, layerId, edited(layer, { style }))
 }
 
 export function toggleEffect(spec: VideoSpec, layerId: string, type: Effect['type'], on: boolean): VideoSpec {

@@ -34,6 +34,12 @@ describe('setEffectParams — 顶层/params 分流', () => {
     expect(e.duration).toBe(0.6)
   })
 
+  it('y 也走 params（fadeIn 的位移通道）', () => {
+    const spec = baseSpec({ layers: [textLayer({ id: 'l', effects: [{ type: 'fadeIn' }] })] })
+    const out = setEffectParams(spec, 'l', 'fadeIn', { y: 60 })
+    expect(effectOf(out, 'l', 'fadeIn').params).toEqual({ y: 60 })
+  })
+
   it('direction 存字符串键值写入 params', () => {
     const spec = baseSpec({ layers: [textLayer({ id: 'l', effects: [slideEffect()] })] })
     const out = setEffectParams(spec, 'l', 'slideIn', { direction: 'left' })

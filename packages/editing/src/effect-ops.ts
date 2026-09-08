@@ -15,6 +15,9 @@ export interface EffectPatch {
   distance?: number
   scale?: number
   blur?: number
+  /** fadeIn 的位移距离（px）。styleAt 里 fadeIn 是 scale 与 y 二选一：params.scale 是数值就走缩放，
+   *  否则走 y 位移（缺省 20）——Inspector 两个框都出，提示语解释这条互斥。 */
+  y?: number
 }
 
 /** patch 里落在 Effect 顶层（而非 params）的键。 */

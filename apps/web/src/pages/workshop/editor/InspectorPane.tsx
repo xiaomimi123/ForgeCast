@@ -1,5 +1,5 @@
 import type { Effect, Layer, LayerStyle, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { applyStylePreset, applyStylePresetToKind, clearLayerGeometry, GEOMETRY_KEYS, paramsDiff, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer, type StylePresetPayload } from '@forgecast/editing'
+import { applyStylePreset, applyStylePresetToKind, clearLayerGeometry, GEOMETRY_KEYS, paramsDiff, setEffectParams, setLayerStyle, setVideoVolume, toggleEffect, trimVideoLayer, type EffectPatch, type StylePresetPayload } from '@forgecast/editing'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, createStylePreset, deleteStylePreset, listLayoutTemplates, listStylePresets, type Asset, type BgmList, type ContentItemView, type CustomTemplate, type LayoutTemplate, type StylePreset } from '../../../api'
@@ -7,7 +7,7 @@ import TaskProgress from '../../../components/TaskProgress'
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { usePrompt } from '../../../components/ui/Prompt'
 import type { TaskRun } from '../../../useTaskRun'
-import { BGS, MOODS, OUTLINE, VIDEO_TPLS, type VideoParams } from './ui'
+import { BGS, EFFECT_DIRECTIONS, EFFECT_PARAM_META, EFFECTS, MOODS, OUTLINE, VIDEO_TPLS, type EffectParamKey, type VideoParams } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /**
@@ -21,16 +21,6 @@ import type { useEditorState } from './useEditorState'
  *   （曲库根在服务端文件系统上，见 pick-bgm 的 `bgmInside` 校验）；`null` 表示显式选了「不加背景乐」。
  */
 export interface ParamsDraft { bgVariant?: string; bgmSrc?: string | null; mood?: string }
-
-/** 六种特效（Effect['type'] 的全集）与它们的人话名。新增类型时这里要跟着加。 */
-const EFFECTS: Array<{ type: Effect['type']; label: string }> = [
-  { type: 'decode', label: '解码' },
-  { type: 'fadeIn', label: '淡入' },
-  { type: 'slideUp', label: '上移' },
-  { type: 'pulse', label: '脉冲' },
-  { type: 'demote', label: '退居' },
-  { type: 'exit', label: '退场' },
-]
 
 /** 图层 kind 的人话名（预设条的文案用）。键与服务端 style_presets.layer_kind 白名单一致（不含 video）。 */
 const KIND_LABEL: Record<'text' | 'image' | 'caption' | 'shape', string> = {
@@ -384,6 +374,8 @@ function LayerInspector({ ed, spec, layerId, confirm, onNotice }: {
   }
   const st = layer.style
   const isVideo = layer.content.kind === 'video'
+  /** 文字效果（描边 / 发光）只有真有文字的两种 kind 有意义——两端 CSS 映射对 image/shape 不产出。 */
+  const isText = layer.content.kind === 'text' || layer.content.kind === 'caption'
   const patchLive = (patch: Partial<LayerStyle>) => ed.applyTransient(setLayerStyle(spec, layer.id, patch))
   const patchStep = (patch: Partial<LayerStyle>) => ed.apply(setLayerStyle(spec, layer.id, patch))
   /** 数字输入：空串＝不设这一项（回落模板默认），不是 0。 */
@@ -476,23 +468,300 @@ function LayerInspector({ ed, spec, layerId, confirm, onNotice }: {
             onClick={() => { ed.commit(); ed.apply(clearLayerGeometry(spec, layer.id)) }}
           >清除位置覆盖</button>
         </Field>
+        {/* 卡片效果对 text / image / caption / shape 一视同仁（都是画面上的一块矩形）；
+            video 层走的是上面那条分支，本来就到不了这里。 */}
+        <CardEffectFields st={st} layerId={layer.id} patchLive={patchLive} patchStep={patchStep} commit={() => ed.commit()} />
+        {isText && (
+          <TextEffectFields st={st} layerId={layer.id} patchLive={patchLive} patchStep={patchStep} commit={() => ed.commit()} />
+        )}
       </>
         )}
 
-        <div className="pt-1 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">特效</div>
-        <div className="grid grid-cols-3 gap-x-2 gap-y-1">
-          {EFFECTS.map((fx) => {
-            const on = layer.effects.some((e) => e.type === fx.type)
-            return (
-              <label key={fx.type} className="flex items-center gap-1 text-[11px] text-[var(--fc-muted)]">
-                <input type="checkbox" checked={on}
-                  onChange={(e) => ed.apply(toggleEffect(spec, layer.id, fx.type, e.target.checked))} />
-                {fx.label}
-              </label>
-            )
-          })}
+        <SectionLabel>特效</SectionLabel>
+        <div className="space-y-0.5">
+          {EFFECTS.map((fx) => <EffectRow key={fx.type} ed={ed} spec={spec} layer={layer} fx={fx} />)}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * 数字输入：**本地草稿 + 失焦/回车提交**，不像 X/Y/字号那样每次 onChange 就 applyTransient。
+ * 受控回写会把半截数字改掉——键入 `1.5`，敲到 `1.` 那一刻 `Number('1.')` 是 1，小数点再也打不进去
+ * （同 VideoLayerFields 裁头/裁尾的既有姿势）。
+ *
+ * **清空 = 提交 `undefined`**：调用方据此把这一项从 style 里删掉（`setLayerStyle` 的删键语义），
+ * 于是控件回到 placeholder 显示的模板默认值。调用方要给 `key` 带上 layer.id，换层时草稿才作废。
+ */
+function NumIn({ value, onCommit, step, min, max, placeholder }: {
+  value: number | undefined
+  onCommit: (v: number | undefined) => void
+  step?: number; min?: number; max?: number; placeholder?: string
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const commit = (raw: string) => {
+    setDraft(null)
+    if (raw.trim() === '') { if (value !== undefined) onCommit(undefined); return }
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n === value) return
+    onCommit(n)
+  }
+  return (
+    <input
+      className={CTRL} type="number" step={step} min={min} max={max}
+      placeholder={placeholder ?? '默认'}
+      value={draft ?? value ?? ''}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+    />
+  )
+}
+
+/**
+ * 颜色输入 + 「清除」。颜色走 `applyTransient` + 失焦 `commit`（同上面的「颜色 / 底色」两项）而不是
+ * 本地草稿：原生取色器拖动时每移一格都发 onChange，要的就是即时预览，而它又不存在「半截数字」问题。
+ * 清除是离散的一步，直接 `apply`。`<input type="color">` 没有「空」态，所以未设值时显示 fallback，
+ * 真实状态由右侧那行小字（色值 / 「默认」）说清楚。
+ */
+function ColorIn({ value, fallback, onLive, onDone, onClear }: {
+  value: string | undefined; fallback: string
+  onLive: (c: string) => void; onDone: () => void; onClear?: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        className="h-[28px] w-[44px] shrink-0 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)]"
+        type="color" value={value ?? fallback}
+        onChange={(e) => onLive(e.target.value)} onBlur={onDone}
+      />
+      <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--fc-faint)]">{value ?? '默认'}</span>
+      {onClear && (
+        <button className={`${OUTLINE} !px-2 !py-0.5 !text-[11px]`} onClick={onClear}>清除</button>
+      )}
+    </div>
+  )
+}
+
+/** 小节标题（卡片效果 / 文字效果 / 特效）。 */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <div className="pt-1 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">{children}</div>
+}
+
+/** 结构化字段的兜底值：`shadow`/`glow`/`bgGradient` 的子键都是必填，从「没设过」到「设了一项」
+ *  必须把整组补齐，不能落一个 `{blur: 8}` 这种缺键的对象出去（两端 CSS 映射会读到 undefined）。 */
+const SHADOW_DEF = { blur: 12, x: 0, y: 6, color: '#000000' } as const
+const GLOW_DEF = { blur: 8, color: '#FFD400' } as const
+const GRADIENT_DEF = { from: '#FFFFFF', to: '#E6E6E6', angle: 180 } as const
+
+/**
+ * 卡片效果小节：描边 / 圆角 / 阴影 / 毛玻璃 / 渐变底。**只在非 video 层出现**——调用点就在
+ * 样式组对 video 的隐藏分支里面，不另加判断。
+ *
+ * 结构化三项（shadow / glow / bgGradient）**整组存在或整组不存在**：任一子键被清空即整组删除
+ * （`patchStep({ shadow: undefined })`），因为「有阴影但没有模糊半径」不是一个有意义的中间态。
+ */
+function CardEffectFields({ st, layerId, patchLive, patchStep, commit }: {
+  st: LayerStyle; layerId: string
+  patchLive: (p: Partial<LayerStyle>) => void
+  patchStep: (p: Partial<LayerStyle>) => void
+  commit: () => void
+}) {
+  /** 结构化组的子键改写：v === undefined ⇒ 整组删；否则以兜底值补齐后合并。 */
+  const shadow = (k: 'blur' | 'x' | 'y', v: number | undefined) =>
+    v === undefined ? patchStep({ shadow: undefined }) : patchStep({ shadow: { ...SHADOW_DEF, ...st.shadow, [k]: v } })
+  const grad = (k: 'angle', v: number | undefined) =>
+    v === undefined ? patchStep({ bgGradient: undefined }) : patchStep({ bgGradient: { ...GRADIENT_DEF, ...st.bgGradient, [k]: v } })
+
+  return (
+    <>
+      <SectionLabel>卡片效果</SectionLabel>
+      <Field label="描边" hint="边框宽度（px），清空＝不描边">
+        <NumIn key={`${layerId}:borderWidth`} value={st.borderWidth} step={1} min={0}
+          onCommit={(v) => patchStep({ borderWidth: v })} />
+      </Field>
+      <Field label="边色" hint="边框颜色">
+        <ColorIn value={st.borderColor} fallback="#181A16"
+          onLive={(c) => patchLive({ borderColor: c })} onDone={commit}
+          onClear={() => patchStep({ borderColor: undefined })} />
+      </Field>
+      <Field label="圆角" hint="border-radius（px），清空＝回落模板默认">
+        <NumIn key={`${layerId}:radius`} value={st.radius} step={2} min={0}
+          onCommit={(v) => patchStep({ radius: v })} />
+      </Field>
+      <Field label="阴影" hint="模糊半径（px）。清空这一格＝整组阴影删除">
+        <NumIn key={`${layerId}:shadowBlur`} value={st.shadow?.blur} step={2} min={0} placeholder="无阴影"
+          onCommit={(v) => shadow('blur', v)} />
+      </Field>
+      <Field label="影X" hint="阴影横向偏移（px）">
+        <NumIn key={`${layerId}:shadowX`} value={st.shadow?.x} step={1}
+          onCommit={(v) => shadow('x', v)} />
+      </Field>
+      <Field label="影Y" hint="阴影纵向偏移（px）">
+        <NumIn key={`${layerId}:shadowY`} value={st.shadow?.y} step={1}
+          onCommit={(v) => shadow('y', v)} />
+      </Field>
+      <Field label="影色">
+        <ColorIn value={st.shadow?.color} fallback={SHADOW_DEF.color}
+          onLive={(c) => patchLive({ shadow: { ...SHADOW_DEF, ...st.shadow, color: c } })} onDone={commit}
+          onClear={st.shadow ? () => patchStep({ shadow: undefined }) : undefined} />
+      </Field>
+      <Field label="毛玻" hint="backdrop-filter blur 0~40px">
+        <div className="flex items-center gap-2">
+          <input
+            className="h-[28px] min-w-0 flex-1" type="range" min={0} max={40} step={1}
+            value={st.backdropBlur ?? 0}
+            onChange={(e) => patchLive({ backdropBlur: Number(e.target.value) })}
+            onPointerUp={commit} onBlur={commit}
+          />
+          <span className="w-6 shrink-0 text-right font-mono text-[10px] text-[var(--fc-faint)]">
+            {st.backdropBlur ?? 0}
+          </span>
+          <button className={`${OUTLINE} !px-2 !py-0.5 !text-[11px]`}
+            disabled={st.backdropBlur === undefined}
+            onClick={() => patchStep({ backdropBlur: undefined })}>清除</button>
+        </div>
+      </Field>
+      <Field label="渐起" hint="线性渐变起点色（设了这项就整组生效）">
+        <ColorIn value={st.bgGradient?.from} fallback={GRADIENT_DEF.from}
+          onLive={(c) => patchLive({ bgGradient: { ...GRADIENT_DEF, ...st.bgGradient, from: c } })} onDone={commit}
+          onClear={st.bgGradient ? () => patchStep({ bgGradient: undefined }) : undefined} />
+      </Field>
+      <Field label="渐止" hint="线性渐变终点色">
+        <ColorIn value={st.bgGradient?.to} fallback={GRADIENT_DEF.to}
+          onLive={(c) => patchLive({ bgGradient: { ...GRADIENT_DEF, ...st.bgGradient, to: c } })} onDone={commit}
+          onClear={st.bgGradient ? () => patchStep({ bgGradient: undefined }) : undefined} />
+      </Field>
+      <Field label="渐角" hint="0~360 度。清空这一格＝整组渐变删除">
+        <NumIn key={`${layerId}:gradAngle`} value={st.bgGradient?.angle} step={15} min={0} max={360} placeholder="无渐变"
+          onCommit={(v) => grad('angle', v)} />
+      </Field>
+    </>
+  )
+}
+
+/** 文字效果小节：描边（-webkit-text-stroke）与发光。**只有 text / caption 层有文字可描/可发光**，
+ *  image / shape 上这两项在两端 CSS 映射里都不产出，出这组控件等于给一排点了没反应的框。 */
+function TextEffectFields({ st, layerId, patchLive, patchStep, commit }: {
+  st: LayerStyle; layerId: string
+  patchLive: (p: Partial<LayerStyle>) => void
+  patchStep: (p: Partial<LayerStyle>) => void
+  commit: () => void
+}) {
+  return (
+    <>
+      <SectionLabel>文字效果</SectionLabel>
+      <Field label="字边" hint="文字描边宽度（px），清空＝不描边">
+        <NumIn key={`${layerId}:textStrokeWidth`} value={st.textStrokeWidth} step={0.5} min={0}
+          onCommit={(v) => patchStep({ textStrokeWidth: v })} />
+      </Field>
+      <Field label="字色" hint="文字描边颜色">
+        <ColorIn value={st.textStrokeColor} fallback="#181A16"
+          onLive={(c) => patchLive({ textStrokeColor: c })} onDone={commit}
+          onClear={() => patchStep({ textStrokeColor: undefined })} />
+      </Field>
+      <Field label="发光" hint="text-shadow 模糊半径（px）。清空这一格＝整组发光删除">
+        <NumIn key={`${layerId}:glowBlur`} value={st.glow?.blur} step={2} min={0} placeholder="不发光"
+          onCommit={(v) => (v === undefined
+            ? patchStep({ glow: undefined })
+            : patchStep({ glow: { ...GLOW_DEF, ...st.glow, blur: v } }))} />
+      </Field>
+      <Field label="光色">
+        <ColorIn value={st.glow?.color} fallback={GLOW_DEF.color}
+          onLive={(c) => patchLive({ glow: { ...GLOW_DEF, ...st.glow, color: c } })} onDone={commit}
+          onClear={st.glow ? () => patchStep({ glow: undefined }) : undefined} />
+      </Field>
+    </>
+  )
+}
+
+/**
+ * 一行特效：勾选开关 + 「⚙」展开参数面板。
+ *
+ * 勾选是离散的一步（`toggleEffect` + `apply`）。参数面板里的每次提交也是**一步 undo**——
+ * `setEffectParams` 是纯函数且同值返回原引用，所以拿 `next !== spec` 挡掉空改动，避免用户按 ⌘Z
+ * 时先吃掉几格「什么也没变」。
+ *
+ * 关掉特效时顺手收起面板：这一层已经没有这个 effect 了，`setEffectParams` 对它会 throw，
+ * 留着一个能点却必炸的面板毫无意义。
+ */
+function EffectRow({ ed, spec, layer, fx }: {
+  ed: ReturnType<typeof useEditorState>; spec: VideoSpec; layer: Layer
+  fx: { type: Effect['type']; label: string; params: EffectParamKey[] }
+}) {
+  const [open, setOpen] = useState(false)
+  const effect = layer.effects.find((e) => e.type === fx.type) ?? null
+  const on = effect !== null
+  useEffect(() => { if (!on) setOpen(false) }, [on])
+
+  const setP = (patch: EffectPatch) => {
+    // 上面样式框可能还挂着没收尾的 transient 序列，不先收掉会和这一步挤进同一格 undo
+    ed.commit()
+    const next = setEffectParams(spec, layer.id, fx.type, patch)
+    if (next !== spec) ed.apply(next)
+  }
+  /** params 里的数值键。清空输入框在这里是**空操作**（特效参数没有「删一个键」的语义——
+   *  不设＝用 styleAt 的缺省，而缺省正是 placeholder 显示的那个数），所以只提交有值的改动。 */
+  const setNum = (key: Exclude<keyof EffectPatch, 'direction'>, v: number | undefined) => {
+    if (v !== undefined) setP({ [key]: v } as EffectPatch)
+  }
+  const paramNum = (key: EffectParamKey): number | undefined => {
+    const v = effect?.params?.[key]
+    return typeof v === 'number' ? v : undefined
+  }
+
+  return (
+    <div className="rounded-[var(--fc-r-xs)]">
+      <div className="flex items-center gap-1 text-[11px] text-[var(--fc-muted)]">
+        <label className="flex min-w-0 flex-1 items-center gap-1">
+          <input type="checkbox" checked={on}
+            onChange={(e) => { ed.commit(); ed.apply(toggleEffect(spec, layer.id, fx.type, e.target.checked)) }} />
+          <span className="truncate">{fx.label}</span>
+        </label>
+        <button
+          className={`${OUTLINE} !px-1.5 !py-0 !text-[11px] ${open ? '!border-[var(--fc-accent)] !text-[var(--fc-accent-deep)]' : ''}`}
+          disabled={!on} aria-label={`${fx.label}参数`} aria-expanded={open}
+          title={on ? '展开参数' : '先勾上这个特效'}
+          onClick={() => setOpen((v) => !v)}
+        >⚙</button>
+      </div>
+      {open && effect && (
+        <div className="mb-1 mt-1 space-y-1.5 rounded-[var(--fc-r-sm)] bg-[var(--fc-sunken)] px-2 py-1.5">
+          {/* at / duration 是所有类型的通用两项（styleAt 对每种类型都读） */}
+          <Field label="延迟" hint="相对图层起点的秒偏移（默认 0）">
+            <NumIn key={`${layer.id}:${fx.type}:at`} value={effect.at} step={0.1} min={0} placeholder="0"
+              onCommit={(v) => setNum('at', v)} />
+          </Field>
+          <Field label="时长" hint="特效持续秒数（默认 0.3）">
+            <NumIn key={`${layer.id}:${fx.type}:duration`} value={effect.duration} step={0.1} min={0} placeholder="0.3"
+              onCommit={(v) => setNum('duration', v)} />
+          </Field>
+          {fx.params.map((key) => {
+            const meta = EFFECT_PARAM_META[key]
+            if (key === 'direction') {
+              const cur = typeof effect.params?.direction === 'string' ? effect.params.direction : 'up'
+              return (
+                <Field key={key} label={meta.label} hint={meta.hint}>
+                  <select className={CTRL} value={cur}
+                    onChange={(e) => setP({ direction: e.target.value as 'up' | 'down' | 'left' | 'right' })}>
+                    {EFFECT_DIRECTIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </Field>
+              )
+            }
+            return (
+              <Field key={key} label={meta.label} hint={meta.hint}>
+                <NumIn key={`${layer.id}:${fx.type}:${key}`} value={paramNum(key)} step={meta.step}
+                  placeholder={meta.placeholder} onCommit={(v) => setNum(key, v)} />
+              </Field>
+            )
+          })}
+          {fx.params.length === 0 && (
+            <p className="text-[11px] leading-relaxed text-[var(--fc-faint)]">这个特效只有延迟 / 时长可调。</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

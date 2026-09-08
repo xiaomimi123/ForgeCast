@@ -62,6 +62,34 @@ describe('setLayerStyle', () => {
     expect(out).not.toBe(spec)
     expect(layerOf(out, 'l-hook').style).toEqual({})
   })
+
+  // 特效库 Task 4：Inspector 的「清空输入框」= 删掉这一项、回落模板默认。若只是浅合并，
+  // 键会以 `undefined` 值留在 style 上——`'k' in style` 仍为真，落盘 JSON 靠 stringify 顺手抹掉，
+  // 但内存里任何按 `in`/Object.keys 判「有没有设过」的代码都会读到假阳性。显式删键。
+  it('patch 值为 undefined → 从 style 删除该键（不是留一个 undefined 值）', () => {
+    const spec = baseSpec({ layers: [textLayer({ style: { fontSize: 40, color: '#fff', radius: 12 } })] })
+    const out = setLayerStyle(spec, 'l-hook', { color: undefined, radius: undefined })
+    const style = layerOf(out, 'l-hook').style
+    expect(Object.keys(style)).toEqual(['fontSize'])
+    expect('color' in style).toBe(false)
+    expect('radius' in style).toBe(false)
+    // 原 spec 不受影响
+    expect(spec.layers[0].style).toEqual({ fontSize: 40, color: '#fff', radius: 12 })
+  })
+
+  it('undefined 删键与普通赋值可以同一 patch 混用（结构化对象整组删）', () => {
+    const spec = baseSpec({ layers: [textLayer({ style: { shadow: { blur: 8, x: 0, y: 4, color: '#000' }, glow: { blur: 6, color: '#f00' } } })] })
+    const out = setLayerStyle(spec, 'l-hook', { shadow: undefined, glow: { blur: 10, color: '#0f0' } })
+    expect(layerOf(out, 'l-hook').style).toEqual({ glow: { blur: 10, color: '#0f0' } })
+    expect('shadow' in layerOf(out, 'l-hook').style).toBe(false)
+  })
+
+  it('删一个本来就不存在的键 → 不抛，也不凭空造键', () => {
+    const spec = baseSpec()
+    const out = setLayerStyle(spec, 'l-hook', { backdropBlur: undefined })
+    expect(layerOf(out, 'l-hook').style).toEqual({})
+    expect('backdropBlur' in layerOf(out, 'l-hook').style).toBe(false)
+  })
 })
 
 describe('toggleEffect', () => {
@@ -87,6 +115,12 @@ describe('toggleEffect', () => {
 
   it('固定类型集之外 → throw', () => {
     expect(() => toggleEffect(baseSpec(), 'l-hook', 'wobble' as never, true)).toThrow(/wobble/)
+  })
+
+  // 特效库 Task 2 新增的三种动画必须在运行时白名单里，否则 Inspector 上的勾选框一点就 throw。
+  it.each(['zoomIn', 'slideIn', 'blurIn'] as const)('新动画 %s 在运行时白名单里', (type) => {
+    const out = toggleEffect(baseSpec(), 'l-hook', type, true)
+    expect(layerOf(out, 'l-hook').effects).toEqual([{ type }])
   })
 })
 
