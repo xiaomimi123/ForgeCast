@@ -207,6 +207,10 @@ export const FX_CSS = `
       /* 科技感背景变体（--bg=grid|aurora|matrix|synth|mesh 切换） */
       #techbg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
       #techbg .vig { position: absolute; inset: 0; box-shadow: inset 0 0 420px rgba(0,0,0,.72); }
+      /* 图层容器自带层叠上下文（与 compositions/src/styles/base.css 同改，理由见那边注释）：
+         绝不能换成 position:relative——模板类 .cap/.card/.chat/.phoneWrap 与 .clip 同特异性、
+         本段源序在后，会把它们的绝对定位打回文档流。 */
+      .clip { isolation: isolate; }
       .bg-grid { background: radial-gradient(1200px 900px at 50% 20%, rgba(34,98,168,.38), transparent 62%), radial-gradient(1100px 850px at 82% 92%, rgba(96,52,168,.30), transparent 60%), linear-gradient(165deg, #0a0e1a, #0d1117 55%, #080a11); }
       .bg-grid .mv { position: absolute; inset: -25%; background-image: linear-gradient(rgba(96,178,255,.11) 2px, transparent 2px), linear-gradient(90deg, rgba(96,178,255,.11) 2px, transparent 2px); background-size: 80px 80px; -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); }
       .bg-grid .sweep { position: absolute; top: -50%; left: -30%; width: 55%; height: 200%; background: linear-gradient(105deg, transparent, rgba(120,200,255,.10), transparent); transform: skewX(-12deg); }
@@ -222,7 +226,9 @@ export const FX_CSS = `
       /* 逐字解码/故障风：每字叠「乱码层 .gh + 最终字 .fin」，靠 opacity 点亮做扫描→锁定 */
       .twc { position: relative; display: inline-block; }
       .twc .gh { position: absolute; left: 0; top: 0; color: #5cf; text-shadow: 0 0 18px rgba(90,200,255,.95), 0 0 4px rgba(90,200,255,.9); }
-      .twc .fin { text-shadow: 0 0 12px rgba(120,190,255,.45); }`
+      /* text-shadow 走 --fx-glow 变量（同 compositions/src/styles/base.css）：图层「发光」是继承来的
+         text-shadow，本条会覆盖掉它；styleAttr() 设 glow 时同时写 --fx-glow，未设时回退到旧硬编码值。 */
+      .twc .fin { text-shadow: var(--fx-glow, 0 0 12px rgba(120,190,255,.45)); }`
 
 /**
  * 逐字解码运行时（经 <!--HF_DECODE--> 注入各模板 <script>，须在 tl 定义后、__timelines 赋值前）。

@@ -317,8 +317,17 @@ describe('LayerStyle 新字段 → geom() 映射（特效库 Task 1）', () => {
     expect(geom({ textStrokeWidth: 1 })).toMatchObject({ WebkitTextStroke: '1px #000' })
   })
 
-  it('glow → text-shadow', () => {
-    expect(geom({ glow: { blur: 10, color: '#0ff' } })).toMatchObject({ textShadow: '0 0 10px #0ff' })
+  it('glow → text-shadow 与 --fx-glow 同时产出（后者供 .twc .fin 取用）', () => {
+    const s = geom({ glow: { blur: 10, color: '#0ff' } }) as Record<string, unknown>
+    expect(s.textShadow).toBe('0 0 10px #0ff')
+    expect(s['--fx-glow']).toBe('0 0 10px #0ff')
+  })
+
+  it('不设 glow 时既不产 text-shadow 也不产 --fx-glow', () => {
+    const s = geom({ color: '#fff' }) as Record<string, unknown>
+    expect(s.textShadow).toBeUndefined()
+    expect(s['--fx-glow']).toBeUndefined()
+    expect(s).toEqual({ color: '#fff' })
   })
 
   it('bgGradient 有值时覆盖 bg（写在 bg 之后）', () => {

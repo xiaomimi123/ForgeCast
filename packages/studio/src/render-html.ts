@@ -48,6 +48,9 @@ function styleAttr(style: LayerStyle): string {
   }
   if (style.glow) {
     decls.push(`text-shadow:0 0 ${style.glow.blur}px ${escapeHtml(style.glow.color)}`)
+    // 同值再写一份自定义属性，供 FX_CSS 的 `.twc .fin { text-shadow: var(--fx-glow, …) }` 取用——
+    // 否则带「逐字解码」的层里每个字都被那条规则覆盖，继承来的 glow 看不见（compositions 端 geom() 同）。
+    decls.push(`--fx-glow:0 0 ${style.glow.blur}px ${escapeHtml(style.glow.color)}`)
   }
   if (style.bgGradient) {
     const { from, to, angle } = style.bgGradient

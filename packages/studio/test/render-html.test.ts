@@ -158,9 +158,16 @@ describe('styleAttr：LayerStyle 新字段映射（特效库 Task 1）', () => {
     expect(html).toContain('-webkit-text-stroke:1px #000')
   })
 
-  it('glow → text-shadow', () => {
+  it('glow → text-shadow 与 --fx-glow 同时产出（后者供 FX_CSS 的 .twc .fin 取用）', () => {
     const { html } = renderSpecToHtml(styleSpec({ glow: { blur: 10, color: '#0ff' } }))
     expect(html).toContain('text-shadow:0 0 10px #0ff')
+    expect(html).toContain('--fx-glow:0 0 10px #0ff')
+  })
+
+  it('不设 glow 时既不产 text-shadow 也不产 --fx-glow', () => {
+    const { html } = renderSpecToHtml(styleSpec({ color: '#fff' }))
+    expect(html).not.toContain('text-shadow')
+    expect(html).not.toContain('--fx-glow')
   })
 
   it('bgGradient 有值时覆盖 bg（写在 bg 之后）', () => {

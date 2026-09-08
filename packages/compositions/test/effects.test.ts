@@ -81,6 +81,11 @@ describe('styleAt 参数化：缺省值锁', () => {
     near(styleAt(fx, 0, 5, 0.4, null).y, 0)
   })
 
+  it('params 值是字符串时退回缺省（num() 只认 number）', () => {
+    const fx: Effect[] = [{ type: 'slideUp', at: 0, duration: 0.4, params: { distance: '100' } }]
+    near(styleAt(fx, 0, 5, 0, null).y, 40)        // 不是 100，也不是 NaN
+  })
+
   it('fadeIn 读 params.y，缺省 20', () => {
     const fx: Effect[] = [{ type: 'fadeIn', at: 0, duration: 0.4, params: { y: 60 } }]
     near(styleAt(fx, 0, 5, 0, null).y, 60)

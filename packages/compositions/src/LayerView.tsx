@@ -39,6 +39,10 @@ export function geom(style: LayerStyle): React.CSSProperties {
   }
   if (style.glow) {
     s.textShadow = `0 0 ${style.glow.blur}px ${style.glow.color}`
+    // 同一个值再写一份自定义属性：带「逐字解码」的文字层里每个字是 .twc .fin，它自己的
+    // text-shadow 规则会覆盖掉从这里继承下去的值，于是 glow 在成片上看不见。base.css 把那条
+    // 改成 `text-shadow: var(--fx-glow, <旧硬编码>)`，用户设了 glow 就取这里的值，没设照旧。
+    ;(s as Record<string, string>)['--fx-glow'] = `0 0 ${style.glow.blur}px ${style.glow.color}`
   }
   if (style.bgGradient) {
     const { from, to, angle } = style.bgGradient
