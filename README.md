@@ -124,6 +124,42 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
   3. 出片链路的顺序是 **先 kit、后版式**——同一层上版式里的值赢过 kit。
 - 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
 
+### 图层特效（描边/圆角/阴影 · 毛玻璃 · 文字描边/发光 · 渐变 + 动画参数）
+
+剪辑台右栏图层检查器：样式组下多了「卡片效果」与「文字效果」两小节，特效组每一行带「⚙」展开参数面板。
+设计见 `docs/superpowers/specs/2026-09-08-effects-library-design.md`。这些字段与特效参数都存在图层的
+`style` / `effects` 里，因此**天然跟着样式预设、排版模板一起复用**，无需额外机制。
+
+| 小节 | 字段（`LayerStyle`） | 出在哪些层 |
+|---|---|---|
+| 卡片效果 | `borderWidth`+`borderColor`、`radius`、`shadow{blur,x,y,color}`、`backdropBlur`(0–40 滑杆)、`bgGradient{from,to,angle}` | 除视频层外全部 |
+| 文字效果 | `textStrokeWidth`+`textStrokeColor`、`glow{blur,color}` | 文字 / 字幕层 |
+
+- 数字框**清空 = 删掉该字段**（效果移除）；`shadow`/`glow`/`bgGradient` 是整组存在或整组不存在。
+- `bgGradient` 有值时覆盖 `bg`。每次提交 = 一步 undo。
+- 动画参数：所有特效可调 `延迟(at)` / `时长(duration)`；`fadeIn`→`y`/`scale`、`slideUp`→`distance`、
+  `zoomIn`→`scale`、`slideIn`→`direction`(上/下/左/右)+`distance`、`blurIn`→`blur`。
+  新增三种动画 **zoomIn / slideIn / blurIn**（`slideUp` 作为存量别名保留，不动老 spec）。
+- **不填参数 = 和本功能上线前逐字节一致**：缺省值就是原来写死的那些数（`slideUp` 40px、`fadeIn` y20 …）。
+
+> **HF 预览不反映动画参数。** 动画参数化与三种新动画只做在 Remotion（成片渲染器）这一端；
+> `packages/studio` 出的 HyperFrames HTML 预览仍按存量六个特效的 GSAP 时间线走，看不到新参数与新动画。
+> 四组**视觉**效果两端都实现，映射一致。剪辑台中栏预览用的就是 Remotion，所见即成片。
+
+> **层叠序修复（本期）。** 两端 CSS 各加一条 `.clip { isolation: isolate; }`，每个图层无条件自带层叠
+> 上下文。此前图层 div 是静态元素（内联 `z-index` 对它无效），背景与边框按 CSS 绘制顺序排在定位元素
+> `#techbg`（`position:absolute; z-index:0`，底色不透明）**之下**，只有「碰巧」带 `transform`/`filter`
+> 的层才浮得上来——描边 / 圆角 / 阴影 / 渐变底因此只在带动画时可见。修复后**不带任何动画的静态图层
+> 上这四组也照常可见**（真渲抽帧：粉色描边 0→18600 px、青色阴影 0→25712 px、渐变红/蓝 0→15965/31195 px）。
+> 文字发光 `glow` 一并修好：`.twc .fin` 的 `text-shadow` 改成 `var(--fx-glow, <旧硬编码>)`，两端在设
+> `glow` 时同时写 `--fx-glow`，带「逐字解码」的层不再把发光值覆盖掉（同一抽帧 0→1174 px 青色光晕）；
+> 不设 `glow` 时输出与修复前逐字相同。毛玻璃 `backdropBlur` 修复前后一致（框内横向梯度能量 0.35 vs
+> 无毛玻璃对照 0.63，两次渲染同值）。
+>
+> **顺带的观感变化**：模板自带、此前同样画不出来的 `.highlightCard`（flash 黄框）与 `.card`（talk 黄框+
+> 半透明底）现在会现身。它们的版式沿用 `lower()` 既有的「无 x/y/width、文档流靠顶」形态，看起来是画面
+> 顶部一条通栏细带——这条版式债是既有的，未在本期处理。
+
 **成片库批量审片**（实施说明 §7）
 
 | 键 | 动作 |

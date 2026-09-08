@@ -7,7 +7,7 @@ import { TextContent } from './Text'
 import type { Layer, LayerStyle } from './videospec-types'
 
 /** LayerStyle 通用几何/视觉属性 → 内联样式（迁自 render-html.ts styleAttr）。 */
-function geom(style: LayerStyle): React.CSSProperties {
+export function geom(style: LayerStyle): React.CSSProperties {
   const s: React.CSSProperties = {}
   // 画布拖拽排版：只有真被拖拽过（x/y 存在）的层才写 position:absolute，把它从文档流拽出来。
   // 同上面 transform 那条教训——绝不无条件设，否则没被拖拽过的层也会被顶出文档流。
@@ -21,6 +21,33 @@ function geom(style: LayerStyle): React.CSSProperties {
   if (style.opacity !== undefined) s.opacity = style.opacity
   if (style.align) s.textAlign = style.align
   if (style.fontSize !== undefined) s.fontSize = style.fontSize
+  // 特效库 Task 1：CSS 映射规则见 .superpowers/sdd/2026-09-08-effects-library/task-1-brief.md
+  // （HF 端 styleAttr() 与此完全一致）。
+  if (style.borderWidth !== undefined && style.borderWidth > 0) {
+    s.border = `${style.borderWidth}px solid ${style.borderColor ?? '#fff'}`
+  }
+  if (style.radius !== undefined) s.borderRadius = style.radius
+  if (style.shadow) {
+    const { blur, x, y, color } = style.shadow
+    s.boxShadow = `${x}px ${y}px ${blur}px ${color}`
+  }
+  if (style.backdropBlur !== undefined && style.backdropBlur > 0) {
+    s.backdropFilter = `blur(${style.backdropBlur}px)`
+  }
+  if (style.textStrokeWidth !== undefined && style.textStrokeWidth > 0) {
+    s.WebkitTextStroke = `${style.textStrokeWidth}px ${style.textStrokeColor ?? '#000'}`
+  }
+  if (style.glow) {
+    s.textShadow = `0 0 ${style.glow.blur}px ${style.glow.color}`
+    // 同一个值再写一份自定义属性：带「逐字解码」的文字层里每个字是 .twc .fin，它自己的
+    // text-shadow 规则会覆盖掉从这里继承下去的值，于是 glow 在成片上看不见。base.css 把那条
+    // 改成 `text-shadow: var(--fx-glow, <旧硬编码>)`，用户设了 glow 就取这里的值，没设照旧。
+    ;(s as Record<string, string>)['--fx-glow'] = `0 0 ${style.glow.blur}px ${style.glow.color}`
+  }
+  if (style.bgGradient) {
+    const { from, to, angle } = style.bgGradient
+    s.background = `linear-gradient(${angle}deg, ${from}, ${to})`
+  }
   return s
 }
 
@@ -39,9 +66,17 @@ export function LayerView(
   // 胜过样式表——字幕层（cssClass:'cap'、effects: []）在五份模板 CSS 里靠 `left:50%` +
   // `transform: translateX(-50%)` 居中，被这条恒等 transform 顶掉后字幕左边缘落在画布中线，
   // 右半截裁出画面，而视频照常渲出、零报错。GSAP 语义本来也是「只写被动画的目标」。
-  if (clipFx.y !== 0 || clipFx.scale !== 1) {
-    style.transform = `translateY(${clipFx.y}px) scale(${clipFx.scale})`
+  // x（slideIn）/ blur（blurIn）同理：只在非缺省时写，否则 .cap 之类靠样式表 transform/filter
+  // 定位的图层会被恒等内联值顶掉。
+  const fxX = clipFx.x ?? 0
+  const fxBlur = clipFx.blur ?? 0
+  // translateX 只在真横移时进串：既有六效果的 transform 字符串必须与本次改动前逐字相同。
+  if (fxX !== 0 || clipFx.y !== 0 || clipFx.scale !== 1) {
+    const parts = fxX !== 0 ? [`translateX(${fxX}px)`] : []
+    parts.push(`translateY(${clipFx.y}px)`, `scale(${clipFx.scale})`)
+    style.transform = parts.join(' ')
   }
+  if (fxBlur !== 0) style.filter = `blur(${fxBlur}px)`
   const cls = ['clip', layer.style.cssClass].filter(Boolean).join(' ')
   let inner: React.ReactNode = null
   switch (layer.content.kind) {

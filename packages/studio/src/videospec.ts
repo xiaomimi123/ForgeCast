@@ -83,6 +83,15 @@ export interface LayerStyle {
   bg?: string
   opacity?: number
   cssClass?: string               // 逃生舱：模板 CSS 里已有的类名，如 'card' / 'painT'
+  // 特效库 Task 1 新增：只放渲染器都能实现的通用视觉效果，CSS 映射规则见
+  // .superpowers/sdd/2026-09-08-effects-library/task-1-brief.md（两端 geom()/styleAttr() 完全一致）。
+  borderWidth?: number; borderColor?: string
+  radius?: number
+  shadow?: { blur: number; x: number; y: number; color: string }
+  backdropBlur?: number
+  textStrokeWidth?: number; textStrokeColor?: string
+  glow?: { blur: number; color: string }
+  bgGradient?: { from: string; to: string; angle: number }
 }
 
 /** 特效参数化——现在硬编码在 DECODE_RUNTIME/fillAccents 里的东西挪到这里。
@@ -92,7 +101,9 @@ export interface LayerStyle {
  *  且退场终点必须精确对齐 layer.start+layer.duration，所以建成一个 effect 类型而不是拆两条，
  *  避免消费方（render-html.ts）各自算错位。 */
 export interface Effect {
-  type: 'decode' | 'fadeIn' | 'slideUp' | 'pulse' | 'demote' | 'exit'
+  // 后三种为特效库 Task 2 新增（zoomIn 缩放进场 / slideIn 四向滑入 / blurIn 模糊消散），
+  // 参数见 params：direction | distance | scale | blur。
+  type: 'decode' | 'fadeIn' | 'slideUp' | 'pulse' | 'demote' | 'exit' | 'zoomIn' | 'slideIn' | 'blurIn'
   at?: number                     // 相对图层起点的秒偏移
   duration?: number
   params?: Record<string, number | string>

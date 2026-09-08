@@ -36,6 +36,17 @@ describe('lower 通用不变量（五个模板都必须满足）', () => {
       expect(s1.layers.every((l) => l.id.length > 0)).toBe(true)
     })
 
+    it(`${template}: track 不为负`, () => {
+      // 负 track 层此前「靠画在 #techbg 之下」隐身；.clip{isolation:isolate} 之后每个图层都自带
+      // 层叠上下文、一律浮到背景之上，负 track 会跟着现身。这条钉住生产 lower 从不产负值，
+      // 于是那条修复对存量成片无观感影响。
+      const spec = lower(sem([
+        { id: 'hook', role: 'hook', text: '钩子' },
+        { id: 'cta', role: 'cta', text: '行动' },
+      ]), { ...base, template } as any)
+      for (const l of spec.layers) expect(l.track).toBeGreaterThanOrEqual(0)
+    })
+
     it(`${template}: 图层不超出片长`, () => {
       const spec = lower(sem([{ id: 'hook', role: 'hook', text: 'x' }]), { ...base, template } as any)
       for (const l of spec.layers) expect(l.start + l.duration).toBeLessThanOrEqual(base.durationSec + 1e-6)

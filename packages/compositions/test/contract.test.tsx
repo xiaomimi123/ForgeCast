@@ -147,3 +147,39 @@ describe('内联 transform 不覆盖样式表', () => {
     expect(el.style.transform).toContain('translateY')
   })
 })
+
+/**
+ * 特效库 Task 2：x（slideIn 横向通道）与 blur（blurIn）。
+ * 同上一条教训——恒等值绝不写内联，否则样式表的 transform/filter 被顶掉。
+ */
+describe('x / blur 通道映射', () => {
+  const el = (effects: Layer['effects'], timeSec: number) =>
+    render(<SpecView spec={spec([layer({ id: 'lx', start: 0, duration: 2, effects })])} timeSec={timeSec} />)
+      .container.querySelector('#lx') as HTMLElement
+
+  it('slideIn left 写 translateX，动画结束后不再写 transform', () => {
+    const fx = [{ type: 'slideIn', at: 0, duration: 0.4, params: { direction: 'left' } }] as Layer['effects']
+    expect(el(fx, 0).style.transform).toContain('translateX(40px)')
+    expect(el(fx, 1).style.transform).toBe('')
+  })
+
+  it('blurIn 写 filter:blur()，动画结束后不再写 filter', () => {
+    const fx = [{ type: 'blurIn', at: 0, duration: 0.4 }] as Layer['effects']
+    expect(el(fx, 0).style.filter).toContain('blur(12px)')
+    expect(el(fx, 1).style.filter).toBe('')
+  })
+
+  it('无 effects 的图层既不带 transform 也不带 filter', () => {
+    expect(el([], 0).style.transform).toBe('')
+    expect(el([], 0).style.filter).toBe('')
+  })
+})
+
+/** 缺省零变化的字面锁：既有效果的 transform 字符串必须与新增 x 通道之前逐字相同。 */
+describe('transform 字符串逐字锁', () => {
+  it('slideUp 起点仍是 translateY(40px) scale(1)，不夹带 translateX(0px)', () => {
+    const s = spec([layer({ id: 'ls', start: 0, duration: 2, effects: [{ type: 'slideUp', at: 0, duration: 0.4 }] as Layer['effects'] })])
+    const el = render(<SpecView spec={s} timeSec={0} />).container.querySelector('#ls') as HTMLElement
+    expect(el.style.transform).toBe('translateY(40px) scale(1)')
+  })
+})

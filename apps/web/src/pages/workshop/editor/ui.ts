@@ -6,6 +6,53 @@
  *（`Cannot access 'BGS' before initialization`，dev 下白屏、打包后靠 rollup 的重排侥幸不炸），
  * 这类崩溃只在运行时出现，tsc 与 build 都拦不住。把常量放在两侧都只依赖的叶子模块，环就不存在了。
  */
+import type { Effect } from '@forgecast/compositions/src/videospec-types'
+
+/**
+ * 九种特效（`Effect['type']` 的全集）与它们的人话名 + 可调参数键。新增类型时这里要跟着加，
+ * 并且 `@forgecast/editing` 的 `EFFECT_TYPES` 运行时白名单也要同步——漏了那边勾选框一点就 throw。
+ *
+ * `params` 只列**该类型真正读**的键（口径以 compositions/src/effects.ts `styleAt` 的 switch 为准，
+ * 多列出来的键调了也不会变画面，比不给还糟）。
+ *
+ * `timing` 同理，列**该类型真正读**的时间键——`at`/`duration` 并非所有类型通用：`styleAt` 里
+ * `pulse` 只按 t0 判窗口、不读 duration；`exit` 从 clipEnd 倒推、不读 at；`decode` 两个都不读
+ * （只落成 `.tw` 类，节奏由 decode 运行时定）。列进来的才渲控件，其余不出——出了就是死控件。
+ * 与 EFFECT_PARAM_META 一起构成展开面板的全部内容。
+ */
+export type EffectTimingKey = 'at' | 'duration'
+
+export const EFFECTS: Array<{
+  type: Effect['type']; label: string; timing: EffectTimingKey[]; params: EffectParamKey[]
+}> = [
+  { type: 'decode', label: '解码', timing: [], params: [] },
+  { type: 'fadeIn', label: '淡入', timing: ['at', 'duration'], params: ['y', 'scale'] },
+  { type: 'slideUp', label: '上移', timing: ['at', 'duration'], params: ['distance'] },
+  { type: 'pulse', label: '脉冲', timing: ['at'], params: [] },
+  { type: 'demote', label: '退居', timing: ['at', 'duration'], params: [] },
+  { type: 'exit', label: '退场', timing: ['duration'], params: [] },
+  { type: 'zoomIn', label: '缩放进场', timing: ['at', 'duration'], params: ['scale'] },
+  { type: 'slideIn', label: '滑入', timing: ['at', 'duration'], params: ['direction', 'distance'] },
+  { type: 'blurIn', label: '模糊消散', timing: ['at', 'duration'], params: ['blur'] },
+]
+
+export type EffectParamKey = 'direction' | 'distance' | 'scale' | 'blur' | 'y'
+
+/** 展开面板里每个参数键的标签 / 步进 / 缺省提示（缺省值抄自 styleAt 的 `num(..., dflt)`）。 */
+export const EFFECT_PARAM_META: Record<EffectParamKey, { label: string; step: number; placeholder: string; hint: string }> = {
+  direction: { label: '方向', step: 1, placeholder: 'up', hint: '往哪个方向进场（起点在反侧）' },
+  distance: { label: '距离', step: 5, placeholder: '40', hint: '进场位移距离，px（默认 40）' },
+  scale: { label: '缩放', step: 0.05, placeholder: '0.8', hint: 'zoomIn 的起始缩放（默认 0.8）；fadeIn 填了这项就走缩放、不走位移' },
+  blur: { label: '模糊', step: 1, placeholder: '12', hint: '起始模糊半径，px（默认 12）' },
+  y: { label: '位移', step: 5, placeholder: '20', hint: 'fadeIn 的纵向位移，px（默认 20）；上面「缩放」填了值时这项失效' },
+}
+
+/** slideIn 的方向下拉。值必须是 styleAt 认得的四个字符串之一。 */
+export const EFFECT_DIRECTIONS = [
+  { value: 'up', label: '向上' }, { value: 'down', label: '向下' },
+  { value: 'left', label: '向左' }, { value: 'right', label: '向右' },
+] as const
+
 export const VIDEO_TPLS = [
   { value: 'flash', label: 'flash · 文字快闪' },
   { value: 'story', label: 'story · 微信气泡' },

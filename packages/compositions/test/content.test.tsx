@@ -15,6 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
+import { geom } from '../src/LayerView'
 
 // talk fixture 含 video 图层——LayerView 里的 <Sequence>/<Video> 靠 remotion 的 useVideoConfig()
 // 才能渲，脱离 <Composition /> 上下文会直接抛错（见 video-layer.test.tsx 同款 mock）。
@@ -269,5 +270,86 @@ describe.each(POSITION_FIXTURES)('%s：style.x/y 触发绝对定位', (_name, sp
     expect(el?.style.position, `图层 ${layer.id} 未触发绝对定位`).toBe('absolute')
     expect(el?.style.left).toBe('100px')
     expect(el?.style.top).toBe('200px')
+  })
+})
+
+/**
+ * 特效库 Task 1：LayerStyle 新字段 → geom() 内联样式映射。
+ *
+ * 只挑 flash 的第一层打补丁（做法同上面 POSITION_FIXTURES：测试内 patch 深拷贝出来的 spec，
+ * 不碰 fixtures/*.json 本身）。逐字段一例，映射规则见
+ * .superpowers/sdd/2026-09-08-effects-library/task-1-brief.md。
+ */
+describe('LayerStyle 新字段 → geom() 映射（特效库 Task 1）', () => {
+  // 直接测纯函数 geom()，不经过 React+jsdom 渲染往返：jsdom 的 CSSOM 实现（cssstyle）会在
+  // style 属性序列化时把颜色规范化成 rgb(...)、并整个丢弃它不认识的 backdrop-filter 声明——
+  // 这是 jsdom 自身的局限，不是我们要断言的行为，经它往返会把真实映射结果测成假红/测不到。
+  // geom() 返回的是 React.CSSProperties 纯对象，直接比对字段值就是 SSR/浏览器实际收到的值。
+  it('borderWidth/borderColor → border', () => {
+    expect(geom({ borderWidth: 3, borderColor: '#f00' })).toMatchObject({ border: '3px solid #f00' })
+  })
+
+  it('borderWidth 缺省 borderColor 时回落 #fff', () => {
+    expect(geom({ borderWidth: 2 })).toMatchObject({ border: '2px solid #fff' })
+  })
+
+  it('borderWidth<=0 不写 border', () => {
+    expect(geom({ borderWidth: 0, borderColor: '#f00' }).border).toBeUndefined()
+  })
+
+  it('radius → border-radius', () => {
+    expect(geom({ radius: 12 })).toMatchObject({ borderRadius: 12 })
+  })
+
+  it('shadow → box-shadow', () => {
+    expect(geom({ shadow: { blur: 8, x: 2, y: 4, color: '#000' } })).toMatchObject({ boxShadow: '2px 4px 8px #000' })
+  })
+
+  it('backdropBlur>0 → backdrop-filter', () => {
+    expect(geom({ backdropBlur: 6 })).toMatchObject({ backdropFilter: 'blur(6px)' })
+  })
+
+  it('backdropBlur<=0 不写 backdrop-filter', () => {
+    expect(geom({ backdropBlur: 0 }).backdropFilter).toBeUndefined()
+  })
+
+  it('textStrokeWidth>0 → -webkit-text-stroke（缺省色回落 #000）', () => {
+    expect(geom({ textStrokeWidth: 1 })).toMatchObject({ WebkitTextStroke: '1px #000' })
+  })
+
+  it('glow → text-shadow 与 --fx-glow 同时产出（后者供 .twc .fin 取用）', () => {
+    const s = geom({ glow: { blur: 10, color: '#0ff' } }) as Record<string, unknown>
+    expect(s.textShadow).toBe('0 0 10px #0ff')
+    expect(s['--fx-glow']).toBe('0 0 10px #0ff')
+  })
+
+  it('不设 glow 时既不产 text-shadow 也不产 --fx-glow', () => {
+    const s = geom({ color: '#fff' }) as Record<string, unknown>
+    expect(s.textShadow).toBeUndefined()
+    expect(s['--fx-glow']).toBeUndefined()
+    expect(s).toEqual({ color: '#fff' })
+  })
+
+  it('bgGradient 有值时覆盖 bg（写在 bg 之后）', () => {
+    const s = geom({ bg: '#123456', bgGradient: { from: '#111', to: '#222', angle: 45 } })
+    expect(s.background).toBe('linear-gradient(45deg, #111, #222)')
+  })
+
+  it('不带新字段时 geom() 不产生任何新增字段', () => {
+    expect(geom({})).toEqual({})
+  })
+
+  it('不带任何新字段的层，内联样式（DOM 属性）零变化', () => {
+    for (const [, spec] of FIXTURES) {
+      const layer = spec.layers[0]
+      const { container } = render(<SpecView spec={spec} timeSec={mid(layer)} />)
+      const el = byId(container, layer.id) as HTMLElement
+      const s = el?.getAttribute('style') ?? ''
+      expect(s).not.toContain('border')
+      expect(s).not.toContain('box-shadow')
+      expect(s).not.toContain('backdrop-filter')
+      expect(s).not.toContain('text-stroke')
+      expect(s).not.toContain('text-shadow')
+    }
   })
 })
