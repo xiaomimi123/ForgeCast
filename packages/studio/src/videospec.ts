@@ -101,7 +101,9 @@ export interface LayerStyle {
  *  且退场终点必须精确对齐 layer.start+layer.duration，所以建成一个 effect 类型而不是拆两条，
  *  避免消费方（render-html.ts）各自算错位。 */
 export interface Effect {
-  type: 'decode' | 'fadeIn' | 'slideUp' | 'pulse' | 'demote' | 'exit'
+  // 后三种为特效库 Task 2 新增（zoomIn 缩放进场 / slideIn 四向滑入 / blurIn 模糊消散），
+  // 参数见 params：direction | distance | scale | blur。
+  type: 'decode' | 'fadeIn' | 'slideUp' | 'pulse' | 'demote' | 'exit' | 'zoomIn' | 'slideIn' | 'blurIn'
   at?: number                     // 相对图层起点的秒偏移
   duration?: number
   params?: Record<string, number | string>
