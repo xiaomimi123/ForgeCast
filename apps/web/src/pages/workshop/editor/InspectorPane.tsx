@@ -7,7 +7,7 @@ import TaskProgress from '../../../components/TaskProgress'
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { usePrompt } from '../../../components/ui/Prompt'
 import type { TaskRun } from '../../../useTaskRun'
-import { BGS, EFFECT_DIRECTIONS, EFFECT_PARAM_META, EFFECTS, MOODS, OUTLINE, VIDEO_TPLS, type EffectParamKey, type VideoParams } from './ui'
+import { BGS, EFFECT_DIRECTIONS, EFFECT_PARAM_META, EFFECTS, MOODS, OUTLINE, VIDEO_TPLS, type EffectParamKey, type EffectTimingKey, type VideoParams } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /**
@@ -581,10 +581,12 @@ function CardEffectFields({ st, layerId, patchLive, patchStep, commit }: {
         <NumIn key={`${layerId}:borderWidth`} value={st.borderWidth} step={1} min={0}
           onCommit={(v) => patchStep({ borderWidth: v })} />
       </Field>
+      {/* 「清除」只在真设过时可点：没设过时按下去是一步什么也不改的 undo，还会把该层
+          置成 overridden（品牌 kit 不再覆盖），全是净损失。「字色」同理。 */}
       <Field label="边色" hint="边框颜色">
         <ColorIn value={st.borderColor} fallback="#181A16"
           onLive={(c) => patchLive({ borderColor: c })} onDone={commit}
-          onClear={() => patchStep({ borderColor: undefined })} />
+          onClear={st.borderColor ? () => patchStep({ borderColor: undefined }) : undefined} />
       </Field>
       <Field label="圆角" hint="border-radius（px），清空＝回落模板默认">
         <NumIn key={`${layerId}:radius`} value={st.radius} step={2} min={0}
@@ -594,11 +596,11 @@ function CardEffectFields({ st, layerId, patchLive, patchStep, commit }: {
         <NumIn key={`${layerId}:shadowBlur`} value={st.shadow?.blur} step={2} min={0} placeholder="无阴影"
           onCommit={(v) => shadow('blur', v)} />
       </Field>
-      <Field label="影X" hint="阴影横向偏移（px）">
+      <Field label="影X" hint="阴影横向偏移（px）。清空这一格＝整组阴影删除">
         <NumIn key={`${layerId}:shadowX`} value={st.shadow?.x} step={1}
           onCommit={(v) => shadow('x', v)} />
       </Field>
-      <Field label="影Y" hint="阴影纵向偏移（px）">
+      <Field label="影Y" hint="阴影纵向偏移（px）。清空这一格＝整组阴影删除">
         <NumIn key={`${layerId}:shadowY`} value={st.shadow?.y} step={1}
           onCommit={(v) => shadow('y', v)} />
       </Field>
@@ -659,7 +661,7 @@ function TextEffectFields({ st, layerId, patchLive, patchStep, commit }: {
       <Field label="字色" hint="文字描边颜色">
         <ColorIn value={st.textStrokeColor} fallback="#181A16"
           onLive={(c) => patchLive({ textStrokeColor: c })} onDone={commit}
-          onClear={() => patchStep({ textStrokeColor: undefined })} />
+          onClear={st.textStrokeColor ? () => patchStep({ textStrokeColor: undefined }) : undefined} />
       </Field>
       <Field label="发光" hint="text-shadow 模糊半径（px）。清空这一格＝整组发光删除">
         <NumIn key={`${layerId}:glowBlur`} value={st.glow?.blur} step={2} min={0} placeholder="不发光"
@@ -688,7 +690,7 @@ function TextEffectFields({ st, layerId, patchLive, patchStep, commit }: {
  */
 function EffectRow({ ed, spec, layer, fx }: {
   ed: ReturnType<typeof useEditorState>; spec: VideoSpec; layer: Layer
-  fx: { type: Effect['type']; label: string; params: EffectParamKey[] }
+  fx: { type: Effect['type']; label: string; timing: EffectTimingKey[]; params: EffectParamKey[] }
 }) {
   const [open, setOpen] = useState(false)
   const effect = layer.effects.find((e) => e.type === fx.type) ?? null
@@ -728,15 +730,20 @@ function EffectRow({ ed, spec, layer, fx }: {
       </div>
       {open && effect && (
         <div className="mb-1 mt-1 space-y-1.5 rounded-[var(--fc-r-sm)] bg-[var(--fc-sunken)] px-2 py-1.5">
-          {/* at / duration 是所有类型的通用两项（styleAt 对每种类型都读） */}
-          <Field label="延迟" hint="相对图层起点的秒偏移（默认 0）">
-            <NumIn key={`${layer.id}:${fx.type}:at`} value={effect.at} step={0.1} min={0} placeholder="0"
-              onCommit={(v) => setNum('at', v)} />
-          </Field>
-          <Field label="时长" hint="特效持续秒数（默认 0.3）">
-            <NumIn key={`${layer.id}:${fx.type}:duration`} value={effect.duration} step={0.1} min={0} placeholder="0.3"
-              onCommit={(v) => setNum('duration', v)} />
-          </Field>
+          {/* at / duration 按 fx.timing 出——不是所有类型都读这两项（pulse 不读 duration、
+              exit 不读 at、decode 两个都不读），出了就是点了不变画面的死控件。 */}
+          {fx.timing.includes('at') && (
+            <Field label="延迟" hint="相对图层起点的秒偏移（默认 0）">
+              <NumIn key={`${layer.id}:${fx.type}:at`} value={effect.at} step={0.1} min={0} placeholder="0"
+                onCommit={(v) => setNum('at', v)} />
+            </Field>
+          )}
+          {fx.timing.includes('duration') && (
+            <Field label="时长" hint="特效持续秒数（默认 0.3）">
+              <NumIn key={`${layer.id}:${fx.type}:duration`} value={effect.duration} step={0.1} min={0} placeholder="0.3"
+                onCommit={(v) => setNum('duration', v)} />
+            </Field>
+          )}
           {fx.params.map((key) => {
             const meta = EFFECT_PARAM_META[key]
             if (key === 'direction') {
@@ -757,8 +764,13 @@ function EffectRow({ ed, spec, layer, fx }: {
               </Field>
             )
           })}
-          {fx.params.length === 0 && (
-            <p className="text-[11px] leading-relaxed text-[var(--fc-faint)]">这个特效只有延迟 / 时长可调。</p>
+          {fx.params.length === 0 && fx.timing.length > 0 && (
+            <p className="text-[11px] leading-relaxed text-[var(--fc-faint)]">
+              这个特效只有{fx.timing.includes('at') ? '延迟' : ''}{fx.timing.length === 2 ? ' / ' : ''}{fx.timing.includes('duration') ? '时长' : ''}可调。
+            </p>
+          )}
+          {fx.params.length === 0 && fx.timing.length === 0 && (
+            <p className="text-[11px] leading-relaxed text-[var(--fc-faint)]">这个特效没有可调参数。</p>
           )}
         </div>
       )}

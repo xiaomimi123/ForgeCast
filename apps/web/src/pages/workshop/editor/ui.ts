@@ -13,19 +13,27 @@ import type { Effect } from '@forgecast/compositions/src/videospec-types'
  * 并且 `@forgecast/editing` 的 `EFFECT_TYPES` 运行时白名单也要同步——漏了那边勾选框一点就 throw。
  *
  * `params` 只列**该类型真正读**的键（口径以 compositions/src/effects.ts `styleAt` 的 switch 为准，
- * 多列出来的键调了也不会变画面，比不给还糟）。`at`/`duration` 所有类型通用，不在这里列。
+ * 多列出来的键调了也不会变画面，比不给还糟）。
+ *
+ * `timing` 同理，列**该类型真正读**的时间键——`at`/`duration` 并非所有类型通用：`styleAt` 里
+ * `pulse` 只按 t0 判窗口、不读 duration；`exit` 从 clipEnd 倒推、不读 at；`decode` 两个都不读
+ * （只落成 `.tw` 类，节奏由 decode 运行时定）。列进来的才渲控件，其余不出——出了就是死控件。
  * 与 EFFECT_PARAM_META 一起构成展开面板的全部内容。
  */
-export const EFFECTS: Array<{ type: Effect['type']; label: string; params: EffectParamKey[] }> = [
-  { type: 'decode', label: '解码', params: [] },
-  { type: 'fadeIn', label: '淡入', params: ['y', 'scale'] },
-  { type: 'slideUp', label: '上移', params: ['distance'] },
-  { type: 'pulse', label: '脉冲', params: [] },
-  { type: 'demote', label: '退居', params: [] },
-  { type: 'exit', label: '退场', params: [] },
-  { type: 'zoomIn', label: '缩放进场', params: ['scale'] },
-  { type: 'slideIn', label: '滑入', params: ['direction', 'distance'] },
-  { type: 'blurIn', label: '模糊消散', params: ['blur'] },
+export type EffectTimingKey = 'at' | 'duration'
+
+export const EFFECTS: Array<{
+  type: Effect['type']; label: string; timing: EffectTimingKey[]; params: EffectParamKey[]
+}> = [
+  { type: 'decode', label: '解码', timing: [], params: [] },
+  { type: 'fadeIn', label: '淡入', timing: ['at', 'duration'], params: ['y', 'scale'] },
+  { type: 'slideUp', label: '上移', timing: ['at', 'duration'], params: ['distance'] },
+  { type: 'pulse', label: '脉冲', timing: ['at'], params: [] },
+  { type: 'demote', label: '退居', timing: ['at', 'duration'], params: [] },
+  { type: 'exit', label: '退场', timing: ['duration'], params: [] },
+  { type: 'zoomIn', label: '缩放进场', timing: ['at', 'duration'], params: ['scale'] },
+  { type: 'slideIn', label: '滑入', timing: ['at', 'duration'], params: ['direction', 'distance'] },
+  { type: 'blurIn', label: '模糊消散', timing: ['at', 'duration'], params: ['blur'] },
 ]
 
 export type EffectParamKey = 'direction' | 'distance' | 'scale' | 'blur' | 'y'
