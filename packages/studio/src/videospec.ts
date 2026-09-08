@@ -83,6 +83,15 @@ export interface LayerStyle {
   bg?: string
   opacity?: number
   cssClass?: string               // 逃生舱：模板 CSS 里已有的类名，如 'card' / 'painT'
+  // 特效库 Task 1 新增：只放渲染器都能实现的通用视觉效果，CSS 映射规则见
+  // .superpowers/sdd/2026-09-08-effects-library/task-1-brief.md（两端 geom()/styleAttr() 完全一致）。
+  borderWidth?: number; borderColor?: string
+  radius?: number
+  shadow?: { blur: number; x: number; y: number; color: string }
+  backdropBlur?: number
+  textStrokeWidth?: number; textStrokeColor?: string
+  glow?: { blur: number; color: string }
+  bgGradient?: { from: string; to: string; angle: number }
 }
 
 /** 特效参数化——现在硬编码在 DECODE_RUNTIME/fillAccents 里的东西挪到这里。

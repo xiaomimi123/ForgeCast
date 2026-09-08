@@ -92,4 +92,85 @@ describe('renderSpecToHtml', () => {
     const { html } = renderSpecToHtml(spec)
     expect(html).not.toContain('<audio')
   })
+  it('空 style（无任何字段）不输出 style 属性', () => {
+    const { html } = renderSpecToHtml(spec)
+    expect(html).not.toMatch(/id="flash-hook"[^>]*\sstyle="/)
+  })
+})
+
+/**
+ * 特效库 Task 1：LayerStyle 新字段 → styleAttr() 内联样式映射（HF 端，与 compositions 端
+ * geom() 完全一致；值经 escapeHtml）。规则见
+ * .superpowers/sdd/2026-09-08-effects-library/task-1-brief.md。
+ */
+function styleSpec(style: any): any {
+  return {
+    version: 1, videoId: 'v1', slug: 's', template: 'flash', createdAt: '',
+    semantic: { hook: null, sourceAssetId: null, sections: [] },
+    canvas: { width: 1080, height: 1920 }, durationSec: 30,
+    audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false },
+    warnings: [],
+    layers: [
+      { id: 'l1', kind: 'text', from: null, overridden: false, start: 0, duration: 4, track: 1,
+        content: { kind: 'text', text: 'x' }, style, effects: [] },
+    ],
+  }
+}
+
+describe('styleAttr：LayerStyle 新字段映射（特效库 Task 1）', () => {
+  it('borderWidth/borderColor → border', () => {
+    const { html } = renderSpecToHtml(styleSpec({ borderWidth: 3, borderColor: '#f00' }))
+    expect(html).toContain('border:3px solid #f00')
+  })
+
+  it('borderWidth 缺省 borderColor 时回落 #fff', () => {
+    const { html } = renderSpecToHtml(styleSpec({ borderWidth: 2 }))
+    expect(html).toContain('border:2px solid #fff')
+  })
+
+  it('borderWidth<=0 不写 border', () => {
+    const { html } = renderSpecToHtml(styleSpec({ borderWidth: 0, borderColor: '#f00' }))
+    expect(html).not.toContain('border:')
+  })
+
+  it('radius → border-radius', () => {
+    const { html } = renderSpecToHtml(styleSpec({ radius: 12 }))
+    expect(html).toContain('border-radius:12px')
+  })
+
+  it('shadow → box-shadow', () => {
+    const { html } = renderSpecToHtml(styleSpec({ shadow: { blur: 8, x: 2, y: 4, color: '#000' } }))
+    expect(html).toContain('box-shadow:2px 4px 8px #000')
+  })
+
+  it('backdropBlur>0 → backdrop-filter', () => {
+    const { html } = renderSpecToHtml(styleSpec({ backdropBlur: 6 }))
+    expect(html).toContain('backdrop-filter:blur(6px)')
+  })
+
+  it('backdropBlur<=0 不写 backdrop-filter', () => {
+    const { html } = renderSpecToHtml(styleSpec({ backdropBlur: 0 }))
+    expect(html).not.toContain('backdrop-filter:')
+  })
+
+  it('textStrokeWidth>0 → -webkit-text-stroke（缺省色回落 #000）', () => {
+    const { html } = renderSpecToHtml(styleSpec({ textStrokeWidth: 1 }))
+    expect(html).toContain('-webkit-text-stroke:1px #000')
+  })
+
+  it('glow → text-shadow', () => {
+    const { html } = renderSpecToHtml(styleSpec({ glow: { blur: 10, color: '#0ff' } }))
+    expect(html).toContain('text-shadow:0 0 10px #0ff')
+  })
+
+  it('bgGradient 有值时覆盖 bg（写在 bg 之后）', () => {
+    const { html } = renderSpecToHtml(styleSpec({ bg: '#123456', bgGradient: { from: '#111', to: '#222', angle: 45 } }))
+    expect(html).toContain('background:#123456;background:linear-gradient(45deg, #111, #222)')
+  })
+
+  it('色值/字符串字段经 escapeHtml', () => {
+    const { html } = renderSpecToHtml(styleSpec({ borderWidth: 1, borderColor: '"><script>' }))
+    expect(html).not.toContain('"><script>')
+    expect(html).toContain('&quot;&gt;&lt;script&gt;')
+  })
 })

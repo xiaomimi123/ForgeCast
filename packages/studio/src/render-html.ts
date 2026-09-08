@@ -30,6 +30,29 @@ function styleAttr(style: LayerStyle): string {
   if (style.opacity !== undefined) decls.push(`opacity:${style.opacity}`)
   if (style.align) decls.push(`text-align:${style.align}`)
   if (style.fontSize !== undefined) decls.push(`font-size:${style.fontSize}px`)
+  // 特效库 Task 1：CSS 映射规则见 .superpowers/sdd/2026-09-08-effects-library/task-1-brief.md
+  // （compositions 端 geom() 与此完全一致；这里的色值/字符串经 escapeHtml）。
+  if (style.borderWidth !== undefined && style.borderWidth > 0) {
+    decls.push(`border:${style.borderWidth}px solid ${escapeHtml(style.borderColor ?? '#fff')}`)
+  }
+  if (style.radius !== undefined) decls.push(`border-radius:${style.radius}px`)
+  if (style.shadow) {
+    const { blur, x, y, color } = style.shadow
+    decls.push(`box-shadow:${x}px ${y}px ${blur}px ${escapeHtml(color)}`)
+  }
+  if (style.backdropBlur !== undefined && style.backdropBlur > 0) {
+    decls.push(`backdrop-filter:blur(${style.backdropBlur}px)`)
+  }
+  if (style.textStrokeWidth !== undefined && style.textStrokeWidth > 0) {
+    decls.push(`-webkit-text-stroke:${style.textStrokeWidth}px ${escapeHtml(style.textStrokeColor ?? '#000')}`)
+  }
+  if (style.glow) {
+    decls.push(`text-shadow:0 0 ${style.glow.blur}px ${escapeHtml(style.glow.color)}`)
+  }
+  if (style.bgGradient) {
+    const { from, to, angle } = style.bgGradient
+    decls.push(`background:linear-gradient(${angle}deg, ${escapeHtml(from)}, ${escapeHtml(to)})`)
+  }
   return decls.length ? ` style="${decls.join(';')}"` : ''
 }
 
