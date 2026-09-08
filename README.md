@@ -146,14 +146,19 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 > `packages/studio` 出的 HyperFrames HTML 预览仍按存量六个特效的 GSAP 时间线走，看不到新参数与新动画。
 > 四组**视觉**效果两端都实现，映射一致。剪辑台中栏预览用的就是 Remotion，所见即成片。
 
-> **已知限制（既有绘制顺序问题，非本期引入）。** 描边 / 圆角 / 阴影 / 渐变背景只有在该层**同时带位移、
-> 缩放或模糊类动画**（写出了 `transform` / `filter`，或 `opacity<1`）时才画得出来：图层 div 是静态元素，
-> 它的背景与边框按 CSS 绘制顺序排在定位元素 `#techbg`（`position:absolute; z-index:0`，底色不透明）**之下**；
-> 文字之所以看得见，是因为「逐字解码」给每个字包了 `position:relative` 的 span。同样原因，模板自带的
-> `.highlightCard` 黄框/底色在 merge-base 上也一样看不见。**毛玻璃 `backdropBlur` 不受影响**
-> （`backdrop-filter` 自带层叠上下文，已真渲抽帧验证）。**文字发光 `glow` 目前在成片上观察不到**——
-> 带「逐字解码」的层被 `.twc .fin` 自己的 `text-shadow` 覆盖，去掉解码后整层又落到 `#techbg` 之下；
-> 文字描边 `textStroke` 正常可见。修这条要动图层容器的层叠上下文，已另行记账。
+> **层叠序修复（本期）。** 两端 CSS 各加一条 `.clip { isolation: isolate; }`，每个图层无条件自带层叠
+> 上下文。此前图层 div 是静态元素（内联 `z-index` 对它无效），背景与边框按 CSS 绘制顺序排在定位元素
+> `#techbg`（`position:absolute; z-index:0`，底色不透明）**之下**，只有「碰巧」带 `transform`/`filter`
+> 的层才浮得上来——描边 / 圆角 / 阴影 / 渐变底因此只在带动画时可见。修复后**不带任何动画的静态图层
+> 上这四组也照常可见**（真渲抽帧：粉色描边 0→18600 px、青色阴影 0→25712 px、渐变红/蓝 0→15965/31195 px）。
+> 文字发光 `glow` 一并修好：`.twc .fin` 的 `text-shadow` 改成 `var(--fx-glow, <旧硬编码>)`，两端在设
+> `glow` 时同时写 `--fx-glow`，带「逐字解码」的层不再把发光值覆盖掉（同一抽帧 0→1174 px 青色光晕）；
+> 不设 `glow` 时输出与修复前逐字相同。毛玻璃 `backdropBlur` 修复前后一致（框内横向梯度能量 0.35 vs
+> 无毛玻璃对照 0.63，两次渲染同值）。
+>
+> **顺带的观感变化**：模板自带、此前同样画不出来的 `.highlightCard`（flash 黄框）与 `.card`（talk 黄框+
+> 半透明底）现在会现身。它们的版式沿用 `lower()` 既有的「无 x/y/width、文档流靠顶」形态，看起来是画面
+> 顶部一条通栏细带——这条版式债是既有的，未在本期处理。
 
 **成片库批量审片**（实施说明 §7）
 
