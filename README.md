@@ -124,6 +124,37 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
   3. 出片链路的顺序是 **先 kit、后版式**——同一层上版式里的值赢过 kit。
 - 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
 
+### 图层特效（描边/圆角/阴影 · 毛玻璃 · 文字描边/发光 · 渐变 + 动画参数）
+
+剪辑台右栏图层检查器：样式组下多了「卡片效果」与「文字效果」两小节，特效组每一行带「⚙」展开参数面板。
+设计见 `docs/superpowers/specs/2026-09-08-effects-library-design.md`。这些字段与特效参数都存在图层的
+`style` / `effects` 里，因此**天然跟着样式预设、排版模板一起复用**，无需额外机制。
+
+| 小节 | 字段（`LayerStyle`） | 出在哪些层 |
+|---|---|---|
+| 卡片效果 | `borderWidth`+`borderColor`、`radius`、`shadow{blur,x,y,color}`、`backdropBlur`(0–40 滑杆)、`bgGradient{from,to,angle}` | 除视频层外全部 |
+| 文字效果 | `textStrokeWidth`+`textStrokeColor`、`glow{blur,color}` | 文字 / 字幕层 |
+
+- 数字框**清空 = 删掉该字段**（效果移除）；`shadow`/`glow`/`bgGradient` 是整组存在或整组不存在。
+- `bgGradient` 有值时覆盖 `bg`。每次提交 = 一步 undo。
+- 动画参数：所有特效可调 `延迟(at)` / `时长(duration)`；`fadeIn`→`y`/`scale`、`slideUp`→`distance`、
+  `zoomIn`→`scale`、`slideIn`→`direction`(上/下/左/右)+`distance`、`blurIn`→`blur`。
+  新增三种动画 **zoomIn / slideIn / blurIn**（`slideUp` 作为存量别名保留，不动老 spec）。
+- **不填参数 = 和本功能上线前逐字节一致**：缺省值就是原来写死的那些数（`slideUp` 40px、`fadeIn` y20 …）。
+
+> **HF 预览不反映动画参数。** 动画参数化与三种新动画只做在 Remotion（成片渲染器）这一端；
+> `packages/studio` 出的 HyperFrames HTML 预览仍按存量六个特效的 GSAP 时间线走，看不到新参数与新动画。
+> 四组**视觉**效果两端都实现，映射一致。剪辑台中栏预览用的就是 Remotion，所见即成片。
+
+> **已知限制（既有绘制顺序问题，非本期引入）。** 描边 / 圆角 / 阴影 / 渐变背景只有在该层**同时带位移、
+> 缩放或模糊类动画**（写出了 `transform` / `filter`，或 `opacity<1`）时才画得出来：图层 div 是静态元素，
+> 它的背景与边框按 CSS 绘制顺序排在定位元素 `#techbg`（`position:absolute; z-index:0`，底色不透明）**之下**；
+> 文字之所以看得见，是因为「逐字解码」给每个字包了 `position:relative` 的 span。同样原因，模板自带的
+> `.highlightCard` 黄框/底色在 merge-base 上也一样看不见。**毛玻璃 `backdropBlur` 不受影响**
+> （`backdrop-filter` 自带层叠上下文，已真渲抽帧验证）。**文字发光 `glow` 目前在成片上观察不到**——
+> 带「逐字解码」的层被 `.twc .fin` 自己的 `text-shadow` 覆盖，去掉解码后整层又落到 `#techbg` 之下；
+> 文字描边 `textStroke` 正常可见。修这条要动图层容器的层叠上下文，已另行记账。
+
 **成片库批量审片**（实施说明 §7）
 
 | 键 | 动作 |

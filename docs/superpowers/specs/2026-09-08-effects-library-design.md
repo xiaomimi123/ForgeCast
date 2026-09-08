@@ -66,3 +66,20 @@ easing 曲线；HF 端动画参数化；强调类新动画（shake/闪烁）；�
 - backdrop-filter 在 Remotion 服务端截帧的表现需真渲验证；若不支持则毛玻璃降级为半透明底色+注记（验收时定）。
 - shadow/glow 用结构化对象而非自由字符串——牺牲表达力换取 UI 可控与两端映射无歧义。
 - slideUp 与 slideIn+up 并存是刻意的存量保护：改存量 spec 的 type 会破「缺省零变化」。
+
+---
+
+## 7. 实现偏差（落地后回填，2026-09-08）
+
+实施记账见 `.superpowers/sdd/2026-09-08-effects-library/progress.md`，真渲验收见同目录 `task-5-report.md`。
+
+| # | 偏差 / 裁决 | 说明 |
+|---|---|---|
+| 1 | **毛玻璃不降级** | §6 的预案未启用：Chrome Headless 的 `backdrop-filter` 在成片渲染里正常生效（框内网格线横向梯度能量 1.87→1.00，框外不变），映射保持 `backdrop-filter: blur()`。 |
+| 2 | **动画参数改动置 `overridden: true`** | 用户显式调参算手调，品牌 kit 不再覆盖该层——与仓库既有语义一致。 |
+| 3 | **`fadeIn` 的位移/缩放互斥不做 UI 互锁** | 互斥是 `styleAt` 的既有语义（给了 `scale` 就不吃 `y`），UI 只出提示；两项都填时缩放赢。 |
+| 4 | **`setLayerStyle` 补了「patch 值为 `undefined` ⇒ 删键」** | §3 的「清空输入=删除该字段」要求的条件路径，plan 已预授权；顺带修了 `EFFECT_TYPES` 运行时白名单漏三个新动画的真 bug（勾选即 throw）。 |
+| 5 | **两端映射仍是两份同构代码** | `geom()` 与 `styleAttr()` 未抽公共模块，沿用既有形态（重复是历史包袱，不在本期范围）。 |
+| 6 | **对照组无法逐字节对照** | mp4 编码本身不确定：同一份代码前后两次渲染即字节不同（PSNR 60.46 / min 54.83），与跨分支的差异（60.14 / 54.68）同量级、`mse_avg 0.00`。改用「跨分支差异 ≤ 同代码差异」+ HF 端 HTML 逐字节相同（同一 spec 两分支 sha256 一致）作等价门禁。 |
+| 7 | **绘制顺序导致三组视觉效果在成片上条件可见（既有问题，未修）** | 图层 div 是静态元素，其背景/边框按 CSS 绘制顺序排在定位元素 `#techbg`（`z-index:0`，底色不透明）之下，只有当该层写出 `transform`/`filter`/`opacity<1` 形成层叠上下文时才浮上来。故 `border`/`radius`/`shadow`/`bgGradient` 只在带动画时可见；`backdropBlur` 自带层叠上下文不受影响。同源现象：模板自带的 `.highlightCard` 黄框/底色在 merge-base 上同样看不见；去掉 `decode` 的文字层整层不可见。**不是本期引入**，修它要改图层容器的层叠上下文，另行记账。 |
+| 8 | **`glow` 目前在成片上观察不到** | 带 `decode` 的文字层被 `base.css` 的 `.twc .fin { text-shadow: … }` 覆盖掉继承来的 `text-shadow`；不带 `decode` 的层又撞上 #7 整层不可见。CSS 映射本身两端单测已覆盖。`textStroke`（`-webkit-text-stroke` 继承且无覆盖）正常可见。 |
