@@ -72,7 +72,7 @@ export type LayerContent =
       sourceDurationSec?: number
     }
   | { kind: 'caption'; text: string }
-  | { kind: 'shape'; shape: 'rect' | 'ellipse' }
+  | { kind: 'shape'; shape: 'rect' | 'ellipse' | 'line' }
 
 /** 只放渲染器都能实现的通用属性；模板特有的观感留在模板 CSS 里 */
 export interface LayerStyle {

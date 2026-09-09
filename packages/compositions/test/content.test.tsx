@@ -353,3 +353,43 @@ describe('LayerStyle 新字段 → geom() 映射（特效库 Task 1）', () => {
     }
   })
 })
+
+/**
+ * 素材图层入口 Task 1：line 形状渲染（compositions 端）。`shape` case 未新增任何分支——
+ * `shape shape-${layer.content.shape}` 本就通用拼接——'line' 落地即渲成 `shape shape-line`，
+ * 几何/底色全走 geom() 内联 style，无新 CSS 类。既有 rect/ellipse 同一 case 零变化。
+ */
+describe('line 形状渲染（素材图层入口 Task 1）', () => {
+  const shapeSpec = (shape: 'rect' | 'ellipse' | 'line'): VideoSpec => ({
+    version: 1, videoId: 'v1', slug: 's', template: 'flash', createdAt: '',
+    semantic: { hook: null, sourceAssetId: null, sections: [] },
+    canvas: { width: 1080, height: 1920 }, durationSec: 30,
+    audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false },
+    warnings: [],
+    layers: [
+      { id: 'media-0', kind: 'shape', from: null, overridden: true, start: 0, duration: 30, track: 1,
+        content: { kind: 'shape', shape }, style: { x: 240, y: 100, width: 600, height: 6, bg: '#fff' }, effects: [] },
+    ],
+  })
+
+  it('渲出 class="shape shape-line"，几何/底色随 style 内联（内联样式落在外层 clip 节点上）', () => {
+    const spec = shapeSpec('line')
+    const { container } = render(<SpecView spec={spec} timeSec={mid(spec.layers[0])} />)
+    const inner = byId(container, 'media-0')?.querySelector('.shape') as HTMLElement
+    expect(inner, 'line 形状未渲出 .shape 节点').not.toBeNull()
+    expect(inner.className.split(/\s+/)).toEqual(['shape', 'shape-line'])
+    const outer = byId(container, 'media-0') as HTMLElement
+    expect(outer.style.width).toBe('600px')
+    expect(outer.style.height).toBe('6px')
+    expect(outer.style.background).toBe('rgb(255, 255, 255)') // jsdom 把内联颜色规范化成 rgb()
+  })
+
+  it('既有 rect/ellipse 渲染不受影响', () => {
+    for (const shape of ['rect', 'ellipse'] as const) {
+      const spec = shapeSpec(shape)
+      const { container } = render(<SpecView spec={spec} timeSec={mid(spec.layers[0])} />)
+      const el = byId(container, 'media-0')?.querySelector('.shape') as HTMLElement
+      expect(el.className.split(/\s+/)).toEqual(['shape', `shape-${shape}`])
+    }
+  })
+})

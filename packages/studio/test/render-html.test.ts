@@ -181,3 +181,41 @@ describe('styleAttr：LayerStyle 新字段映射（特效库 Task 1）', () => {
     expect(html).toContain('&quot;&gt;&lt;script&gt;')
   })
 })
+
+/**
+ * 素材图层入口 Task 1：line 形状渲染（`shape` case 未新增任何分支，`shape-${layer.content.shape}`
+ * 本就是通用拼接——`shape:'line'` 落地即渲成 `shape shape-line`，样式全由 style.bg/width/height
+ * 驱动，无新 CSS）。既有 shape fixture（rect/ellipse）零变化——见下方独立 it。
+ */
+describe('renderSpecToHtml：line 形状（素材图层入口 Task 1）', () => {
+  const shapeSpec = (shape: 'rect' | 'ellipse' | 'line', style: any): any => ({
+    version: 1, videoId: 'v1', slug: 's', template: 'flash', createdAt: '',
+    semantic: { hook: null, sourceAssetId: null, sections: [] },
+    canvas: { width: 1080, height: 1920 }, durationSec: 30,
+    audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false },
+    warnings: [],
+    layers: [
+      { id: 'media-0', kind: 'shape', from: null, overridden: true, start: 0, duration: 30, track: 1,
+        content: { kind: 'shape', shape }, style, effects: [] },
+    ],
+  })
+
+  it('渲成 class="shape shape-line"，几何/底色走内联 style，无新 CSS 规则', () => {
+    const { html } = renderSpecToHtml(shapeSpec('line', { x: 240, y: 100, width: 600, height: 6, bg: '#fff' }))
+    expect(html).toContain('<div id="media-0" class="clip"')
+    expect(html).toContain('class="shape shape-line"')
+    expect(html).toContain('left:240px')
+    expect(html).toContain('top:100px')
+    expect(html).toContain('width:600px')
+    expect(html).toContain('height:6px')
+    expect(html).toContain('background:#fff')
+  })
+
+  it('既有 rect/ellipse shape 渲染不受影响（①②门禁：非 line 形状零变化）', () => {
+    for (const shape of ['rect', 'ellipse'] as const) {
+      const { html } = renderSpecToHtml(shapeSpec(shape, { width: 400, height: 240 }))
+      expect(html).toContain(`class="shape shape-${shape}"`)
+      expect(html).not.toContain('shape-line')
+    }
+  })
+})
