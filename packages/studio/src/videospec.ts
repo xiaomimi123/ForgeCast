@@ -125,6 +125,10 @@ export interface BrandKit {
   accentColor?: string            // card / highlightCard 类层的背景色
   titleScale?: number             // 标题类层的 fontSize 乘数
   ctaText?: string                // CTA 主文案（只换第一行，品牌名第二行保留）
+  /** 品牌 logo 的图片素材 id（本项目 origin='upload' 的 image 行）。
+   *  **不由 applyBrandKit 处理**——贴 logo 要把文件拷进素材包，那是 Node 侧的事（brand-kit.ts
+   *  是纯函数、有零依赖守护测试）。注入发生在 generate.ts 的 `injectBrandLogo`，见那里的注释。 */
+  logoAssetId?: number
 }
 
 /** 各模板的最短成片时长（秒）。原先硬编码散落在 generate.ts 五个分支里。

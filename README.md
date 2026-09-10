@@ -109,7 +109,7 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 |---|---|---|---|
 | **样式预设** | 单个图层的 `style` + `effects` | `style_presets` 表（全局，名字唯一） | 剪辑台右栏图层检查器的「预设」条 |
 | **排版模板** | 整条视频每个非视频层的位置/字号/颜色/特效 | `layout_templates` 表（全局，名字唯一，带 `template`+`ratio`） | 剪辑台工具栏「版式」菜单；出片时右栏「排版模板」下拉 |
-| **品牌 kit** | 主色 / 强调色 / 标题字号倍数 / CTA 文案 | `projects.brand_kit`（按项目一份） | 设置页「品牌 kit」块；剪辑台「版式 → 应用品牌 kit」 |
+| **品牌 kit** | 主色 / 强调色 / 标题字号倍数 / CTA 文案 / 品牌 logo | `projects.brand_kit`（按项目一份） | 设置页「品牌 kit」块；剪辑台「版式 → 应用品牌 kit」 |
 
 - **样式预设**：选中一层 → 预设条里挑一个**同 kind** 的预设，「套用」只作用这一层，「全部同类」套给所有同 kind 的层；「存为预设…」把当前层存下来（可勾「含位置」，不勾就把 `x/y` 剔掉再存——**含不含位置在存的那一刻定死**，套用时无条件按 payload 走）；下拉右侧「×」删掉当前选中的那个预设。
 - **排版模板**：「存为版式…」记下每层的 `{角色, style, effects}`。角色键 = `style.cssClass`（没有就退到语义段 id，再退到 `manual-<kind>`）+ 同名出现序号，套用时**按角色对位**覆盖——两条视频的卡片数不一样也能套，对不上的条目/层静默跳过。存的时候记下模板名与画幅（`width >= height` 即横屏），套用只列**同模板同画幅**的；出片时选了版式，服务端还会再核对一次模板一致（不一致 400）。
@@ -117,12 +117,14 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
   - `primaryColor` → CTA 层文字色；`ctaText` → 只换 CTA 层文本的**第一行**（第二行 `@品牌名` 原样保留）；
   - `accentColor` → 卖点卡（`card` / `highlightCard`）背景；
   - `titleScale` → 标题层（`painT` / `hookT` / `title`）字号 = `round(模板基准字号 × 倍数)`，基准表按「画幅取向 → 模板 → 类名」抄自模板 CSS（story 没有标题层，所以对 story 天然无效）。
+  - `logoAssetId` → **出片时自动贴 logo**：把该图片素材拷进本条视频的素材包（`hf/<videoId>/assets/media/`），并在 spec 末尾追加一层 `media-logo`（右上角，`x=画布宽-240 / y=60 / width=180`，铺满全片，落在最上层）。素材没了/跨项目只记一条 warning，不打断出片；已有 `media-logo` 层则跳过（重渲不会叠出第二个）。
   - **changelog 的 CTA 层不在作用域内**——它的类名是 `brand` 且品牌名在第一行，刻意避开，免得换第一行时把品牌名换掉。
 - 三条硬规则：
   1. **kit 不覆盖用户的选择**：`overridden: true` 的层（手调过、或刚被套过样式预设/版式的层）一律跳过，剪辑台会如实报出跳过了几层；想让 kit 覆盖这些层，先用「清除位置覆盖」之类的手段退回模板态。
   2. **kit 为空 = 零变化**：没设 kit 的项目，产出与本功能上线前**逐字节一致**（已用基线对照真渲验证）。
   3. 出片链路的顺序是 **先 kit、后版式**——同一层上版式里的值赢过 kit。
-- 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
+- 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`（`logoAssetId` 必须是**本项目上传的图片素材** id，否则 400）；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
+- 图片素材接口（logo 与剪辑台加图层共用）：`POST /api/projects/:slug/upload-image`（multipart，png/jpg/jpeg/webp/svg、≤10MB，落 `workspace/<slug>/uploads/` 并登记一条 `type='image' origin='upload'` 素材）、`GET /api/projects/:slug/image-assets`（列本项目上传图片 + `shots/` 截图）、`POST /api/videos/:videoId/media-asset`（body `{assetId}` 或 `{shotPath}` 二选一 → 拷进该视频素材包 `assets/media/`，重名加 `-1` 后缀，返 `{src}`；跨项目 400、`shotPath` 越出项目目录 400）。
 
 ### 图层特效（描边/圆角/阴影 · 毛玻璃 · 文字描边/发光 · 渐变 + 动画参数）
 

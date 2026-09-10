@@ -14,7 +14,7 @@ import { renderSpecToHtml } from './render-html'
 import { synthesizeVoice } from './tts'
 import { ASPECT_DIMENSIONS, bucketCuesBySegments, computeSegmentWindows, customTemplateHtmlPath } from './custom-template'
 import type { Pacing } from './benchmark'
-import { MIN_DURATION, type AudioSpec, type BrandKit, type VideoSpec } from './videospec'
+import { MIN_DURATION, type AudioSpec, type BrandKit, type Layer, type VideoSpec } from './videospec'
 
 export interface GenerateVideoInput {
   slug: string
@@ -87,6 +87,71 @@ function resolveBrandKit(raw: string | null | undefined, onProgress: (m: string)
     return undefined
   }
 }
+
+/**
+ * 品牌 logo 注入：kit.logoAssetId 有值时，把 logo 文件拷进本条视频的素材包
+ * （`hf/<videoId>/assets/media/`）并在 spec 末尾追加一层 `media-logo`。
+ *
+ * **为什么不在 applyBrandKit 里做**：贴 logo 要读库、要拷文件，是 Node 行为；brand-kit.ts 是
+ * 纯函数模块，`test/brand-kit-purity.test.ts` 守着它一行 fs/db 都不能有。所以 kit 的其余四项
+ * 在 lower() 收尾时套用，logo 单独留在出片管线这一层。
+ *
+ * 三条硬规则：
+ * 1. **无 logoAssetId → 返回原 spec 引用**，磁盘上一个字节都不动（零变化门禁：不配 logo 的
+ *    项目，产出必须与本功能上线前逐字节一致）。
+ * 2. **已有 media-logo 层 → 跳过**（幂等）：重渲/多次调用不会叠出第二个 logo。
+ * 3. **任何失败（素材行没了、跨项目、文件被删）只记 warning，不抛**——一个装饰性图层不该
+ *    把整条出片链路炸掉，这与 TTS 降级 / BGM 缺失的 fail-soft 口径一致。
+ *
+ * 几何按需求书固定：右上角（x = 画布宽 - 240、y = 60、width = 180），铺满全片，落在最上层
+ * （track = 现有最大 track + 1，同 track 不重叠的硬规则天然满足）。
+ */
+export function injectBrandLogo(
+  ctx: CoreCtx,
+  spec: VideoSpec,
+  opts: { hfDir: string; projectId: number; logoAssetId?: number; onProgress?: (m: string) => void; warnings: string[] },
+): VideoSpec {
+  const { hfDir, projectId, logoAssetId, onProgress = () => {}, warnings } = opts
+  if (typeof logoAssetId !== 'number') return spec
+  if (spec.layers.some((l) => l.id === MEDIA_LOGO_ID)) return spec
+
+  const fail = (msg: string): VideoSpec => {
+    onProgress(`⚠ ${msg}`)
+    warnings.push(msg)
+    return spec
+  }
+  const row: any = ctx.db.prepare(
+    "SELECT project_id, file_path FROM assets WHERE id = ? AND type = 'image' AND origin = 'upload'",
+  ).get(logoAssetId)
+  if (!row) return fail(`品牌 logo 素材不存在，本次出片不贴 logo: ${logoAssetId}`)
+  if (row.project_id !== projectId) return fail('品牌 logo 素材不属于本项目，本次出片不贴 logo')
+  const srcAbs = path.join(ctx.config.paths.workspace, row.file_path)
+  if (!fs.existsSync(srcAbs)) return fail(`品牌 logo 文件已丢失，本次出片不贴 logo: ${row.file_path}`)
+
+  let src: string
+  try {
+    const mediaDir = path.join(hfDir, 'assets', 'media')
+    fs.mkdirSync(mediaDir, { recursive: true })
+    const name = path.basename(srcAbs)
+    fs.copyFileSync(srcAbs, path.join(mediaDir, name))
+    src = `assets/media/${name}`
+  } catch (e) {
+    return fail(`品牌 logo 拷贝失败，本次出片不贴 logo：${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  const track = spec.layers.reduce((m, l) => Math.max(m, l.track), -1) + 1
+  const layer: Layer = {
+    id: MEDIA_LOGO_ID, kind: 'image', from: null, overridden: false,
+    start: 0, duration: spec.durationSec, track,
+    content: { kind: 'image', src },
+    style: { x: spec.canvas.width - 240, y: 60, width: 180 },
+    effects: [],
+  }
+  return { ...spec, layers: [...spec.layers, layer] }
+}
+
+/** logo 层的固定 id（Task 1 的 `media-` 命名族里唯一一个非数字后缀——它由 kit 自动产生，不参与手工加层的编号）。 */
+const MEDIA_LOGO_ID = 'media-logo'
 
 /** layoutTemplateId 查表：查无、template 与本次出片 tpl 不一致、或 ratio 与本次出片画幅不一致
  *  一律静默跳过（route 层已做过强校验，这里只是防御性再核对——不为一个可选的排版增强打断整条渲染）。 */
@@ -263,6 +328,9 @@ async function renderHfPipeline(
   // 版式模板：lower 收尾之后、渲染前套用——按角色对位覆盖 style/effects（见 applyLayoutTemplate 注释）。
   const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, tpl, ratio)
   if (layoutEntries) spec = applyLayoutTemplate(spec, layoutEntries)
+  // 品牌 logo：必须在 renderSpecToHtml **之前**——否则 logo 只进 spec、不进 index.html，
+  // HTML 预览与成片就会分叉。kit 没配 logo 时这是恒等操作（返回原引用）。
+  spec = injectBrandLogo(ctx, spec, { hfDir, projectId, logoAssetId: brandKit?.logoAssetId, onProgress, warnings })
 
   const rendered = renderSpecToHtml(spec)
   const ratioSuffix = ratio === 'landscape' ? '-landscape' : ''
@@ -419,6 +487,7 @@ async function renderTalkPipeline(
   // 版式模板：lower 收尾之后、渲染前套用（talk 也在 layout_templates.template 六值之列）
   const layoutEntries = resolveLayoutEntries(ctx, layoutTemplateId, 'talk', ratio)
   if (layoutEntries) spec = applyLayoutTemplate(spec, layoutEntries)
+  spec = injectBrandLogo(ctx, spec, { hfDir, projectId, logoAssetId: brandKit?.logoAssetId, onProgress, warnings })
   // talk 默认无背景（见 bgExplicit 注释）；显式给了才按五模板同一套规则解析
   const bgVariant = bgExplicit ? resolveBgVariant('talk', bgExplicit) : undefined
   spec.bgVariant = bgVariant
