@@ -53,6 +53,13 @@ export default function MediaPicker({ slug, busy, onPick, onClose }: {
   const locked = busy || uploading
 
   async function doUpload(file: File) {
+    // 前置体积闸：服务端也有 10MB 上限，但等整包传完再被拒对用户是白等一场（本机也一样，
+    // 大图 base64 编码同样耗时）。这里先拦一道，文案与下方提示行同口径。
+    if (file.size > 10 * 1024 * 1024) {
+      setError('图片不得超过 10MB')
+      if (fileRef.current) fileRef.current.value = ''
+      return
+    }
     setError(null)
     setUploading(true)
     try {

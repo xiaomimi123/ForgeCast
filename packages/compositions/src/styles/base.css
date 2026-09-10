@@ -35,7 +35,9 @@ html, body { overflow: hidden; font-family: "NotoSC", sans-serif; }
    studio/src/hyperframes.ts 的 FX_CSS）必须同改，否则预览与出片形状不一致。
    **为什么选 :has 而不是直接写 .shape-ellipse**：底色/几何都落在外层 .clip 上（内层
    `<div class="shape shape-*">` 只是形状标记，自身不着色），圆角写内层看不见任何效果——
-   真渲抽帧验过：填充率仍是 1.000 的方块。 */
+   真渲抽帧验过：填充率仍是 1.000 的方块。
+   浏览器下限：Chrome 105+ / Safari 15.4+ / Firefox 121+。出片端是 Chrome Headless（远高于下限），
+   剪辑台预览按同一支持面走；更老的浏览器只是退化成方角，不影响出片。 */
 .clip:has(> .shape-ellipse) { border-radius: 50%; }
 .bg-grid { background: radial-gradient(1200px 900px at 50% 20%, rgba(34,98,168,.38), transparent 62%), radial-gradient(1100px 850px at 82% 92%, rgba(96,52,168,.30), transparent 60%), linear-gradient(165deg, #0a0e1a, #0d1117 55%, #080a11); }
 .bg-grid .mv { position: absolute; inset: -25%; background-image: linear-gradient(rgba(96,178,255,.11) 2px, transparent 2px), linear-gradient(90deg, rgba(96,178,255,.11) 2px, transparent 2px); background-size: 80px 80px; -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); }

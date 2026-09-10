@@ -170,7 +170,7 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 - **图片三个来源**（「图片…」开素材弹层）：
   1. **本项目上传的图**（`origin='upload'`，弹层第一组）；
   2. **项目截图**（`workspace/<slug>/shots/` 下的 png/jpg/webp，demo 模板用的那批）；
-  3. **弹层内上传新图**：png / jpg / jpeg / webp / svg，≤10MB，落 `workspace/<slug>/uploads/` 并登记成素材，上传成功直接加层。
+  3. **弹层内上传新图**：png / jpg / jpeg / webp / svg，≤10MB（前端先拦一道，服务端 400 兜底），落 `workspace/<slug>/uploads/` 并登记成素材，上传成功直接加层。
 
   选中哪一份都是先**拷进这条视频的素材包**（`hf/<videoId>/assets/media/<原名>`，重名加 `-1` 后缀），
   图层 `content.src` 存相对路径——**值快照**：日后删掉素材库里的原图，已出片、已存 spec 都不受影响。
@@ -178,7 +178,8 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
   **线条** 600×6（`height` 就是线粗、`bg` 就是线色）。加进来自带底色 `#C13A1B`（`--fc-accent` 同值），
   免得加完一片透明像「点了没反应」；描边 / 圆角 / 阴影 / 毛玻璃 / 渐变 / 九个动画特效对素材层全部通用。
 - **品牌 logo**：在**设置页「品牌 kit」块**里选（下拉只列本项目上传的图片，带缩略图，选「不使用 logo」＝清空），
-  出片时自动贴到右上角（`media-logo` 层，`x=画布宽-240 / y=60 / width=180`）——规则见上一节 `logoAssetId`。
+  出片时自动贴到右上角（`media-logo` 层，`x=画布宽-240 / y=60 / width=180`，图按 `width` 等比缩放）——规则见上一节 `logoAssetId`。
+  选中的素材若被删掉，下拉会重置成「不使用 logo」并提示「原 logo 素材已删除」，**点保存即从 kit 里清掉**。
 - **删除规则**：只有 `media-` 前缀的层能删（含 `media-logo`），模板生成的文案 / 截图 / 字幕层删不了（会抛错）。
   入口两处：分镜列表「素材图层」分段展开后的「删除」、时间轴头部「删除素材层」，都带 in-app 二次确认。
   加层 / 删层 / 拖挪各算**一步 undo**。**撤销「加图片」只回退 spec，不会回收已拷进素材包的那个文件**（孤儿文件，不影响渲染）。
@@ -188,9 +189,10 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 > 线条 600×6 洋红渲出；logo 落在 (842,48) 180×180。**svg 与 png 渲染一致**（Chrome Headless 的 `<img>` 直接吃 svg），
 > 故 MIME 白名单保留 svg。
 >
-> **已知偏差**：图片层的 `<img>` 按**原图自然尺寸**渲，图层的 `width/height` 只改层框、不缩放图片
-> （两端一致，所以中栏预览＝成片；画布拖角缩放看着不跟手）。模板自带的截图层走 `.phoneWrap`/`.wideWrap`
-> 的 CSS 尺寸，不受影响。
+> **图片缩放**：图片层的 `<img>` 按图层 `width/height` **等比缩放、不裁切**（`object-fit: contain`）——
+> 只设一维时另一维自动等比，两维都设时图片完整装进框内。两端同值，所以中栏预览＝成片，画布拖角缩放跟手。
+> 模板自带的截图层走 `.phoneWrap`/`.wideWrap` 取景框，不受这条影响（它们不走裸 `<img>` 分支）。
+> 复验（本波）：300×120 的 kit logo 设 `width:180` → 抽帧实测 180×72；400×100 的图放进 200×200 的层 → 实测 200×50。
 
 **成片库批量审片**（实施说明 §7）
 

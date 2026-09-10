@@ -220,6 +220,7 @@ function BrandKitSection() {
   const [d, setD] = useState<KitDraft>(emptyKitDraft)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [logoGone, setLogoGone] = useState(false)
 
   // 载入（或切项目）后回填草稿；titleScale 数字转字符串，未设置的字段留空串。
   // 不在这里 setSaved(false)——save 成功后会 invalidate 查询触发这个 effect 再跑一次，
@@ -235,7 +236,19 @@ function BrandKitSection() {
   }, [kit.data])
 
   // 切项目：单独清掉「已保存」提示与错误提示，不依赖 kit.data 那条 effect
-  useEffect(() => { setSaved(false); setError('') }, [selected])
+  useEffect(() => { setSaved(false); setError(''); setLogoGone(false) }, [selected])
+
+  // 死胡同兜底：kit 里存的 logoAssetId 对应的素材被删了（剪辑台「删除素材」），下拉里没有任何一项
+  // 能匹配上——select 的 value 落空会静默显示成第一项「不使用 logo」，用户看不出发生了什么，
+  // 保存时又会把这个"看着没变"的值原样写回去。这里显式把草稿归空并挂一句提示：所见即所存，
+  // 点保存就等于把这条失效的 logo 从 kit 里清掉。
+  // 只在 images 查询**成功**后判断——加载中/失败时 uploads 为空数组，那时候归空会误清。
+  useEffect(() => {
+    if (!images.isSuccess || !d.logoAssetId) return
+    if (uploads.some((a) => String(a.id) === d.logoAssetId)) return
+    setLogoGone(true)
+    setD((p) => ({ ...p, logoAssetId: '' }))
+  }, [images.isSuccess, images.data, d.logoAssetId])
 
   const set = (patch: Partial<KitDraft>) => { setD((p) => ({ ...p, ...patch })); setSaved(false); setError('') }
 
@@ -292,6 +305,9 @@ function BrandKitSection() {
                 {uploads.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
               </select>
             </div>
+            {logoGone && (
+              <p className="mt-1 text-xs text-red-600">原 logo 素材已删除，已重置为「不使用 logo」——点保存即从 kit 里清掉，或另选一张。</p>
+            )}
             {uploads.length === 0 && (
               <p className="mt-1 text-xs text-faint">本项目还没有上传过图片素材——去剪辑台「＋素材」里上传一张，再回来选。</p>
             )}

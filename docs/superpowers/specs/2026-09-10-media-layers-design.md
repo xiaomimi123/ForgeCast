@@ -60,13 +60,14 @@
 | 5 | 「圆形」＝椭圆 | 圆角规则写成 `.clip:has(> .shape-ellipse){border-radius:50%}`（compositions `base.css` + studio `FX_CSS` 两端各一条） | `LayerStyle.radius` 只接受 px，非正方形只能得到胶囊形；且底色/几何都落在**外层 `.clip`** 上（内层 `.shape-*` 不着色），圆角写内层真渲抽帧验过是无效的（填充率仍 1.000） |
 | 6 | §5 风险：svg 渲染一致性存疑，不一致就从 MIME 白名单去掉 | **一致，svg 保留**：真渲抽帧 200×200 青色块填充率 1.000，与 png 同表现 | Chrome Headless 的 `<img>` 直接吃 svg；未验证字体内嵌 svg（非目标） |
 | 7 | §3「对照组 HF sha256 逐字节一致」 | 差**一条规则**：`.clip:has(> .shape-ellipse){border-radius:50%}`（连注释 3 行）随 FX_CSS 进了所有 HTML；其余逐字节相同 | 第 5 条那条基类 CSS 是共享样式，天然进每份 HTML；不配素材的项目**渲染结果**不变 |
-| 8 | —— | **图片层的 `<img>` 按原图自然尺寸渲**，图层 `width/height` 只定层框、不缩放图片（两端一致：`renderImageContent` / `ImageContent` 都是裸 `<img>`，无 `width:100%`） | 真渲抽帧发现（180×180 的图放进 200×200 的层，实测仍 182×180）。既有行为，本期未改——改动会波及模板截图层的观感，需单独定夺 |
+| 8 | —— | **图片层的 `<img>` 吃 `style.width/height`**：裸 `<img>` 分支拼 `display:block;width:<100%\|auto>;height:<100%\|auto>;object-fit:contain`（compositions `imgFit()` / studio `imgFitAttr()` 两端同值），两维都没设时不写任何内联样式＝自然尺寸旧行为 | 最终审查修复波。**作用域论证：裸 `<img>` 分支 ⟺ 素材层**——demo 截图层在 `lower()` 里恒被写 `phoneWrap`/`wideWrap` 两个 cssClass 之一，永远走不到裸分支；preset 套用剔 cssClass 只发生在素材层上。所以模板既有版式一个像素都不变（两端各一条「phoneWrap/wideWrap 的 img 零内联样式」门禁测试）。真渲抽帧复验：300×120 的 kit logo 设 `width:180` → 实测 180×72（等比 contain，此前是自然尺寸 300×120）；400×100 的图放进 200×200 的层 → 实测 200×50 |
+| 9 | —— | `/files/*` MIME 表补 `.svg`/`.gif`，且 **`.svg` 单独加 `content-security-policy: sandbox`** | svg 此前落到 `application/octet-stream`，剪辑台预览里不显示。svg 是可执行文档（顶层导航打开会跑内嵌脚本），故只对这一支加 sandbox；其他类型不加，免得误伤靠脚本跑 GSAP 时间线的 `hf/` 产物页。`<img src="x.svg">` 渲染路径本就不执行脚本，出片/预览显示不受影响 |
 
 ### 遗留（backlog，本期不做）
 
 - 撤销「加图片」不会回收已拷进素材包的文件（孤儿文件；重复上传同名会 `-1` 叠加）。
-- 删素材不清理引用它的 `brand_kit.logoAssetId`（出片时只记一条 warning，不打断）。
+- 删素材不清理引用它的 `brand_kit.logoAssetId`（出片时只记一条 warning，不打断）。设置页已补前端兜底：
+  匹配不到时重置下拉并提示「原 logo 素材已删除」，保存即清；库里的存量脏值仍需用户点一次保存才落地。
 - upload 文件名未 sanitize 反斜杠（Windows 穿越；沿袭 upload-video 同款）。
-- 素材弹层上传缺前端 10MB 预检（纯 UX，服务端 400 已兜）。
 - 素材轨最多分 3 道，第 4 层起按比例压扁（最矮 6px）。
 - 图片层 `<img>` 不随层框缩放（见上表第 8 条）。
