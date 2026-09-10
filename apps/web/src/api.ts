@@ -204,3 +204,47 @@ export const createLayoutTemplate = (body: { name: string; template: string; rat
 export const getBrandKit = (slug: string) => api<BrandKitView>(`/api/projects/${slug}/brand-kit`)
 export const putBrandKit = (slug: string, kit: BrandKitView) =>
   api<BrandKitView>(`/api/projects/${slug}/brand-kit`, { method: 'PUT', body: JSON.stringify(kit) })
+
+// ── 素材图层（设计文档「排版工作台第四期D」）──────────────────────────────────
+/**
+ * 素材弹层的候选项（`GET /api/projects/:slug/image-assets`）。
+ * **两种 kind 的 `path` 基准不同**（服务端注释同款）：`upload` 相对 workspace 根，
+ * `shot` 相对项目目录——拼缩略图 URL 必须分开处理，见 `imageAssetUrl`。
+ */
+export interface ImageAssetItem {
+  kind: 'upload' | 'shot'
+  /** upload 才有：assets 行 id，进包时按它取（shot 走 path）。 */
+  id?: number
+  path: string
+  name: string
+}
+
+export const listImageAssets = (slug: string) => api<ImageAssetItem[]>(`/api/projects/${slug}/image-assets`)
+
+/**
+ * 缩略图 URL。静态服务 `/files/*` 的根就是 workspace（见 lib/rebase 的注释），所以
+ * upload 直接拼，shot 要补上项目目录那一段。
+ */
+export const imageAssetUrl = (slug: string, a: ImageAssetItem): string =>
+  a.kind === 'upload' ? `/files/${a.path}` : `/files/${slug}/${a.path}`
+
+/** 把一份素材拷进某条视频的素材包，返回 spec 能直接用的相对 src（`assets/media/<名>`）。 */
+export const addMediaAsset = (slug: string, videoId: string, body: { assetId: number } | { shotPath: string }) =>
+  api<{ src: string }>(`/api/projects/${slug}/videos/${videoId}/media-asset`, {
+    method: 'POST', body: JSON.stringify(body),
+  })
+
+/**
+ * 上传一张图片素材（multipart）。**不能走 `api()`**：那里默认塞 `content-type: application/json`，
+ * 带上它 FormData 的 boundary 就没了，服务端 parseBody 拿不到 file 字段。
+ */
+export async function uploadProjectImage(slug: string, file: File): Promise<{ id: number; filePath: string }> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch(`/api/projects/${slug}/upload-image`, { method: 'POST', body: fd })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<{ id: number; filePath: string }>
+}

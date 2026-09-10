@@ -6,7 +6,7 @@
  *（`Cannot access 'BGS' before initialization`，dev 下白屏、打包后靠 rollup 的重排侥幸不炸），
  * 这类崩溃只在运行时出现，tsc 与 build 都拦不住。把常量放在两侧都只依赖的叶子模块，环就不存在了。
  */
-import type { Effect } from '@forgecast/compositions/src/videospec-types'
+import type { Effect, Layer } from '@forgecast/compositions/src/videospec-types'
 
 /**
  * 九种特效（`Effect['type']` 的全集）与它们的人话名 + 可调参数键。新增类型时这里要跟着加，
@@ -97,3 +97,28 @@ export const OUTLINE = 'rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)
  * 只有手打的才允许「清空即删」；五模板 TTS 的 cap0/1/2 与旁白一一对应，删了就和语音对不上。
  */
 export const isManualCaption = (layerId: string) => layerId.startsWith('cap-manual-')
+
+/**
+ * 这一层是不是「素材层」——`addImageLayer`/`addShapeLayer` 生成的 id 形状，也是
+ * `removeMediaLayer` 放行删除的**同一条判据**（含出片期注入的 `media-logo`）。
+ * 只有它们能删：模板生成的文案/字幕层与 `semantic.sections` 一一对应，删了就和原文案对不上。
+ */
+export const isMediaLayer = (layerId: string) => layerId.startsWith('media-')
+
+/** 素材层的人话名（分镜列表/时间轴的行标签）。line 单列——它在 content 里是 shape 的一种。 */
+export const MEDIA_KIND_LABEL: Record<string, string> = {
+  image: '图片', rect: '矩形', ellipse: '圆形', line: '线条',
+}
+
+/**
+ * 素材层的行标签：`{kind}` 是人话类型，`{name}` 是图片文件名（形状没有文件，回落空串）。
+ * 两处消费（分镜列表的素材行、时间轴的素材条）共用，免得两边各写一份 basename。
+ */
+export function mediaLayerLabel(layer: Layer): { kind: string; name: string } {
+  const c = layer.content
+  if (c.kind === 'image') {
+    return { kind: MEDIA_KIND_LABEL.image, name: c.src.split(/[/\\]/).pop() ?? c.src }
+  }
+  if (c.kind === 'shape') return { kind: MEDIA_KIND_LABEL[c.shape] ?? c.shape, name: '' }
+  return { kind: c.kind, name: '' }
+}
