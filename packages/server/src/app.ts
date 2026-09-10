@@ -423,14 +423,15 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
    * publicDir 就是它），素材包要能独立搬走/重渲；指原路径的话删一次上传目录就全断。
    * 重名不覆盖（加 `-1`/`-2` 后缀）：同一张图允许多次进包，各图层各指各的，互不影响。
    */
-  app.post('/api/videos/:videoId/media-asset', async (c) => {
+  app.post('/api/projects/:slug/videos/:videoId/media-asset', async (c) => {
+    const slug = c.req.param('slug')
     const videoId = c.req.param('videoId')
     if (!MEDIA_VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
-    const video = ctx.db.prepare(
-      'SELECT p.id AS projectId, p.slug AS slug FROM assets a JOIN projects p ON p.id = a.project_id WHERE a.spec_path LIKE ?',
-    ).get(`%${path.join('specs', `${videoId}.json`)}`) as { projectId: number; slug: string } | undefined
-    if (!video) return c.json({ error: '视频不存在' }, 404)
-    const hfDir = path.join(ctx.config.paths.workspace, video.slug, 'hf', videoId)
+    // slug 定项目、videoId 只定素材包目录——**不**反查 assets 行：素材包在渲染登记之前就已存在
+    // （管线先 scaffold 目录、后 INSERT），靠 spec_path 反查会让「渲染完成前加图层」吃 404。
+    const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+    if (!project) return c.json({ error: '项目不存在' }, 404)
+    const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
     if (!fs.existsSync(hfDir)) return c.json({ error: '素材包不存在' }, 404)
 
     const body = await c.req.json().catch(() => ({} as any))
@@ -444,7 +445,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       const row: any = ctx.db.prepare("SELECT project_id, file_path FROM assets WHERE id = ? AND type = 'image' AND origin = 'upload'").get(body.assetId)
       if (!row) return c.json({ error: '图片素材不存在' }, 404)
       // 跨项目是**授权**问题（400），不是「找不到」（404）——照 talk uploadAssetId 的先例分开报
-      if (row.project_id !== video.projectId) return c.json({ error: '所选素材不属于本项目' }, 400)
+      if (row.project_id !== project.id) return c.json({ error: '所选素材不属于本项目' }, 400)
       srcAbs = path.join(ctx.config.paths.workspace, row.file_path)
       if (!fs.existsSync(srcAbs)) return c.json({ error: '素材文件已丢失' }, 404)
     } else {
@@ -454,7 +455,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
       if (rel.includes('\\') || path.isAbsolute(rel) || rel.split('/').includes('..')) {
         return c.json({ error: 'shotPath 不允许绝对路径或 ..' }, 400)
       }
-      const projDir = path.resolve(ctx.config.paths.workspace, video.slug)
+      const projDir = path.resolve(ctx.config.paths.workspace, slug)
       srcAbs = path.resolve(projDir, rel)
       if (!IMAGE_EXT_RE.test(srcAbs)) return c.json({ error: '仅支持 png/jpg/jpeg/webp/svg' }, 400)
       if (!fs.existsSync(srcAbs) || !fs.statSync(srcAbs).isFile()) return c.json({ error: '截图不存在' }, 404)

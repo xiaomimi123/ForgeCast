@@ -124,7 +124,7 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
   2. **kit 为空 = 零变化**：没设 kit 的项目，产出与本功能上线前**逐字节一致**（已用基线对照真渲验证）。
   3. 出片链路的顺序是 **先 kit、后版式**——同一层上版式里的值赢过 kit。
 - 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`（`logoAssetId` 必须是**本项目上传的图片素材** id，否则 400）；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
-- 图片素材接口（logo 与剪辑台加图层共用）：`POST /api/projects/:slug/upload-image`（multipart，png/jpg/jpeg/webp/svg、≤10MB，落 `workspace/<slug>/uploads/` 并登记一条 `type='image' origin='upload'` 素材）、`GET /api/projects/:slug/image-assets`（列本项目上传图片 + `shots/` 截图）、`POST /api/videos/:videoId/media-asset`（body `{assetId}` 或 `{shotPath}` 二选一 → 拷进该视频素材包 `assets/media/`，重名加 `-1` 后缀，返 `{src}`；跨项目 400、`shotPath` 越出项目目录 400）。
+- 图片素材接口（logo 与剪辑台加图层共用）：`POST /api/projects/:slug/upload-image`（multipart，png/jpg/jpeg/webp/svg、≤10MB，落 `workspace/<slug>/uploads/` 并登记一条 `type='image' origin='upload'` 素材）、`GET /api/projects/:slug/image-assets`（列本项目上传图片 + `shots/` 截图）、`POST /api/projects/:slug/videos/:videoId/media-asset`（body `{assetId}` 或 `{shotPath}` 二选一 → 拷进该视频素材包 `assets/media/`，重名加 `-1` 后缀，返 `{src}`；跨项目 400、`shotPath` 越出项目目录 400）。
 
 ### 图层特效（描边/圆角/阴影 · 毛玻璃 · 文字描边/发光 · 渐变 + 动画参数）
 
