@@ -592,6 +592,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   // 切勿把本路由暴露到 loopback 之外。
   const MIME: Record<string, string> = {
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    '.gif': 'image/gif', '.svg': 'image/svg+xml',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -605,9 +606,17 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     if (!abs.startsWith(wsRoot + path.sep) || !fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
       return c.notFound()
     }
-    return c.body(fs.readFileSync(abs) as any, 200, {
-      'content-type': MIME[path.extname(abs)] ?? 'application/octet-stream',
-    })
+    const ext = path.extname(abs)
+    const headers: Record<string, string> = {
+      'content-type': MIME[ext] ?? 'application/octet-stream',
+    }
+    // SVG 不是普通图片：它是可执行文档，顶层导航打开时里面的 <script>/onload 会在本源上跑。
+    // 素材是用户自己上传的（本机单人用），但仍按最小权限给这一支加 sandbox——CSP 的
+    // sandbox 指令把响应放进无源沙箱、禁脚本。**只对 .svg 加**：其他类型加了会误伤
+    // hf/ 产物页（那是靠脚本跑 GSAP 时间线的）。<img src="x.svg"> 这种渲染路径本来就
+    // 不执行脚本，所以剪辑台/预览里的显示不受这条影响。
+    if (ext === '.svg') headers['content-security-policy'] = 'sandbox'
+    return c.body(fs.readFileSync(abs) as any, 200, headers)
   })
 
   // —— M1 scout ——

@@ -31,6 +31,24 @@ describe('GET /files/* 的 content-type', () => {
     expect(await ct('p1/hf/assets/n.wav')).toMatch(/audio/)
   })
 
+  it('svg 返回 image/svg+xml 并带 CSP sandbox（可执行文档，禁脚本）', async () => {
+    const dir = path.join(ctx.config.paths.workspace, 'p1', 'uploads')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'x.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    const res = await app.request('/files/p1/uploads/x.svg')
+    expect(res.headers.get('content-type')).toBe('image/svg+xml')
+    expect(res.headers.get('content-security-policy')).toBe('sandbox')
+  })
+
+  it('非 svg 不加 CSP 头（不误伤 hf 产物页的脚本）', async () => {
+    const dir = path.join(ctx.config.paths.workspace, 'p1', 'uploads')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'a.png'), Buffer.from([0, 1]))
+    const res = await app.request('/files/p1/uploads/a.png')
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('content-security-policy')).toBeNull()
+  })
+
   it('路径穿越仍被拒（回归：不得因加 MIME 放宽边界校验）', async () => {
     const res = await app.request('/files/../package.json')
     expect(res.status).toBe(404)
