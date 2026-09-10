@@ -46,3 +46,27 @@
 - svg 进 Remotion `<Img>`/HF `<img>` 的渲染一致性需真渲验证；风险点在字体内嵌 svg——验收时若不一致则 MIME 白名单去掉 svg 并记偏差。
 - `media-<n>` 序号与 C 期角色键 `manual-image#n` 并行不冲突（角色推导按 cssClass/from 优先，media 层 from:null 无 cssClass 落 manual-* 桶——预设/版式对它们按序对位，增删会错位一格，与既有已知风险同款）。
 - logo 层 track=最大+1 在层数多的 spec 上可能推高 z 序遮字幕——180px 角落图风险低，真机验收把关。
+
+## 6. 实现偏差（落地后补记，2026-09-10）
+
+按四个任务的实施与验收如实回填，本节只记**与上文设计不同**的地方。
+
+| # | 设计原文 | 实际落地 | 理由 |
+|---|---|---|---|
+| 1 | 「加图片」拷进包的端点按 spec_path 反查视频 | 端点带 slug：`POST /api/projects/:slug/videos/:videoId/media-asset` | LIKE 反查脆弱，且会要求「必须已渲过一次」才能加图层——素材包在登记成片行之前就已存在 |
+| 2 | `shotPath` 基准 = `shots/` 目录 | 基准放宽到**项目目录**，越界由「realpath + 项目目录前缀」双守卫钉死 | 项目内其他位置的图同样可用；软链穿越有专门用例 |
+| 3 | logo 层由 `applyBrandKit` 加 | 由 `injectBrandLogo`（generate.ts）在出片管线里加 | 贴 logo 要读库 + 拷文件，是 Node 行为；`brand-kit.ts` 有「一行 fs/db 都不能有」的纯度门禁 |
+| 4 | 形状层加进来即可见 | 加层时**同一次 apply** 补默认底色 `#C13A1B`（`--fc-accent` 同值字面量） | 两端 `.shape` 无基类底色，`bg` 不给就是全透明——加完像「点了没反应」 |
+| 5 | 「圆形」＝椭圆 | 圆角规则写成 `.clip:has(> .shape-ellipse){border-radius:50%}`（compositions `base.css` + studio `FX_CSS` 两端各一条） | `LayerStyle.radius` 只接受 px，非正方形只能得到胶囊形；且底色/几何都落在**外层 `.clip`** 上（内层 `.shape-*` 不着色），圆角写内层真渲抽帧验过是无效的（填充率仍 1.000） |
+| 6 | §5 风险：svg 渲染一致性存疑，不一致就从 MIME 白名单去掉 | **一致，svg 保留**：真渲抽帧 200×200 青色块填充率 1.000，与 png 同表现 | Chrome Headless 的 `<img>` 直接吃 svg；未验证字体内嵌 svg（非目标） |
+| 7 | §3「对照组 HF sha256 逐字节一致」 | 差**一条规则**：`.clip:has(> .shape-ellipse){border-radius:50%}`（连注释 3 行）随 FX_CSS 进了所有 HTML；其余逐字节相同 | 第 5 条那条基类 CSS 是共享样式，天然进每份 HTML；不配素材的项目**渲染结果**不变 |
+| 8 | —— | **图片层的 `<img>` 按原图自然尺寸渲**，图层 `width/height` 只定层框、不缩放图片（两端一致：`renderImageContent` / `ImageContent` 都是裸 `<img>`，无 `width:100%`） | 真渲抽帧发现（180×180 的图放进 200×200 的层，实测仍 182×180）。既有行为，本期未改——改动会波及模板截图层的观感，需单独定夺 |
+
+### 遗留（backlog，本期不做）
+
+- 撤销「加图片」不会回收已拷进素材包的文件（孤儿文件；重复上传同名会 `-1` 叠加）。
+- 删素材不清理引用它的 `brand_kit.logoAssetId`（出片时只记一条 warning，不打断）。
+- upload 文件名未 sanitize 反斜杠（Windows 穿越；沿袭 upload-video 同款）。
+- 素材弹层上传缺前端 10MB 预检（纯 UX，服务端 400 已兜）。
+- 素材轨最多分 3 道，第 4 层起按比例压扁（最矮 6px）。
+- 图片层 `<img>` 不随层框缩放（见上表第 8 条）。

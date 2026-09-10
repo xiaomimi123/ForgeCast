@@ -189,6 +189,9 @@ export interface LayoutTemplate {
 /** 项目品牌 kit。GET 在未设置时回 `{}`（不是 404），字段全 optional。 */
 export interface BrandKitView {
   primaryColor?: string; accentColor?: string; titleScale?: number; ctaText?: string
+  /** 品牌 logo：本项目 upload 图片素材的 assets 行 id。出片时由 studio 拷进素材包并注入
+   *  `media-logo` 层（右上角）。不带这个键＝不贴 logo（PUT 整体覆盖，见设置页 buildPutBody）。 */
+  logoAssetId?: number
 }
 
 export const listStylePresets = () => api<StylePreset[]>('/api/style-presets')

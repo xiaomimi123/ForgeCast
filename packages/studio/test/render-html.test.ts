@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderSpecToHtml } from '../src/render-html'
+import { FX_CSS } from '../src/hyperframes'
 
 const spec: any = {
   version: 1, videoId: 'v1', slug: 's', template: 'flash', createdAt: '',
@@ -217,5 +218,14 @@ describe('renderSpecToHtml：line 形状（素材图层入口 Task 1）', () => 
       expect(html).toContain(`class="shape shape-${shape}"`)
       expect(html).not.toContain('shape-line')
     }
+  })
+
+  /**
+   * Task 4：「圆形」得是真椭圆。px 圆角（LayerStyle.radius 的口径）非正方形只能画出胶囊形，
+   * 真椭圆只有百分比圆角能表达，所以规则落在基类 CSS。与 compositions/test/content.test.tsx
+   * 里读 base.css 的同名断言配对——两端必须同改。
+   */
+  it('FX_CSS 有 .shape-ellipse 百分比圆角（真椭圆，与 compositions base.css 同规则）', () => {
+    expect(FX_CSS).toMatch(/\.clip:has\(>\s*\.shape-ellipse\)\s*\{[^}]*border-radius:\s*50%/)
   })
 })

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, getBrandKit, putBrandKit, type AutoScoutStatus, type BrandKitView, type Project, type SettingsView } from '../api'
+import { api, getBrandKit, imageAssetUrl, listImageAssets, putBrandKit, type AutoScoutStatus, type BrandKitView, type Project, type SettingsView } from '../api'
 
 // 可编辑草稿：key 字段留空=不改（占位显示已存打码值）
 interface Draft {
@@ -169,8 +169,9 @@ export default function SettingsPage() {
 
 // key 字段留空=不改，与顶部 Draft 同惯例；但这里空字段的语义更强——PUT 前会把空串键整个剔除
 // （见 buildPutBody），所以「清空再保存」＝把该字段从 kit 里删掉，回到未设置状态。
-interface KitDraft { primaryColor: string; accentColor: string; titleScale: string; ctaText: string }
-const emptyKitDraft: KitDraft = { primaryColor: '', accentColor: '', titleScale: '', ctaText: '' }
+// logoAssetId 也走「字符串草稿」：下拉的 value 只能是 string，空串＝不设 logo（PUT 时删键）。
+interface KitDraft { primaryColor: string; accentColor: string; titleScale: string; ctaText: string; logoAssetId: string }
+const emptyKitDraft: KitDraft = { primaryColor: '', accentColor: '', titleScale: '', ctaText: '', logoAssetId: '' }
 
 /** 空字段（含空串）不进 PUT body——服务端整体覆盖存储的 kit，不注入的键就等于清空该字段。 */
 function buildPutBody(d: KitDraft): BrandKitView {
@@ -179,6 +180,7 @@ function buildPutBody(d: KitDraft): BrandKitView {
   if (d.accentColor.trim()) body.accentColor = d.accentColor.trim()
   if (d.titleScale.trim()) body.titleScale = Number(d.titleScale)
   if (d.ctaText.trim()) body.ctaText = d.ctaText
+  if (d.logoAssetId.trim()) body.logoAssetId = Number(d.logoAssetId)
   return body
 }
 
@@ -208,6 +210,13 @@ function BrandKitSection() {
     queryFn: () => getBrandKit(selected),
     enabled: !!selected,
   })
+  // logo 只能选**本项目上传的图片**（服务端 PUT 也按这个口径校验），所以列表里把 shot 那一类滤掉。
+  const images = useQuery({
+    queryKey: ['image-assets', selected],
+    queryFn: () => listImageAssets(selected),
+    enabled: !!selected,
+  })
+  const uploads = (images.data ?? []).filter((a) => a.kind === 'upload' && typeof a.id === 'number')
   const [d, setD] = useState<KitDraft>(emptyKitDraft)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -221,6 +230,7 @@ function BrandKitSection() {
     setD({
       primaryColor: k.primaryColor ?? '', accentColor: k.accentColor ?? '',
       titleScale: k.titleScale !== undefined ? String(k.titleScale) : '', ctaText: k.ctaText ?? '',
+      logoAssetId: k.logoAssetId !== undefined ? String(k.logoAssetId) : '',
     })
   }, [kit.data])
 
@@ -234,6 +244,9 @@ function BrandKitSection() {
     onSuccess: () => { setSaved(true); setError(''); qc.invalidateQueries({ queryKey: ['brand-kit', selected] }) },
     onError: (e) => { setSaved(false); setError(extractErrorMessage(e)) },
   })
+
+  const logoItem = uploads.find((a) => String(a.id) === d.logoAssetId)
+  const logoPreview = logoItem ? imageAssetUrl(selected, logoItem) : ''
 
   return (
     <section className="space-y-3 card-forge p-4">
@@ -271,6 +284,18 @@ function BrandKitSection() {
               <input className={inputCls} value={d.ctaText} onChange={(e) => set({ ctaText: e.target.value })} />
             </Field>
           </div>
+          <Field label="品牌 logo" hint="出片时贴到画面右上角；选「不使用」＝不贴">
+            <div className="flex items-center gap-2">
+              {logoPreview && <img src={logoPreview} alt="" className="h-8 w-8 shrink-0 rounded border-[1.5px] border-ink object-contain bg-card" />}
+              <select className={inputCls} value={d.logoAssetId} onChange={(e) => set({ logoAssetId: e.target.value })}>
+                <option value="">不使用 logo</option>
+                {uploads.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+              </select>
+            </div>
+            {uploads.length === 0 && (
+              <p className="mt-1 text-xs text-faint">本项目还没有上传过图片素材——去剪辑台「＋素材」里上传一张，再回来选。</p>
+            )}
+          </Field>
           <div className="flex items-center gap-3">
             <button className="btn-fire px-4 py-1.5 text-sm disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
             {saved && <span className="text-sm text-green-600">已保存</span>}

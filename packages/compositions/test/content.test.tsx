@@ -12,6 +12,8 @@
  *
  * fixture 见 fixtures/generate.ts（含重生成命令与「为什么是这批输入」）。
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { SpecView } from '../src/SpecView'
@@ -391,5 +393,15 @@ describe('line 形状渲染（素材图层入口 Task 1）', () => {
       const el = byId(container, 'media-0')?.querySelector('.shape') as HTMLElement
       expect(el.className.split(/\s+/)).toEqual(['shape', `shape-${shape}`])
     }
+  })
+
+  /**
+   * 素材图层入口 Task 4：「圆形」得是**真椭圆**。radius 是 px 口径，非正方形只能得到胶囊形，
+   * 所以百分比圆角写在基类 CSS 里。jsdom 不加载 base.css（渲染断言看不见它），故直接读文件断言，
+   * 与 studio 端 FX_CSS 的同名断言配对——两端漏一处就是预览/出片形状不一致。
+   */
+  it('base.css 有 .shape-ellipse 百分比圆角（真椭圆，与 studio FX_CSS 同规则）', () => {
+    const css = readFileSync(join(__dirname, '..', 'src', 'styles', 'base.css'), 'utf-8')
+    expect(css).toMatch(/\.clip:has\(>\s*\.shape-ellipse\)\s*\{[^}]*border-radius:\s*50%/)
   })
 })

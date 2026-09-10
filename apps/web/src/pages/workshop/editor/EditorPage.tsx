@@ -338,7 +338,7 @@ export default function EditorPage({
   /**
    * 矩形 / 圆形 / 线条：零请求，直接加一层居中的形状（一次加层＝一步 undo）。
    *
-   * **加完顺手补一个底色**（同一次 `apply`，仍是一步 undo）：`.shape` 两端都没有基类 CSS，
+   * **加完顺手补一个底色**（同一次 `apply`，仍是一步 undo）：`.shape` 两端的基类 CSS 只管圆角，
    * `style.bg` 不给就是完全透明——加完只看得见选中框、画面上什么都没有，是典型的
    * 「点了没反应」。默认取 accent 而不是墨色/白：六个模板的背景有深有浅，这一支在两边都看得见。
    * 用户在右栏「底色」里换成别的即可（`overridden` 已由 addShapeLayer 置位，刷 kit 不会覆盖）。
@@ -350,13 +350,9 @@ export default function EditorPage({
     ed.commit()
     const withShape = addShapeLayer(spec, shape)
     const added = withShape.layers[withShape.layers.length - 1]
-    // 「圆形」还要补一个圆角：两端都没有 `.shape-ellipse` 的 CSS，不给 radius 它和矩形一模一样，
-    // 菜单上写着「圆形」却画出个方块。radius 只接受 px（不是 %），所以取短边的一半——
-    // 正方形时是正圆，长方形时是胶囊形。**真椭圆需要百分比圆角，LayerStyle 目前表达不了**。
-    const radius = shape === 'ellipse'
-      ? Math.round(Math.min(added.style.width ?? 0, added.style.height ?? 0) / 2)
-      : undefined
-    afterAddMedia(setLayerStyle(withShape, added.id, { bg: SHAPE_DEFAULT_BG, radius }), label)
+    // 「圆形」不在这里写 radius：radius 只接受 px，非正方形时只能得到胶囊形。真椭圆由两端的
+    // `.shape-ellipse { border-radius: 50% }` 基类 CSS 负责（compositions base.css + studio FX_CSS）。
+    afterAddMedia(setLayerStyle(withShape, added.id, { bg: SHAPE_DEFAULT_BG }), label)
   }
 
   /**
