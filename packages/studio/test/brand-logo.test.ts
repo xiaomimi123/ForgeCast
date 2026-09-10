@@ -130,7 +130,10 @@ describe('出片管线注入 logo', () => {
     const [vid] = fs.readdirSync(hfRoot).filter((n) => n !== 'vid-1')
     expect(fs.existsSync(path.join(hfRoot, vid, 'assets', 'media', 'logo.png'))).toBe(true)
     // 渲进 index.html（图层真进了渲染，不只是躺在 spec 里）
-    expect(fs.readFileSync(path.join(hfRoot, vid, 'index.html'), 'utf8')).toContain('assets/media/logo.png')
+    const indexHtml = fs.readFileSync(path.join(hfRoot, vid, 'index.html'), 'utf8')
+    expect(indexHtml).toContain('assets/media/logo.png')
+    // logo 只设了 width:180 → img 自适配成 width:100%;height:auto，非正方形 logo 也等比不变形
+    expect(indexHtml).toContain('<img src="assets/media/logo.png" style="display:block;width:100%;height:auto;object-fit:contain"/>')
   })
 
   it('kit 无 logoAssetId → spec 里没有任何 media- 层（零变化门禁）', async () => {

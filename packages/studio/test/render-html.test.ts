@@ -34,7 +34,7 @@ const queryImgSrc = 'assets/a?b.png'
 const encodedQuerySrc = 'assets/a%3Fb.png'
 const subdirSrc = 'assets/screens/a b.png'
 const encodedSubdirSrc = 'assets/screens/a%20b.png'
-function imageSpec(cssClass: string, src: string): any {
+function imageSpec(cssClass: string | undefined, src: string, extraStyle: any = {}): any {
   return {
     version: 1, videoId: 'v1', slug: 's', template: 'demo', createdAt: '',
     semantic: { hook: null, sourceAssetId: null, sections: [] },
@@ -43,7 +43,7 @@ function imageSpec(cssClass: string, src: string): any {
     warnings: [],
     layers: [
       { id: 'car0', kind: 'image', from: null, overridden: false, start: 6, duration: 6, track: 2,
-        content: { kind: 'image', src }, style: { cssClass }, effects: [] },
+        content: { kind: 'image', src }, style: { cssClass, ...extraStyle }, effects: [] },
     ],
   }
 }
@@ -69,6 +69,24 @@ describe('renderSpecToHtml：图片路径的 URL 编码（Fix round 3/4）', () 
     const { html } = renderSpecToHtml(imageSpec('phoneWrap', subdirSrc))
     expect(html).toContain(`src="${encodedSubdirSrc}"`)
     expect(html).not.toContain('%2F') // / 不应该被编码
+  })
+})
+
+describe('renderSpecToHtml：素材层 <img> 自适配（裸 img 分支 ⟺ 素材层）', () => {
+  it('只设 width → width:100%;height:auto（等比）', () => {
+    const { html } = renderSpecToHtml(imageSpec(undefined, 'assets/m.png', { width: 200 }))
+    expect(html).toContain('<img src="assets/m.png" style="display:block;width:100%;height:auto;object-fit:contain"/>')
+  })
+  it('双维都设 → 两个 100% + object-fit:contain', () => {
+    const { html } = renderSpecToHtml(imageSpec(undefined, 'assets/m.png', { width: 200, height: 200 }))
+    expect(html).toContain('<img src="assets/m.png" style="display:block;width:100%;height:100%;object-fit:contain"/>')
+  })
+  it('门禁：phoneWrap/wideWrap 截图层的 img 上零内联样式（模板版式不受影响）', () => {
+    for (const cls of ['phoneWrap', 'wideWrap']) {
+      const { html } = renderSpecToHtml(imageSpec(cls, 'assets/m.png', { width: 200, height: 200 }))
+      expect(html).toContain('<img src="assets/m.png"/>')
+      expect(html).not.toContain('object-fit:contain')
+    }
   })
 })
 
