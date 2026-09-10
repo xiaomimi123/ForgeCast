@@ -66,11 +66,13 @@ export default function App() {
   // 同样要过 canLeaveWorkshop 这道闸：取消时不改抽屉 state，也不切工位，原地留着。
   const openProject = async (slug: string) => {
     if (!(await canLeaveWorkshop())) return
+    setWorkshopInitialSlug(null)
     setSelectedProjectSlug(slug)
     setActiveSection('projects')
   }
   const openTailor = async (id: number) => {
     if (!(await canLeaveWorkshop())) return
+    setWorkshopInitialSlug(null)
     setSelectedTailorId(id)
     setActiveSection('tailor')
   }
