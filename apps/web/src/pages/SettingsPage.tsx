@@ -241,7 +241,8 @@ function BrandKitSection() {
         <h3 className="font-medium">品牌 Kit（出片套用）</h3>
         <select className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1 text-sm" value={selected}
           onChange={(e) => setSlug(e.target.value)}>
-          {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
+          {/* || 而非 ??：brand_name 空串会渲染成空白 option（与 ProjectGroups / WorkshopPage 口径统一） */}
+          {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name || p.slug}</option>)}
         </select>
       </div>
       {!selected ? (

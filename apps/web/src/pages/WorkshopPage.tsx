@@ -16,8 +16,13 @@ const TABS = [
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
-export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
+export default function WorkshopPage({ onOpenProject, initialSlug, leaveGuardRef }: {
   onOpenProject: (slug: string) => void
+  /**
+   * 跨板块交接进来时要预选的项目（App 传入）。不给的话下拉会退回 projects.data[0]
+   * ——那是 `ORDER BY p.id` 的最早立项项目，跟用户刚推进的那个八竿子打不着（实报 bug）。
+   */
+  initialSlug?: string | null
   /**
    * 「离开做内容工位」的守卫出口（App 传进来）：工位同样是条件渲染，点面包屑切走 = 本组件连同
    * EditorPage 一起卸载 = 剪辑台未保存改动蒸发。这里把 tab 内的闸再向上转一层：当前在剪辑台
@@ -50,7 +55,10 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
     if (tab === 'editor' && editorLeaveGuard.current && !(await editorLeaveGuard.current())) return
     setTab(next)
   }
-  const [slug, setSlug] = useState('')
+  // 工位是条件渲染，每次进来都是全新挂载，所以用 initialSlug 初始化 state 就够了（无需 effect 同步）
+  const [slug, setSlug] = useState(initialSlug ?? '')
+  // 交接横幅：告诉用户「你为什么被切到这」；用户手动切过项目后就不再提（handedOff 只认初始那次）
+  const [handoffDismissed, setHandoffDismissed] = useState(false)
   const [hook, setHook] = useState('pain')
   const [n, setN] = useState(1)
   const logRef = useRef<HTMLDivElement>(null)
@@ -195,6 +203,10 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
     invalidateProjectData()
   }
 
+  // 交接横幅只在「确实是被交接进来的、且用户还没换过项目/关掉」时显示
+  const handoffVisible = !!initialSlug && !handoffDismissed && slug === initialSlug
+  const handoffName = projects.data?.find((p) => p.slug === initialSlug)?.brand_name || initialSlug
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 border-b border-hairline pb-2">
@@ -205,7 +217,8 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
           if (tab === 'editor' && editorLeaveGuard.current && !(await editorLeaveGuard.current())) return
           setSlug(next)
         }}>
-          {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name ?? p.slug}</option>)}
+          {/* 用 || 不用 ??：brand_name 存成空串时 ?? 会渲染出一个完全空白的 option，用户字面上看不到这个项目 */}
+          {projects.data?.map((p) => <option key={p.slug} value={p.slug}>{p.brand_name || p.slug}</option>)}
         </select>
         {selected && <button onClick={() => onOpenProject(selected)} className="text-xs text-fire">查看项目详情 →</button>}
         <div className="ml-auto seg-tabs">
@@ -214,6 +227,13 @@ export default function WorkshopPage({ onOpenProject, leaveGuardRef }: {
           ))}
         </div>
       </div>
+
+      {handoffVisible && (
+        <div className="flex items-center gap-2 rounded border-[1.5px] border-ink bg-card px-3 py-2 text-xs text-sub">
+          <span>已把「<b>{handoffName}</b>」移到「产素材」，并为你切到做内容工位。</span>
+          <button className="ml-auto text-faint hover:text-ink" onClick={() => setHandoffDismissed(true)}>知道了</button>
+        </div>
+      )}
 
       {/* 项目列表本身挂了：两个 tab 谁都没法工作，直接给整屏失败态——否则会掉进「这个项目还没有内容」的空态 */}
       {projects.isError && (

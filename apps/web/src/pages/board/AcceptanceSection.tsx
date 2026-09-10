@@ -19,21 +19,25 @@ function GateDot({ label, ok, buildFailed }: { label: string; ok: boolean; build
   return <i title={label} className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />
 }
 
-/** "拆解"页新增区块：待验收（stage=rebranding 且跑过四关）/ 已完成（stage 更靠后且跑过四关）。
- *  不改 ProjectGroups.tsx 本身，只读同一份 projects 数据换个角度展示。 */
+/** "拆解"页新增区块：待验收（stage=rebranding 且跑过四关）/ 已完成（stage 已到产素材及之后）。
+ *  不改 ProjectGroups.tsx 本身，只读同一份 projects 数据换个角度展示。
+ *  「已完成」**不要求**跑过四关：手动在卡片下拉里把项目改成「产素材」的，同样会离开上面两组，
+ *  以前它既不在拆解组也不在这里 = 从整个板块蒸发（实报 bug）。没有四关结果的就不显示状态徽章。 */
 export default function AcceptanceSection({ projects, onOpenProject, onAdvance }: {
   projects: Project[]
   onOpenProject: (slug: string) => void
   onAdvance: (slug: string) => void
 }) {
-  const withExec = projects
-    .map((p) => ({ p, exec: parseExecResult(p.rebrand_exec_result) }))
-    .filter((x): x is { p: Project; exec: ExecResult } => x.exec !== null)
+  const scored = projects.map((p) => ({ p, exec: parseExecResult(p.rebrand_exec_result) }))
 
-  const pending = withExec.filter((x) => x.p.stage === 'rebranding')
-  const done = withExec.filter((x) => ['producing', 'publishing', 'selling'].includes(x.p.stage))
+  // 待验收仍然要求跑过四关——没有四关结果就没有可验的东西
+  const pending = scored.filter(
+    (x): x is { p: Project; exec: ExecResult } => x.exec !== null && x.p.stage === 'rebranding',
+  )
+  // 已完成只看阶段：产素材及之后的项目在这里都有归宿，四关结果缺失时留空
+  const done = scored.filter((x) => ['producing', 'publishing', 'selling'].includes(x.p.stage))
 
-  if (withExec.length === 0) return null
+  if (pending.length === 0 && done.length === 0) return null
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -68,10 +72,13 @@ export default function AcceptanceSection({ projects, onOpenProject, onAdvance }
           已完成 <span className="stamp" style={{ width: 40, height: 40, fontSize: '0.6rem' }}>验讫</span>
         </h3>
         {done.length === 0 && <div className="text-sm text-faint">暂无</div>}
-        {done.map(({ p }) => (
+        {done.map(({ p, exec }) => (
           <div key={p.slug} className="mb-2 flex items-center gap-3 rounded border border-hairline bg-paper p-3 text-sm">
             <div className="flex-1">
               <b>{p.brand_name || p.slug}</b>
+              {exec
+                ? <span className="ml-2 text-xs text-faint">{exec.status}（{exec.rounds} 轮）</span>
+                : <span className="ml-2 text-xs text-faint">未跑四关</span>}
               <span className="ml-2 text-xs text-faint">workspace/{p.slug}/source-full/</span>
             </div>
             <button className="btn-ink px-3 py-1 text-xs" onClick={() => onOpenProject(p.slug)}>查看报告</button>

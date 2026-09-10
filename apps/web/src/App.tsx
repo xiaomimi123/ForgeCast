@@ -23,6 +23,14 @@ export default function App() {
   const workshopLeaveGuard = useRef<(() => Promise<boolean>) | null>(null)
 
   /**
+   * 「跳到做内容并选中这个项目」的交接槽。拆解板把项目改成「产素材」后，卡片会离开拆解板的两组，
+   * 用户此前会被静默丢下（去做内容还得自己在下拉里找）——这里把 slug 一路带过去，
+   * WorkshopPage 用它初始化自己的 slug state（工位是条件渲染，每次进来都是全新挂载）。
+   * 用面包屑正常切工位时清空，免得下次进来还被上一次的交接强行选中。
+   */
+  const [workshopInitialSlug, setWorkshopInitialSlug] = useState<string | null>(null)
+
+  /**
    * 离开做内容工位是否放行：当前不在工位或没挂守卫 → 直接放行；挂了守卫则问它
    * （确认丢弃/已保存 → true，取消 → false）。switchSection 和 openProject/openTailor
    * 共用这一条闸——后两者虽不是「切工位」触发的，但一样会把工位卸载，改动照样蒸发。
@@ -36,7 +44,17 @@ export default function App() {
   async function switchSection(next: SectionKey) {
     if (next === activeSection) return
     if (!(await canLeaveWorkshop())) return
+    setWorkshopInitialSlug(null)
     setActiveSection(next)
+  }
+
+  /**
+   * 跨板块交接：拆解板把项目推进到「产素材」后调它——切到做内容工位并预选该项目。
+   * 进入方向不经过 workshopLeaveGuard（守卫只管**离开**工位；此时必然不在工位上）。
+   */
+  const openWorkshop = (slug: string) => {
+    setWorkshopInitialSlug(slug)
+    setActiveSection('workshop')
   }
   const [selectedProjectSlug, setSelectedProjectSlug] = useState<string | null>(null)
   const [selectedTailorId, setSelectedTailorId] = useState<number | null>(null)
@@ -67,8 +85,8 @@ export default function App() {
       />
       <main className="p-7">
         {activeSection === 'scout' && <ScoutShellPage onOpenProject={openProject} />}
-        {activeSection === 'projects' && <ProjectsPage onOpenProject={openProject} />}
-        {activeSection === 'workshop' && <WorkshopPage onOpenProject={openProject} leaveGuardRef={workshopLeaveGuard} />}
+        {activeSection === 'projects' && <ProjectsPage onOpenProject={openProject} onOpenWorkshop={openWorkshop} />}
+        {activeSection === 'workshop' && <WorkshopPage onOpenProject={openProject} initialSlug={workshopInitialSlug} leaveGuardRef={workshopLeaveGuard} />}
         {activeSection === 'market' && <MarketPage onOpenTailor={openTailor} />}
         {activeSection === 'tailor' && <TailorPage onOpenTailor={openTailor} />}
       </main>

@@ -31,14 +31,31 @@ function fallbackIntro(p: Project): { targetBuyer: string; painPoint: string } {
 
 const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
 
-export default function ProjectGroups({ projects, onMove, loaded, onOpenProject }: {
+export default function ProjectGroups({ projects, onMove, loaded, onOpenProject, moved, onGoWorkshop }: {
   projects: Project[]; onMove: (slug: string, stage: string) => void; loaded?: boolean
   onOpenProject: (slug: string) => void
+  /**
+   * 刚被移出拆解阶段的项目（由 ProjectsPage 记住）。卡片会立刻从上面两组消失，
+   * 页面此前**没有任何反馈**——原来那句引导只在 inDecompose===0 时出现，而真实用户
+   * 几乎总还有别的在制项目，等于永不显示。改成「本次移动」触发，就地告诉用户去向。
+   */
+  moved?: { slug: string; name: string; stage: string } | null
+  /** 点「去做内容 →」的跳转出口，与自动跳转共用 App 的同一条链路（不另起一套） */
+  onGoWorkshop: (slug: string) => void
 }) {
   const inDecompose = projects.filter((p) => GROUPS.some((g) => g.key === p.stage))
+  const movedLabel = ALL_STAGES.find((s) => s.key === moved?.stage)?.label ?? moved?.stage
 
   return (
     <div className="space-y-6">
+      {moved && (
+        <div className="flex items-center gap-2 rounded border-[1.5px] border-ink bg-card px-3 py-2 text-xs text-sub">
+          <span>已把「<b>{moved.name}</b>」移到「{movedLabel}」，它不再显示在拆解板的分析/换皮组，可在下方「已完成」区找到。</span>
+          {moved.stage === 'producing' && (
+            <button className="ml-auto text-fire" onClick={() => onGoWorkshop(moved.slug)}>去做内容 →</button>
+          )}
+        </div>
+      )}
       {GROUPS.map((g) => {
         const items = projects.filter((p) => p.stage === g.key)
         return (
