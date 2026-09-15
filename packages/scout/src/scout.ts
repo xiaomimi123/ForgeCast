@@ -50,8 +50,9 @@ ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.descripti
  *  forceLicenseOk：手动投喂（addRepo）用，用户自担来源可用性，无视协议白名单一律放行。
  *  source：'manual'=用户手动投喂，'scout'=自动抓取/找爆款（默认）。
  *  opts.industryId：归属行业（null=未走行业锚定，如 DEFAULT_TOPICS 回落/手动投喂）。
- *  opts.enforceDepth：业务含量门槛，businessDepth 低于 businessDepthFloor 时**连 candidate 都不建**，
- *    返回 'shallow' 让调用方计数——只有行业锚定选品开这个闸，手动投喂/爆款检测不受影响。
+ *  opts.enforceDepth：业务含量门槛，businessDepth 低于 businessDepthFloor 时**不进候选池**——
+ *    仍落一条 status='dismissed' 记录（见 UPSERT_SHALLOW，为的是次日 onlyNew 不重抓不重烧），
+ *    并返回 'shallow' 让调用方计数。只有行业锚定选品开这个闸，手动投喂/爆款检测不受影响。
  *  opts.readme：调用方已抓过的 README（模板硬排会先抓一次），传进来免得重复请求。 */
 async function ingest(
   ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean,
@@ -203,7 +204,7 @@ export async function scoutCandidates(
         industryId: industryOf.get(m.repo) ?? null, enforceDepth: true, readme: readmes.get(m.repo),
       })
       if (willScore) scored++
-      if (r === 'shallow') { skippedShallow++; continue } // 连 candidate 都没建，不计 added/rejected
+      if (r === 'shallow') { skippedShallow++; continue } // 只落了 dismissed 记录、没进候选池，不计 added/rejected
       if (isNew(m) && ok) added++
     }
     if (!ok) rejected++

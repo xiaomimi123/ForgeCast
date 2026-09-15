@@ -175,6 +175,30 @@ describe('isTemplateRepo', () => {
     expect(businessProofHits('role based permission control').proof).toBe(true) // role + permission
   })
 
+  // 变异钉子①：硬排反证 1 个词 / 深度实证 2 个词的**不对称**是刻意的。
+  // 把 isTemplateRepo 里的 `=== 0` 改成 `< 2`（抹平不对称）时这条必须红。
+  it('M3 不对称：单个业务词足以让模板硬排放行，但不足以过业务含量门槛', () => {
+    const readme = 'A dashboard starter. Features: order list page. Nothing else.'
+    // 硬排放行（1 个词即可反证）——错杀的代价是连记录都不留
+    expect(isTemplateRepo('acme/admin-starter', 'A dashboard starter', readme)).toBe(false)
+    // 但业务含量门槛不放行（要 2 个互不相同的词）——真正的过滤在这一道
+    expect(businessProofHits(readme).proof).toBe(false)
+    const { dataModel } = businessProofHits(readme)
+    expect(Math.min(30, 6 + 0 + (dataModel ? 5 : 0))).toBeLessThan(businessDepthFloor({ businessDepth: 30 }))
+  })
+
+  // 变异钉子②：README 里的 URL 必须被剥掉才判词。
+  // 把 stripUrls 改成恒等函数时这条必须红——徽章里的 workflows 与文档链接里的 patient
+  // 会凑够两个词，把一个纯皮肤仓库判成业务系统（openemr/ant-design-pro 正是靠 badge 蒙混过关的）。
+  it('M3：URL 里的词一律不算（CI 徽章的 workflows、链接路径里的业务词都不算）', () => {
+    const urlOnly = '[![CI](https://github.com/acme/x/actions/workflows/ci.yml/badge.svg)](https://github.com/acme/x/actions/workflows/ci.yml)\n'
+      + 'See https://acme.com/docs/patient-appointments for details.\n'
+      + 'A pretty terminal skin with nice colors.'
+    expect(businessProofHits(urlOnly).proof).toBe(false)
+    // 同样两个词写在正文里就算数
+    expect(businessProofHits('A skin. Manages patient appointments.').proof).toBe(true)
+  })
+
   it('补词后 SaaS starter 仍拿不到业务实证（payment/subscription 刻意不收词）', () => {
     expect(businessProofHits(REAL_STARTER_README).proof).toBe(false)
     expect(businessProofHits('Stripe payments and subscriptions included').proof).toBe(false)

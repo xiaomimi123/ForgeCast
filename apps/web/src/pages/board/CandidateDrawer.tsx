@@ -22,8 +22,9 @@ export default function CandidateDrawer({ candidate, industryName, onClose, onPi
   const weights = settings.data?.scout.weights ?? { rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, businessDepth: 30 }
   const dims = buildDims(weights)
   // 业务含量低分＝"分数偏低，值得把判定理由摊开给用户看"，阈值取权重的 60%。
-  // **刻意与服务端 businessDepthFloor（权重 40%）不同口径**：那是入库硬门槛（低于它连 candidate 都不建，
-  // 用户根本看不到），这里只是展示开关——门槛线上方那一段勉强过关的候选，恰恰最需要看到理由。
+  // **刻意与服务端 businessDepthFloor（权重 40%）不同口径**：那是入池硬门槛（低于它的候选只留一条
+  // dismissed 记录、不进候选池，这个抽屉基本看不到），这里只是展示开关——
+  // 门槛线上方那一段勉强过关的候选，恰恰最需要看到理由。
   const depthLow = !!d && d.businessDepth < weights.businessDepth * 0.6
 
   async function load(force: boolean) {

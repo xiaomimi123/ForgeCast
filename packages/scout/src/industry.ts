@@ -160,12 +160,14 @@ function stripUrls(readme: string): string {
   return readme.replace(/https?:\/\/\S+/g, ' ')
 }
 
-/** 模板硬排：仓库名/描述像脚手架，且 README 里拿不出**业务实体**实证 → true（跳过，连 candidate 都不建）。纯函数。 */
+/** 模板硬排：仓库名/描述像脚手架，且 README 里拿不出**业务实体**实证 → true
+ *  （跳过，连 candidate 都不建——这条硬排跑在评分之前，是真的一条记录都不落）。纯函数。 */
 export function isTemplateRepo(repo: string, description: string | null, readme: string): boolean {
   const name = repo.includes('/') ? repo.slice(repo.indexOf('/') + 1) : repo
   if (!TEMPLATE_NAME_RE.test(name) && !TEMPLATE_DESC_RE.test(description ?? '')) return false
-  // 反证只要求 1 个词（不是 businessProofHits 的 2 个）：这条硬排在 live 下也跑、且**连 candidate 都不建**，
-  // 错杀的代价远大于放过——真正的过滤交给后面的业务含量门槛。
+  // 反证只要求 1 个词（不是 businessProofHits 的 2 个）：这条硬排在 live 下也跑、且**连 candidate 都不建**
+  // （不像业务含量门槛还会留一条 dismissed 记录），错杀就是彻底消失——
+  // 所以这里宁可放过：真正的过滤交给后面那道要 2 个词的业务含量门槛。
   return businessHitCount(readme) === 0
 }
 
