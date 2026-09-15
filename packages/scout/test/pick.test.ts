@@ -33,7 +33,7 @@ describe('pickCandidate (mock)', () => {
     expect(slug).toBe('chatwoot-2')
   })
   it('立项协议不过的候选 → 抛错', async () => {
-    await expect(pickCandidate(ctx, 'gpl-example/copyleft-tool')).rejects.toThrow(/协议/)
+    await expect(pickCandidate(ctx, 'copyleftlabs/copyleft-tool')).rejects.toThrow(/协议/)
   })
   it('不存在的候选 → 抛错', async () => {
     await expect(pickCandidate(ctx, 'no/such')).rejects.toThrow(/候选不存在/)

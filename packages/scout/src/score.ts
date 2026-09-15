@@ -1,5 +1,18 @@
 import type { CoreCtx } from '@forgecast/core'
+import { businessProofHits } from './industry'
 import type { RepoMeta, ScoreDetail, Track } from './types'
+
+type Weights = { rebrandCost: number; buyerClarity: number; visualAppeal: number; businessDepth: number }
+
+/** 业务含量入库门槛的定值上限。 */
+export const BUSINESS_DEPTH_MIN = 12
+
+/** 实际门槛：定值 12，但第四维权重被设置页调低时按 40% 等比缩。
+ *  不缩的话，用户把 scout_weight_depth 调到 ≤11 会让 Math.min(w.businessDepth, …) 的结果恒低于 12，
+ *  所有候选被静默全拒、选品返回 0 个——排查起来毫无线索，是个会吃掉整个功能的坑。 */
+export function businessDepthFloor(weights: { businessDepth: number }): number {
+  return Math.min(BUSINESS_DEPTH_MIN, weights.businessDepth * 0.4)
+}
 
 const TECHS = ['react', 'next', 'vue', 'node', 'python', 'go', 'docker']
 const EXIT_ROUTES = ['托管', '定制', '一键包']
@@ -35,10 +48,14 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
 
   const system = '你是开源项目商业化评估专家。只输出 JSON，不要多余文字。'
   const prompt = [
-    `评估这个开源项目能否"换皮"成面向中国中小老板的付费产品，给三维打分（各维不超上限）：`,
+    `评估这个开源项目能否"换皮"成面向中国中小老板的付费产品，给四维打分（各维不超上限）：`,
     `- rebrandCost 换皮成本(0-${weights.rebrandCost})：技术栈(React/Node/Next 高)、有无 Docker、i18n、UI 可主题化`,
     `- buyerClarity 买家清晰度(0-${weights.buyerClarity})：能否一句话说清"什么老板会掏钱"，越垂直越高`,
     `- visualAppeal 内容可视性(0-${weights.visualAppeal})：有无好看可演示的 UI（纯 CLI/后端低分）`,
+    `- businessDepth 业务含量(0-${weights.businessDepth})：这东西是不是一套真能跑业务的系统。`,
+    `  高分锚点：有订单/学员/客户这类业务实体 + 数据库模型（schema/migration/ORM）+ 角色权限（role/permission）＝高；`,
+    `  低分锚点：只有 UI 组件库/主题皮肤/脚手架模板/教程示例，没有业务实体与数据模型＝低。`,
+    `  同时用一句话说明判定理由，输出到 businessDepthReason。`,
     `再判断这个项目更适合两条路线中的哪一条，输出 track 字段：`,
     `- "profit"（利润款/交付线）：能改造成商业产品直接卖给中小老板，走"立项→换皮→交付"流程`,
     `- "traffic"（引流款/仅内容线）：技术含量普通老板看不懂用不上，但演示效果强，适合拍视频引流吸粉，不适合真的卖给客户`,
@@ -49,7 +66,7 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
     `如果 track 是 "traffic"，额外输出：`,
     `- emotionScore 情绪值(0-100)：内容传播情绪强度（惊讶/爽感/焦虑等能带来转发的情绪）`,
     `- wowScore 爽感(0-100)：3秒内能不能看懂效果、够不够炫`,
-    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本","summaryZh":"这个项目是做什么的，一句话，中文","category":"从下列类别选一个最贴切的","track":"profit 或 traffic","gapScore":n,"threshold":n,"exitRoutes":["..."],"emotionScore":n,"wowScore":n}`,
+    `输出 JSON：{"rebrandCost":n,"buyerClarity":n,"visualAppeal":n,"businessDepth":n,"businessDepthReason":"一句话","techStack":["..."],"rationale":"一句话","targetBuyer":"什么老板会掏钱，一句话（行业+规模）","painPoint":"解决的行业痛点，一句话，注明现状成本","summaryZh":"这个项目是做什么的，一句话，中文","category":"从下列类别选一个最贴切的","track":"profit 或 traffic","gapScore":n,"threshold":n,"exitRoutes":["..."],"emotionScore":n,"wowScore":n}`,
     `类别（选一个）：${CATEGORIES.join(' / ')}`,
     `项目：${meta.repo}（topics: ${meta.topics.join(',')}, stars: ${meta.stars}）`,
     `README:\n${readme.slice(0, 6000)}`,
@@ -61,8 +78,8 @@ export async function scoreCandidate(ctx: CoreCtx, meta: RepoMeta, readme: strin
   return detail
 }
 
-/** 只生成中文简介，不重新跑三维打分——用于给老候选（评过分但缺 summaryZh）做轻量补充，
- *  不烧三维评分的 LLM 调用、不改动已有 rationale/targetBuyer/painPoint。 */
+/** 只生成中文简介，不重新跑四维打分——用于给老候选（评过分但缺 summaryZh）做轻量补充，
+ *  不烧四维评分的 LLM 调用、不改动已有 rationale/targetBuyer/painPoint。 */
 export async function generateSummaryZh(ctx: CoreCtx, repo: string, stars: number, readme: string): Promise<string> {
   if (ctx.config.llm.mode === 'mock') return ''
   const system = '你是开源项目介绍助手。只输出 JSON，不要多余文字。'
@@ -81,16 +98,23 @@ export async function generateSummaryZh(ctx: CoreCtx, repo: string, stars: numbe
   } catch { return '' }
 }
 
-function heuristicScore(meta: RepoMeta, readme: string, weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number }): ScoreDetail {
+function heuristicScore(meta: RepoMeta, readme: string, weights: Weights): ScoreDetail {
   const r = readme.toLowerCase()
   const has = (re: RegExp) => re.test(r)
   const hasVertical = has(/crm|invoice|chat|booking|shop|commerce|pos|survey|form/)
   const rebrandCost = Math.min(weights.rebrandCost, 12 + (has(/docker/) ? 9 : 0) + (has(/react|next|vue|node/) ? 9 : 0))
   const buyerClarity = Math.min(weights.buyerClarity, 18 + (readme.length > 200 ? 10 : 0) + (hasVertical ? 12 : 0))
   const visualAppeal = Math.min(weights.visualAppeal, 8 + (has(/screenshot|demo|preview/) ? 12 : 0) + (has(/dashboard|ui|interface/) ? 10 : 0))
+  // 业务含量：命中业务实证词 +19，再命中数据库/模型词 +5，底分 6（都不中=6，低于 12 的门槛，直接被硬排）。
+  // 数据层词的加成刻意压到 5（6+5=11 < 门槛 12）：`github=live + llm=mock`（有 GH token 没 LLM key）
+  // 是合法组合，旧的 +10 让"只有 prisma/api 的漂亮空壳"拿 16 分稳过门槛，这条路径下门槛几乎不拦人。
+  // 现在必须至少命中一个**业务实体词**才可能过线。
+  const { proof, dataModel } = businessProofHits(readme)
+  const businessDepth = Math.min(weights.businessDepth, 6 + (proof ? 19 : 0) + (dataModel ? 5 : 0))
+  const businessDepthReason = `离线启发式：业务实证词${proof ? '命中' : '未命中'}·数据模型词${dataModel ? '命中' : '未命中'}`
   const techStack = TECHS.filter((t) => r.includes(t)).concat(meta.topics)
   const base = {
-    rebrandCost, buyerClarity, visualAppeal, techStack: [...new Set(techStack)],
+    rebrandCost, buyerClarity, visualAppeal, businessDepth, businessDepthReason, techStack: [...new Set(techStack)],
     rationale: `离线启发式评分：${meta.repo}`,
     // mock 不编造买家与痛点——关键词拼出来的假数据比空着更坏
     targetBuyer: '', painPoint: '', summaryZh: '',
@@ -114,7 +138,7 @@ function heuristicScore(meta: RepoMeta, readme: string, weights: { rebrandCost: 
 }
 
 /** 从 LLM 文本里抽 JSON（可能包 ```json 围栏），并夹取维度到上限 */
-function parseScoreJson(text: string, weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number }): ScoreDetail {
+function parseScoreJson(text: string, weights: Weights): ScoreDetail {
   const m = text.match(/\{[\s\S]*\}/)
   if (!m) throw new Error('评分 LLM 未返回 JSON')
   const o = JSON.parse(m[0])
@@ -128,6 +152,8 @@ function parseScoreJson(text: string, weights: { rebrandCost: number; buyerClari
     rebrandCost: clamp(o.rebrandCost, weights.rebrandCost),
     buyerClarity: clamp(o.buyerClarity, weights.buyerClarity),
     visualAppeal: clamp(o.visualAppeal, weights.visualAppeal),
+    businessDepth: clamp(o.businessDepth, weights.businessDepth),
+    businessDepthReason: typeof o.businessDepthReason === 'string' ? o.businessDepthReason : '',
     techStack: Array.isArray(o.techStack) ? o.techStack.map(String) : [],
     rationale: typeof o.rationale === 'string' ? o.rationale : '',
     targetBuyer: typeof o.targetBuyer === 'string' ? o.targetBuyer : '',

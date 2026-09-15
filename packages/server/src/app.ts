@@ -20,6 +20,7 @@ import { streamSSE } from 'hono/streaming'
 import type { TaskEvent, TaskQueue } from './tasks'
 import { buildContentItems } from './content-items'
 import { readAutoScoutCfg } from './scheduler'
+import { registerIndustryRoutes } from './industry-routes'
 import { registerPresetRoutes } from './preset-routes'
 import { registerSpecRoutes } from './spec-routes'
 
@@ -285,6 +286,8 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   registerSpecRoutes(app, ctx, queue)
   // 预设/版式模板/品牌 kit CRUD。同理必须在 SPA `/*` 兜底前挂载。
   registerPresetRoutes(app, ctx)
+  // 行业 CRUD（行业锚定选品）。同理必须在 SPA `/*` 兜底前挂载。
+  registerIndustryRoutes(app, ctx)
 
   function assetAbsPath(id: string): { row: any; abs: string } | null {
     const row: any = ctx.db.prepare('SELECT * FROM assets WHERE id = ?').get(id)
@@ -622,11 +625,19 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   // —— M1 scout ——
   app.post('/api/scout', async (c) => {
     const body = await c.req.json().catch(() => ({}))
+    if (body.industryIds !== undefined
+      && (!Array.isArray(body.industryIds) || body.industryIds.some((v: any) => typeof v !== 'number'))) {
+      return c.json({ error: 'industryIds 必须是数字数组' }, 400)
+    }
     const taskId = queue.enqueue((log) => scoutCandidates(ctx, {
       topics: Array.isArray(body.topics) ? body.topics : undefined,
       limit: typeof body.limit === 'number' ? body.limit : undefined,
+      industryIds: Array.isArray(body.industryIds) ? body.industryIds : undefined,
       onProgress: log,
-    }).then((r) => { log(`发现 ${r.found} 个，评分 ${r.scored}，协议不过 ${r.rejected}`); return r }))
+    }).then((r) => {
+      log(`发现 ${r.found} 个，评分 ${r.scored}，协议不过 ${r.rejected}，模板跳过 ${r.skippedTemplate}，业务含量不足跳过 ${r.skippedShallow}`)
+      return r
+    }))
     return c.json({ taskId })
   })
 
@@ -654,7 +665,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
 
   app.get('/api/candidates', (c) => {
     return c.json(ctx.db.prepare(
-      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, favorite, source, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
+      'SELECT id, repo, url, license, license_ok, stars, last_commit, tech_stack, description, score, score_detail, status, favorite, source, industry_id, created_at FROM candidates ORDER BY license_ok DESC, (score IS NULL), score DESC',
     ).all())
   })
 

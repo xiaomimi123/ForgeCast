@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
+import { DEFAULT_TOPICS, MAX_KEYWORDS_PER_INDUSTRY, addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
+import { INDUSTRY_MOCK_KEYWORDS } from '../src/industry'
 import { candidateFixtures } from '../src/fixtures/candidate-fixtures'
 import { isLicenseOk } from '../src/license'
 
@@ -14,7 +15,14 @@ beforeEach(() => {
   ctx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
 })
 
-const okCount = candidateFixtures.filter((f) => isLicenseOk(f.license)).length
+// scoutCandidates 会挡掉的两条：模板硬排（TEMPLATE_FIXTURE）与业务含量门槛（SHALLOW_FIXTURE）。
+// scoutBreakouts 两道闸都不开，仍会把它们评分入池，所以两套口径要分开数。
+const TEMPLATE_FIXTURE = 'acme/nextjs-saas-starter'
+const SHALLOW_FIXTURE = 'lucide-icons/lucide'
+const okCount = candidateFixtures.filter((f) => isLicenseOk(f.license)).length          // 协议可商用总数（breakouts 口径）
+const okScoutable = candidateFixtures.filter(                                           // scout 口径（已扣模板与浅业务）
+  (f) => isLicenseOk(f.license) && f.repo !== TEMPLATE_FIXTURE && f.repo !== SHALLOW_FIXTURE,
+).length
 
 describe('scoutCandidates (mock)', () => {
   it('fixtures 入池：可商用者评分、GPL 标记不评分、按 score 排序、幂等去重', async () => {
@@ -23,7 +31,7 @@ describe('scoutCandidates (mock)', () => {
     expect(r1.scored).toBeGreaterThanOrEqual(4)
 
     const rows: any[] = ctx.db.prepare('SELECT * FROM candidates ORDER BY license_ok DESC, score DESC').all()
-    const gpl = rows.find((x) => x.repo === 'gpl-example/copyleft-tool')
+    const gpl = rows.find((x) => x.repo === 'copyleftlabs/copyleft-tool')
     expect(gpl.license_ok).toBe(0)
     expect(gpl.score).toBeNull()
     const scored = rows.filter((x) => x.license_ok === 1)
@@ -53,7 +61,7 @@ describe('scoutCandidates (mock)', () => {
     const msgs: string[] = []
     const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
 
-    expect(msgs[0]).toMatch(/^搜索 GitHub（\d+ 个 topic）…$/)
+    expect(msgs[0]).toMatch(/^搜索 GitHub（\d+ 个关键词 · \d+ 个行业）…$/)
     expect(msgs[1]).toMatch(/^搜到 \d+ 个仓库 · 协议可商用 \d+ 个 · 本次评分 \d+ 个$/)
 
     const scoreLines = msgs.filter((m) => m.startsWith('评分 '))
@@ -80,8 +88,8 @@ describe('addRepo (mock)', () => {
     expect(JSON.parse(row.tech_stack)).toContain('react')
   })
   it('手动投喂强制放行协议门槛：GPL fixture 也 license_ok=1 并正常评分', async () => {
-    await addRepo(ctx, 'https://github.com/gpl-example/copyleft-tool')
-    const row: any = ctx.db.prepare("SELECT * FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    await addRepo(ctx, 'https://github.com/copyleftlabs/copyleft-tool')
+    const row: any = ctx.db.prepare("SELECT * FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(row.license_ok).toBe(1)
     expect(row.score).toBeGreaterThan(0)
   })
@@ -98,12 +106,12 @@ describe('addRepo (mock)', () => {
     expect(other.source).toBe('scout')
   })
   it('回归：已标 manual 的 GPL repo 被自动抓取重新扫到时，license_ok 不会被真实协议打回 0', async () => {
-    await addRepo(ctx, 'https://github.com/gpl-example/copyleft-tool')
-    let row: any = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    await addRepo(ctx, 'https://github.com/copyleftlabs/copyleft-tool')
+    let row: any = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(row.license_ok).toBe(1)
 
-    await scoutCandidates(ctx) // gpl-example/copyleft-tool 的 topics 含 'inventory'，在 DEFAULT_TOPICS 内，会被重新扫到
-    row = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    await scoutCandidates(ctx) // copyleftlabs/copyleft-tool 的 topics 含 'inventory'，在 DEFAULT_TOPICS 内，会被重新扫到
+    row = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(row.license_ok).toBe(1)
   })
 })
@@ -159,15 +167,15 @@ describe('scoutCandidates onlyNew', () => {
     expect(JSON.parse(row.score_detail).targetBuyer).toBe('真评')
     expect(row.favorite).toBe(1)                                   // 收藏未被洗
     expect(row.stars).toBe(first.stars)                            // 元数据已刷新（seed 时是 1）
-    expect(r.added).toBe(okCount - 1)                              // 排除已存在的 first
+    expect(r.added).toBe(okScoutable - 1)                          // 排除已存在的 first
     // 新入库的可商用候选都评了分
-    const fresh = ctx.db.prepare('SELECT score FROM candidates WHERE repo != ? AND license_ok = 1').all(first.repo) as any[]
-    expect(fresh.length).toBe(okCount - 1)
+    const fresh = ctx.db.prepare("SELECT score FROM candidates WHERE repo != ? AND license_ok = 1 AND status = 'candidate'").all(first.repo) as any[]
+    expect(fresh.length).toBe(okScoutable - 1)
     for (const f of fresh) expect(f.score).not.toBeNull()
   })
-  it('全新库跑 onlyNew：全部视为新项，added = 可商用 fixture 数', async () => {
+  it('全新库跑 onlyNew：全部视为新项，added = 可商用（且非模板）fixture 数', async () => {
     const r = await scoutCandidates(ctx, { onlyNew: true })
-    expect(r.added).toBe(okCount)
+    expect(r.added).toBe(okScoutable)
   })
   it('非 onlyNew 行为不变，也返回 added', async () => {
     await scoutCandidates(ctx, {})
@@ -198,7 +206,7 @@ describe('cleanupCandidates (mock)', () => {
     await cleanupCandidates(ctx, { threshold: 50 })
     const picked: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'twentyhq/twenty'").get()
     expect(picked.status).toBe('picked') // 没被 dismiss 覆盖
-    const gpl: any = ctx.db.prepare("SELECT status, score FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    const gpl: any = ctx.db.prepare("SELECT status, score FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(gpl.score).toBeNull() // license_ok=0 本就不评分，不该被"补评分"逻辑碰到
     expect(gpl.status).toBe('candidate') // 也不该被 dismiss（license gate 已经在別处标记不可商用）
   })
@@ -273,7 +281,7 @@ describe('scoutBreakouts (mock)', () => {
     const r = await scoutBreakouts(ctx)
     expect(r.hits.length).toBe(r.added)
     expect(r.hits.every((h) => typeof h.repo === 'string' && typeof h.url === 'string')).toBe(true)
-    const gplHit = r.hits.find((h) => h.repo === 'gpl-example/copyleft-tool')
+    const gplHit = r.hits.find((h) => h.repo === 'copyleftlabs/copyleft-tool')
     expect(gplHit).toBeUndefined() // 协议不过的不该出现在 hits 里
   })
 
@@ -303,7 +311,7 @@ describe('candidatesNeedingSummary (mock)', () => {
     ctx.db.prepare('UPDATE candidates SET score_detail = ? WHERE id = ?').run(JSON.stringify(d), chatwoot.id)
     expect(candidatesNeedingSummary(ctx)).not.toContain(chatwoot.id)
 
-    const gpl: any = ctx.db.prepare("SELECT id FROM candidates WHERE repo='gpl-example/copyleft-tool'").get()
+    const gpl: any = ctx.db.prepare("SELECT id FROM candidates WHERE repo='copyleftlabs/copyleft-tool'").get()
     expect(candidatesNeedingSummary(ctx)).not.toContain(gpl.id) // 协议不过，从未评分，没有 score_detail
   })
 })
@@ -328,5 +336,150 @@ describe('backfillCandidateSummary (mock)', () => {
   })
   it('候选不存在 → 抛错', async () => {
     await expect(backfillCandidateSummary(ctx, 999999)).rejects.toThrow(/不存在/)
+  })
+})
+
+describe('行业锚定选品', () => {
+  const enabledIndustries = () =>
+    ctx.db.prepare('SELECT id, name FROM industries WHERE enabled = 1 ORDER BY sort_order').all() as Array<{ id: number; name: string }>
+
+  it('默认（8 行业启用）：逐行业生成搜索词并落缓存，候选带 industry_id', async () => {
+    const msgs: string[] = []
+    await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    const inds = enabledIndustries()
+    expect(inds).toHaveLength(8)
+    // 每个启用行业都生成并缓存了搜索词
+    const cached = ctx.db.prepare('SELECT industry_id FROM industry_queries').all() as any[]
+    expect(cached).toHaveLength(8)
+    // 搜索日志的 topic 数 = 各行业关键词去重合计
+    // 每行业最多取 MAX_KEYWORDS_PER_INDUSTRY 个词（GitHub search 限速，见 scout.ts）
+    const total = new Set(inds.flatMap((i) => INDUSTRY_MOCK_KEYWORDS[i.name].slice(0, MAX_KEYWORDS_PER_INDUSTRY))).size
+    expect(msgs[0]).toBe(`搜索 GitHub（${total} 个关键词 · ${inds.length} 个行业）…`)
+    // 候选归属到行业（mock 下所有 fixture 由第一个行业命中）
+    const rows = ctx.db.prepare('SELECT repo, industry_id FROM candidates').all() as any[]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r) => r.industry_id === inds[0].id)).toBe(true)
+  })
+
+  it('全部行业停用 → 回落 DEFAULT_TOPICS，industry_id 为 null', async () => {
+    ctx.db.prepare('UPDATE industries SET enabled = 0').run()
+    const msgs: string[] = []
+    await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    expect(msgs[0]).toBe(`搜索 GitHub（${DEFAULT_TOPICS.length} 个关键词 · 0 个行业）…`)
+    const rows = ctx.db.prepare('SELECT industry_id FROM candidates').all() as any[]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r) => r.industry_id === null)).toBe(true)
+    expect(ctx.db.prepare('SELECT COUNT(*) c FROM industry_queries').get() as any).toEqual({ c: 0 })
+  })
+
+  it('industryIds 指定子集：只给该行业生成搜索词，候选归到它名下', async () => {
+    const target = enabledIndustries()[2]
+    await scoutCandidates(ctx, { industryIds: [target.id] })
+    const cached = ctx.db.prepare('SELECT industry_id FROM industry_queries').all() as any[]
+    expect(cached).toEqual([{ industry_id: target.id }])
+    const rows = ctx.db.prepare('SELECT industry_id FROM candidates').all() as any[]
+    expect(rows.every((r) => r.industry_id === target.id)).toBe(true)
+  })
+
+  it('M1：搜索被限流时日志说"限流"而不是"词太偏"，并计入 rateLimited', async () => {
+    const spy = vi.spyOn(await import('../src/github'), 'createGithubClient')
+    spy.mockImplementation((() => ({
+      async searchRepos(topics: string[], opts: any) {
+        for (const t of topics) opts.onNote?.({ topic: t, kind: 'rate-limited', status: 429 })
+        return []
+      },
+      async searchByKeywords() { return [] },
+      async searchBreakouts() { return [] },
+      async fetchReadme() { return '' },
+      async fetchTree() { return [] },
+    })) as any)
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    spy.mockRestore()
+    expect(r.rateLimited).toBeGreaterThan(0)
+    expect(r.found).toBe(0)
+    expect(msgs.some((m) => m.includes('被 GitHub 限流，已跳过'))).toBe(true)
+    expect(msgs.some((m) => m.includes('词可能太偏'))).toBe(false) // 不能误导用户去重生成搜索词
+  })
+
+  it('M1：每个行业最多取 MAX_KEYWORDS_PER_INDUSTRY 个搜索词（GitHub search 限速 30/min）', async () => {
+    const seen: string[][] = []
+    const spy = vi.spyOn(await import('../src/github'), 'createGithubClient')
+    spy.mockImplementation(((cfg: any) => {
+      const real = (spy.getMockImplementation() as any) // 不用真实现，直接手写一个记录用的
+      void real
+      return {
+        async searchRepos(topics: string[]) { seen.push(topics); return [] },
+        async searchByKeywords() { return [] },
+        async searchBreakouts() { return [] },
+        async fetchReadme() { return '' },
+        async fetchTree() { return [] },
+      }
+    }) as any)
+    await scoutCandidates(ctx)
+    spy.mockRestore()
+    expect(seen).toHaveLength(8)
+    expect(Math.max(...seen.map((t) => t.length))).toBeLessThanOrEqual(MAX_KEYWORDS_PER_INDUSTRY)
+  })
+
+  it('模板硬排：命中排除词且 README 无业务实证的仓库不入库，skippedTemplate 计数并有日志', async () => {
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    expect(r.skippedTemplate).toBe(1)
+    const row = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE repo = ?').get(TEMPLATE_FIXTURE) as any
+    expect(row.c).toBe(0)
+    expect(msgs.some((m) => m === '模板/脚手架硬排跳过 1 个')).toBe(true)
+  })
+
+  it('业务含量不足（businessDepth < 12）不进候选池，落一条 dismissed 记录，skippedShallow 计数并有日志', async () => {
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    expect(r.skippedShallow).toBe(1)
+    const row = ctx.db.prepare('SELECT status, score FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE) as any
+    expect(row.status).toBe('dismissed') // 有记录但不在候选池里
+    expect(row.score).toBeGreaterThan(0) // 带评分，下次能靠记录识别，不用重烧 LLM
+    expect(msgs.some((m) => m === '业务含量不足（businessDepth < 12）跳过 1 个')).toBe(true)
+  })
+
+  it('M4 回归：shallow 仓库次日 onlyNew 抓取不再重抓 README / 重烧评分', async () => {
+    await scoutCandidates(ctx)
+    const before: any = ctx.db.prepare('SELECT score, score_detail FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE)
+    const r2 = await scoutCandidates(ctx, { onlyNew: true })
+    expect(r2.skippedShallow).toBe(0) // 已不是 new，不再进评分池
+    const after: any = ctx.db.prepare('SELECT status, score, score_detail FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE)
+    expect(after.status).toBe('dismissed')
+    expect(after.score).toBe(before.score)
+    expect(after.score_detail).toBe(before.score_detail)
+  })
+
+  it('M4：shallow 记录不覆盖人工状态（已 starred 的候选不会被打回 dismissed）', async () => {
+    await scoutCandidates(ctx)
+    ctx.db.prepare("UPDATE candidates SET status = 'starred' WHERE repo = ?").run(SHALLOW_FIXTURE)
+    await scoutCandidates(ctx)
+    const row: any = ctx.db.prepare('SELECT status FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE)
+    expect(row.status).toBe('starred')
+  })
+
+  it('回归：第四维权重被调到 8（低于定值门槛 12）时门槛等比缩，不会静默清空选品', async () => {
+    ctx.config.scout.weights.businessDepth = 8 // 门槛 = min(12, 8*0.4) = 3.2
+    const r = await scoutCandidates(ctx)
+    expect(r.added).toBeGreaterThan(0)
+    const rows = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE license_ok = 1').get() as any
+    expect(rows.c).toBeGreaterThan(0)
+  })
+
+  it('默认权重下真业务 fixtures 都够格，skippedShallow 只算到那条浅的', async () => {
+    const r = await scoutCandidates(ctx)
+    expect(r.skippedShallow).toBe(1)
+    expect(r.added).toBe(okScoutable)
+  })
+
+  it('score 合成含 businessDepth，score_detail 也带该维与理由', async () => {
+    await scoutCandidates(ctx)
+    const row: any = ctx.db.prepare("SELECT score, score_detail FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    const d = JSON.parse(row.score_detail)
+    expect(d.businessDepth).toBeGreaterThanOrEqual(12)
+    expect(typeof d.businessDepthReason).toBe('string')
+    expect(row.score).toBe(d.rebrandCost + d.buyerClarity + d.visualAppeal + d.businessDepth)
   })
 })

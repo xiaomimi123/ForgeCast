@@ -182,6 +182,20 @@ CREATE TABLE IF NOT EXISTS layout_templates (
   ratio TEXT NOT NULL DEFAULT 'portrait', payload TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS industries (
+  id INTEGER PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  note TEXT,
+  enabled INTEGER DEFAULT 1,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS industry_queries (
+  industry_id INTEGER PRIMARY KEY REFERENCES industries(id) ON DELETE CASCADE,
+  keywords TEXT NOT NULL,
+  model TEXT,
+  generated_at TEXT
+);
 `)
   // 迁移：给 P1 建的旧 assets 表补 published_url（新库已含，此为兼容旧库）
   ensureColumn(db, 'assets', 'published_url', 'TEXT')
@@ -206,5 +220,24 @@ CREATE TABLE IF NOT EXISTS layout_templates (
   ensureColumn(db, 'assets', 'spec_path', 'TEXT')
   // 迁移：项目品牌 kit（JSON blob：主色/强调色/标题倍数/CTA 文案），出片时自动套用
   ensureColumn(db, 'projects', 'brand_kit', 'TEXT')
+  // 迁移：候选归属行业（可空，行业锚定选品用；新库已含，此为兼容旧库）
+  ensureColumn(db, 'candidates', 'industry_id', 'INTEGER')
+
+  // seed 默认行业（INSERT OR IGNORE 按 name 唯一去重，幂等：删一行再 openDb 会补回）
+  const defaultIndustries: Array<{ name: string; note: string }> = [
+    { name: '资讯媒体', note: '做资讯号的老板要盯热点时效、素材去重、多平台分发排期' },
+    { name: '情感社交', note: '做情感号的老板要管私域加粉话术、咨询转化脚本、案例素材合规' },
+    { name: '教育培训', note: '做教育培训的老板要管课程排期、招生获客、试听转化、续费催费' },
+    { name: '外贸跨境', note: '做外贸的老板要管客户询盘、报价单、物流单据、多币种结算' },
+    { name: '本地生活服务', note: '做本地生活服务的老板要管到店预约、核销核销、点评口碑、会员储值' },
+    { name: '健康养生', note: '做健康养生的老板要管体验预约、疗程跟进、客户档案、复购提醒' },
+    { name: '汽车房产', note: '做汽车房产的老板要管带看预约、客户跟进、合同审批、佣金结算' },
+    { name: '餐饮零售', note: '做餐饮零售的老板要管排班库存、进销存对账、会员积分、外卖对接' },
+  ]
+  const insertIndustry = db.prepare(
+    'INSERT OR IGNORE INTO industries (name, note, enabled, sort_order) VALUES (?, ?, 1, ?)',
+  )
+  defaultIndustries.forEach((ind, i) => insertIndustry.run(ind.name, ind.note, i))
+
   return db
 }

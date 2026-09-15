@@ -20,13 +20,13 @@ function ctxWith(env: Record<string, string> = {}): CoreCtx {
 const meta = { repo: 'a/b', url: 'u', license: 'MIT', stars: 100, lastCommit: null, topics: ['crm'], description: null }
 
 describe('scoreCandidate mock', () => {
-  it('确定性启发式：三维在各自上限内、合成可加、techStack 有值', async () => {
+  it('确定性启发式：四维在各自上限内、合成可加、techStack 有值', async () => {
     const ctx = ctxWith({}) // llm mock
     const d = await scoreCandidate(ctx, meta, 'React + Node + Docker 的 CRM，含 dashboard、screenshot 与 demo。'.repeat(3))
     expect(d.rebrandCost).toBeGreaterThan(0)
-    expect(d.rebrandCost).toBeLessThanOrEqual(30)
-    expect(d.buyerClarity).toBeLessThanOrEqual(40)
-    expect(d.visualAppeal).toBeLessThanOrEqual(30)
+    expect(d.rebrandCost).toBeLessThanOrEqual(20)
+    expect(d.buyerClarity).toBeLessThanOrEqual(30)
+    expect(d.visualAppeal).toBeLessThanOrEqual(20)
     expect(d.techStack).toContain('react')
     expect(d.techStack).toContain('docker')
   })
@@ -39,7 +39,7 @@ describe('scoreCandidate mock', () => {
     const ctx = ctxWith({})
     const rich = await scoreCandidate(ctx, meta, 'React Node Docker CRM dashboard screenshot demo'.repeat(5))
     const poor = await scoreCandidate(ctx, meta, 'cli tool')
-    const sum = (x: any) => x.rebrandCost + x.buyerClarity + x.visualAppeal
+    const sum = (x: any) => x.rebrandCost + x.buyerClarity + x.visualAppeal + x.businessDepth
     expect(sum(rich)).toBeGreaterThan(sum(poor))
   })
 })
@@ -114,11 +114,11 @@ describe('scoreCandidate live 分轨', () => {
 describe('scoreCandidate live', () => {
   it('调 LLM 并解析 JSON 评分', async () => {
     const config = loadConfig('/tmp/fc-score2', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
-    const llm = { complete: vi.fn(async () => '```json\n{"rebrandCost":24,"buyerClarity":34,"visualAppeal":21,"techStack":["react"],"rationale":"ok"}\n```') }
+    const llm = { complete: vi.fn(async () => '```json\n{"rebrandCost":18,"buyerClarity":25,"visualAppeal":15,"businessDepth":22,"businessDepthReason":"有订单模型","techStack":["react"],"rationale":"ok"}\n```') }
     const ctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
     const d = await scoreCandidate(ctx, meta, 'readme')
     // LLM 未返回 category，且启发式在 'a/b'/'readme'/['react'] 中也无命中 → 兜底"其它"
-    expect(d).toEqual({ rebrandCost: 24, buyerClarity: 34, visualAppeal: 21, techStack: ['react'], rationale: 'ok', targetBuyer: '', painPoint: '', summaryZh: '', category: '其它' })
+    expect(d).toEqual({ rebrandCost: 18, buyerClarity: 25, visualAppeal: 15, businessDepth: 22, businessDepthReason: '有订单模型', techStack: ['react'], rationale: 'ok', targetBuyer: '', painPoint: '', summaryZh: '', category: '其它' })
     expect(llm.complete).toHaveBeenCalledOnce()
   })
 })
@@ -236,7 +236,7 @@ describe('generateSummaryZh', () => {
 describe('自定义权重', () => {
   it('mock 模式：heuristicScore 封顶值跟着自定义 weights 变', async () => {
     const config = loadConfig('/tmp/fc-score-weights', {})
-    config.scout.weights = { rebrandCost: 5, buyerClarity: 5, visualAppeal: 5 }
+    config.scout.weights = { rebrandCost: 5, buyerClarity: 5, visualAppeal: 5, businessDepth: 5 }
     const wctx: CoreCtx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
     const d = await scoreCandidate(wctx, meta, 'React + Node + Docker 的 CRM，含 dashboard、screenshot 与 demo。'.repeat(3))
     expect(d.rebrandCost).toBeLessThanOrEqual(5)
@@ -245,7 +245,7 @@ describe('自定义权重', () => {
   })
   it('live 模式：parseScoreJson 按自定义 weights 夹取，而非硬编码 30/40/30', async () => {
     const config = loadConfig('/tmp/fc-score-weights-live', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
-    config.scout.weights = { rebrandCost: 5, buyerClarity: 5, visualAppeal: 5 }
+    config.scout.weights = { rebrandCost: 5, buyerClarity: 5, visualAppeal: 5, businessDepth: 5 }
     const llm = { complete: vi.fn(async () => JSON.stringify({
       rebrandCost: 20, buyerClarity: 20, visualAppeal: 20, techStack: [], rationale: 'r',
     })) }
@@ -257,7 +257,7 @@ describe('自定义权重', () => {
   })
   it('live 模式：prompt 文案里的维度上限数字跟着自定义 weights 变', async () => {
     const config = loadConfig('/tmp/fc-score-weights-prompt', { FORGECAST_LLM_MODE: 'live', FORGECAST_LLM_KEY: 'k' })
-    config.scout.weights = { rebrandCost: 15, buyerClarity: 25, visualAppeal: 35 }
+    config.scout.weights = { rebrandCost: 15, buyerClarity: 25, visualAppeal: 35, businessDepth: 45 }
     const llm = { complete: vi.fn(async () => JSON.stringify({ rebrandCost: 1, buyerClarity: 1, visualAppeal: 1, techStack: [], rationale: 'r' })) }
     const lctx: CoreCtx = { db: openDb(config.paths.db), config, llm: llm as any }
     await scoreCandidate(lctx, meta, 'readme')
@@ -265,13 +265,30 @@ describe('自定义权重', () => {
     expect(prompt).toContain('0-15')
     expect(prompt).toContain('0-25')
     expect(prompt).toContain('0-35')
+    expect(prompt).toContain('0-45')
   })
-  it('默认权重（30/40/30）时行为跟改动前完全一致', async () => {
+  it('默认权重（20/30/20/30）时四维都在各自上限内', async () => {
     const config = loadConfig('/tmp/fc-score-weights-default', {})
     const wctx: CoreCtx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
     const d = await scoreCandidate(wctx, meta, 'React + Node + Docker 的 CRM，含 dashboard、screenshot 与 demo。'.repeat(3))
-    expect(d.rebrandCost).toBeLessThanOrEqual(30)
-    expect(d.buyerClarity).toBeLessThanOrEqual(40)
-    expect(d.visualAppeal).toBeLessThanOrEqual(30)
+    expect(d.rebrandCost).toBeLessThanOrEqual(20)
+    expect(d.buyerClarity).toBeLessThanOrEqual(30)
+    expect(d.visualAppeal).toBeLessThanOrEqual(20)
+    expect(d.businessDepth).toBeLessThanOrEqual(30)
+  })
+})
+
+describe('businessDepth 业务含量（mock 推分）', () => {
+  it('业务实证词 + 数据模型词都命中 → 封顶；只有实证词 → 25；只有数据层词 → 11（也低于门槛）；都没有 → 6', async () => {
+    const c = ctxWith({})
+    const full = await scoreCandidate(c, meta, '订单 order 与 customer 档案，含 database schema 与 migration')
+    expect(full.businessDepth).toBe(30) // min(30, 6+19+5)
+    const proofOnly = await scoreCandidate(c, meta, '有 order 与 customer 两类业务实体')
+    expect(proofOnly.businessDepth).toBe(25) // 6+19
+    const stackOnly = await scoreCandidate(c, meta, 'Prisma ORM + REST api，没有任何业务实体')
+    expect(stackOnly.businessDepth).toBe(11) // 6+5：光有数据层不算业务实证，且刻意压到门槛 12 以下
+    const none = await scoreCandidate(c, meta, 'a pretty terminal skin with nice colors')
+    expect(none.businessDepth).toBe(6)
+    expect(none.businessDepthReason).toContain('未命中')
   })
 })

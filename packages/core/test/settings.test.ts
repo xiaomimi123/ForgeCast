@@ -62,16 +62,20 @@ describe('applyStoredSettings', () => {
   })
   it('scout_weight_* 非空数字覆盖默认权重', () => {
     const config = loadConfig(root, {})
-    expect(config.scout.weights).toEqual({ rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
-    setSettings(db, { scout_weight_rebrand: '20', scout_weight_buyer: '50', scout_weight_visual: '15' })
+    expect(config.scout.weights).toEqual({ rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, businessDepth: 30 })
+    setSettings(db, { scout_weight_rebrand: '20', scout_weight_buyer: '50', scout_weight_visual: '15', scout_weight_depth: '35' })
     applyStoredSettings(config, db)
-    expect(config.scout.weights).toEqual({ rebrandCost: 20, buyerClarity: 50, visualAppeal: 15 })
+    expect(config.scout.weights).toEqual({ rebrandCost: 20, buyerClarity: 50, visualAppeal: 15, businessDepth: 35 })
+  })
+  it('四维权重默认值合计恒为 100（改权重时只改字面量快照会让合计悄悄漂走）', () => {
+    const w = loadConfig(root, {}).scout.weights
+    expect(w.rebrandCost + w.buyerClarity + w.visualAppeal + w.businessDepth).toBe(100)
   })
   it('scout_weight_* 非法值（NaN/负数/空白）不覆盖，保留默认', () => {
     const config = loadConfig(root, {})
-    setSettings(db, { scout_weight_rebrand: 'abc', scout_weight_buyer: '-5', scout_weight_visual: '   ' })
+    setSettings(db, { scout_weight_rebrand: 'abc', scout_weight_buyer: '-5', scout_weight_visual: '   ', scout_weight_depth: 'NaN' })
     applyStoredSettings(config, db)
-    expect(config.scout.weights).toEqual({ rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
+    expect(config.scout.weights).toEqual({ rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, businessDepth: 30 })
   })
 })
 
