@@ -53,7 +53,9 @@ export interface DemandMatch {
   score: number; score_detail: string; biz_mode: 'shop' | 'custom' | 'both'; biz_plan: string
   created_at: string
 }
-export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string }
+/** `result` 只在 done 事件上有：服务端把任务函数的返回值原样带回（见 server/tasks.ts），
+ *  调用方自己收窄类型（如选品的 skippedTemplate/skippedShallow 计数）。 */
+export interface TaskEvent { ts: number; type: 'log' | 'done' | 'error'; message: string; result?: unknown }
 export interface IntroDetail {
   summary: string; features: string[]; targetUser: string
   painPoint: string; rebrandIdea: string; generatedAt: string
@@ -91,7 +93,31 @@ export interface Candidate {
   license: string | null; license_ok: number
   stars: number; tech_stack: string | null; score: number | null; score_detail: string | null; status: string
   favorite: number; last_commit: string | null; created_at: string; source: string
+  /** 归属行业 id。null＝没走行业锚定（DEFAULT_TOPICS 回落 / 手动投喂 / 行业锚定之前入库的老候选）；
+   *  一个 repo 只归首个命中的行业（按 sort_order），多对多是 backlog。行业被删后这里会留悬挂 id，
+   *  前端查不到名字时按「未归属」显示。 */
+  industry_id: number | null
 }
+
+/** 选品行业（GET /api/industries 行）。keywordCount/generatedAt 来自 industry_queries 缓存，
+ *  没生成过就是 0 / null。 */
+export interface Industry {
+  id: number; name: string; note: string | null; enabled: boolean; sortOrder: number
+  keywordCount: number; generatedAt: string | null
+}
+
+export const listIndustries = () => api<Industry[]>('/api/industries')
+export const createIndustry = (body: { name: string; note?: string }) =>
+  api<{ id: number }>('/api/industries', { method: 'POST', body: JSON.stringify(body) })
+/** PATCH 的 enabled **必须是严格布尔**（服务端不收 0/1），调用方负责转换。 */
+export const patchIndustry = (id: number, body: { name?: string; note?: string | null; enabled?: boolean; sortOrder?: number }) =>
+  api<{ ok: true }>(`/api/industries/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+export const deleteIndustry = (id: number) =>
+  api<{ ok: true }>(`/api/industries/${id}`, { method: 'DELETE' })
+/** 重新生成该行业的搜索词（写缓存覆盖旧词）。mock 模式秒回固定词表。 */
+export const regenerateIndustryQueries = (id: number) =>
+  api<{ keywords: string[] }>(`/api/industries/${id}/queries`, { method: 'POST' })
+
 export interface AutoScoutStatus {
   enabled: boolean; time: string
   lastRun: string | null
@@ -116,7 +142,7 @@ export interface SettingsView {
   llm: { mode: 'live' | 'mock'; key_set: boolean; key_masked: string; base_url: string; models: { analysis: string; copy: string; scoring: string } }
   tts: { mode: 'live' | 'stub' | 'kokoro'; key_set: boolean; key_masked: string; base_url: string; model: string; voice: string; melo_python: string; cosy_home: string }
   github: { mode: 'live' | 'mock'; token_set: boolean; token_masked: string }
-  scout: { weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number } }
+  scout: { weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number; businessDepth: number } }
   /** 选了 live 却缺 key 时的降级说明（服务端会把模式改回 mock/stub） */
   mode_notes: string[]
 }

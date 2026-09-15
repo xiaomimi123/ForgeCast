@@ -6,8 +6,10 @@ import { Bar, buildDims, parseDetail } from './CandidateCard'
 import IntroSections from './IntroSections'
 
 /** 右侧抽屉详情：产品说明书 + 评分明细 + 操作区（立项/重评/收藏）。原 CandidateDetailModal 改造。 */
-export default function CandidateDrawer({ candidate, onClose, onPick, onRescore, onToggleFavorite, picking, rescoring, favPending }: {
+export default function CandidateDrawer({ candidate, industryName, onClose, onPick, onRescore, onToggleFavorite, picking, rescoring, favPending }: {
   candidate: Candidate; onClose: () => void
+  /** 归属行业名；没有＝未归属（回落抓取/手动投喂/旧候选），不渲染标签 */
+  industryName?: string
   onPick: (repo: string) => void; onRescore: (id: number) => void; onToggleFavorite: (c: Candidate) => void
   picking: boolean; rescoring: boolean; favPending: boolean
 }) {
@@ -16,7 +18,12 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
   const [res, setRes] = useState<IntroResponse | null>(null)
   const d = parseDetail(candidate.score_detail)
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<SettingsView>('/api/settings') })
-  const dims = buildDims(settings.data?.scout.weights ?? { rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 })
+  // 兜底值＝当前默认权重（config.ts 的 20/30/20/30），settings 还没回来时条的分母不至于离谱
+  const weights = settings.data?.scout.weights ?? { rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, businessDepth: 30 }
+  const dims = buildDims(weights)
+  // 业务含量低分＝没通过/勉强通过门槛（门槛是权重的 40%，与服务端 businessDepthFloor 同口径），
+  // 这时才把判定理由摊开给用户看——高分时理由是噪音。
+  const depthLow = !!d && d.businessDepth < weights.businessDepth * 0.6
 
   async function load(force: boolean) {
     setLoading(true); setError(null); setRes(null)
@@ -39,6 +46,9 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
           <span className="text-xs text-sub">{candidate.license ?? '—'}</span>
           {d?.category && d.category !== '其它' && (
             <span className="rounded bg-fire-soft px-1.5 py-0.5 text-xs text-fire">{d.category}</span>
+          )}
+          {industryName && (
+            <span className="rounded border-[1.5px] border-ink px-1.5 py-0.5 text-xs font-bold">{industryName}</span>
           )}
           <button className="ml-auto text-faint hover:text-ink" onClick={onClose}>✕</button>
         </div>
@@ -65,7 +75,13 @@ export default function CandidateDrawer({ candidate, onClose, onPick, onRescore,
             <div className="space-y-1">
               {dims.map((dim) => <Bar key={dim.key} label={dim.label} value={d[dim.key]} max={dim.max} />)}
             </div>
+            {depthLow && d.businessDepthReason && (
+              <p className="mt-1 text-xs text-amber-700">业务含量偏低：{d.businessDepthReason}</p>
+            )}
             {d.rationale && <p className="mt-1 text-xs text-sub">💡 {d.rationale}</p>}
+            {!d.businessDepth && (
+              <p className="mt-1 text-xs text-faint">这条是加「业务含量」维之前评的三维分，与新四维分不可直接比较——点上面「重新评分」按新标准重评。</p>
+            )}
           </div>
         )}
 

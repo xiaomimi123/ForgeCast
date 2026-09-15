@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, type AutoScoutStatus, type Candidate } from '../api'
+import { api, listIndustries, type AutoScoutStatus, type Candidate, type Industry } from '../api'
 import TaskProgress from '../components/TaskProgress'
 import { useConfirm } from '../components/ui/Confirm'
 import { useTaskRun } from '../useTaskRun'
@@ -29,6 +29,24 @@ function dayLabel(day: string, today: string): string {
   return `${Number(m)}月${Number(dd)}日`
 }
 
+/** `/api/scout` 任务 done 事件带回的计数。skippedTemplate/skippedShallow 是判断门槛松紧的唯一依据：
+ *  前者＝被模板/脚手架硬排挡掉，后者＝业务含量低于门槛（连候选都没建）。 */
+interface ScoutSummary {
+  found: number; scored: number; rejected: number; added: number
+  skippedTemplate: number; skippedShallow: number
+}
+/** done 事件的 result 是 unknown（服务端原样回传），这里逐字段收窄，缺字段就当这次没有计数可显示。 */
+function parseScoutSummary(result: unknown): ScoutSummary | null {
+  if (!result || typeof result !== 'object') return null
+  const o = result as Record<string, unknown>
+  const n = (k: string) => (typeof o[k] === 'number' ? (o[k] as number) : null)
+  const found = n('found'), scored = n('scored'), rejected = n('rejected'), added = n('added')
+  const skippedTemplate = n('skippedTemplate'), skippedShallow = n('skippedShallow')
+  if (found === null || scored === null || rejected === null || added === null
+    || skippedTemplate === null || skippedShallow === null) return null
+  return { found, scored, rejected, added, skippedTemplate, skippedShallow }
+}
+
 export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: string) => void }) {
   const qc = useQueryClient()
   const { confirm, element: confirmEl } = useConfirm()
@@ -49,6 +67,14 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
   useEffect(() => { logRef.current?.scrollTo({ top: 999999 }) }, [activeRun.logs.length])
 
   const candidates = useQuery({ queryKey: ['candidates'], queryFn: () => api<Candidate[]>('/api/candidates') })
+  const industries = useQuery({ queryKey: ['industries'], queryFn: listIndustries })
+  const indList: Industry[] = industries.data ?? []
+  const indName = new Map(indList.map((i) => [i.id, i.name]))
+  // 行业筛选：null＝全部；'none'＝未归属（回落抓取/手动投喂/旧候选）；数字＝该行业
+  const [indFilter, setIndFilter] = useState<number | 'none' | null>(null)
+  // 「开始选品」勾选的行业子集；null＝弹层没开。默认全选启用行业，全选时按空数组发（＝服务端"全部启用"语义）
+  const [scoutPick, setScoutPick] = useState<Set<number> | null>(null)
+  const [scoutSummary, setScoutSummary] = useState<ScoutSummary | null>(null)
   const autoStatus = useQuery({ queryKey: ['auto-scout'], queryFn: () => api<AutoScoutStatus>('/api/scout/auto-status') })
 
   const [pickingRepos, setPickingRepos] = useState<Set<string>>(new Set())
@@ -83,12 +109,24 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
     onSettled: (_d, _e, c) => setFavPendingIds((prev) => { const next = new Set(prev); next.delete(c.id); return next }),
   })
 
-  function scout() {
+  /** 带行业子集跑选品。ids 为空数组＝全部启用行业（服务端语义），所以全选和不选都只是不带筛选。 */
+  function scout(ids: number[]) {
     setActiveKey('scout')
+    setScoutSummary(null)
+    setScoutPick(null)
+    const enabledIds = indList.filter((i) => i.enabled).map((i) => i.id)
+    // 全选＝不带 industryIds，交给服务端按"全部启用行业"跑（用户之后改了启停也不会被这次的快照锁死）
+    const body = ids.length && ids.length < enabledIds.length ? JSON.stringify({ industryIds: ids }) : '{}'
     scoutRun.run(
-      async () => (await api<{ taskId: string }>('/api/scout', { method: 'POST', body: '{}' })).taskId,
-      () => qc.invalidateQueries({ queryKey: ['candidates'] }),
+      async () => (await api<{ taskId: string }>('/api/scout', { method: 'POST', body })).taskId,
+      (ok, e) => {
+        qc.invalidateQueries({ queryKey: ['candidates'] })
+        if (ok) setScoutSummary(parseScoutSummary(e?.result))
+      },
     )
+  }
+  function openScoutPick() {
+    setScoutPick(new Set(indList.filter((i) => i.enabled).map((i) => i.id)))
   }
   function scoutBreakouts() {
     setActiveKey('breakout')
@@ -147,15 +185,24 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
   const catCounts = new Map<string, number>()
   for (const c of ok) { const k = catOf(c); if (k) catCounts.set(k, (catCounts.get(k) ?? 0) + 1) }
   const byCat = (list: Candidate[]) => (cat ? list.filter((c) => catOf(c) === cat) : list)
+  const byInd = (list: Candidate[]) => (
+    indFilter === null ? list
+      : indFilter === 'none' ? list.filter((c) => c.industry_id == null || !indName.has(c.industry_id))
+      : list.filter((c) => c.industry_id === indFilter)
+  )
+  const shown = (list: Candidate[]) => byInd(byCat(list))
+  // 行业 chip 上的计数按可商用候选算（与分类 chip 同口径）
+  const indCount = (i: Industry) => ok.filter((c) => c.industry_id === i.id).length
+  const noIndCount = ok.filter((c) => c.industry_id == null || !indName.has(c.industry_id)).length
   const byScore = (a: Candidate, b: Candidate) => (b.score ?? -1) - (a.score ?? -1)
   // 全部：收藏置顶（收藏内部与其余各按分数降序）
-  const allShown = byCat(ok).sort((a, b) => (b.favorite - a.favorite) || byScore(a, b))
+  const allShown = shown(ok).sort((a, b) => (b.favorite - a.favorite) || byScore(a, b))
   const favShown = ok.filter((c) => c.favorite === 1).sort(byScore)
   // 自主投喂：用户手动「+ 投喂」进来的（source='manual'），不受协议门槛过滤——投喂时已强制放行
   const manualShown = rows.filter((c) => c.source === 'manual').sort((a, b) => (b.favorite - a.favorite) || byScore(a, b))
   // 每日新增：近 14 天入库的可商用候选，按本地日期倒序分组
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 14)
-  const dailyGroups = [...byCat(ok)
+  const dailyGroups = [...shown(ok)
     .map((c) => ({ c, day: localDay(c.created_at) }))
     .filter((x) => x.day && new Date(x.day) >= cutoff)
     .reduce((m, x) => { (m.get(x.day) ?? m.set(x.day, []).get(x.day)!).push(x.c); return m }, new Map<string, Candidate[]>())
@@ -168,8 +215,10 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
     : auto.lastResult && 'error' in (auto.lastResult) && auto.lastResult.error ? `${auto.lastRun} 失败：${auto.lastResult.error}`
     : `${auto.lastRun} 新增 ${auto.lastResult?.added ?? 0} 个`
   const grid = 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+  const chipCls = (on: boolean) => `rounded-full px-3 py-1 border-[1.5px] ${on ? 'border-fire bg-fire-soft font-bold text-fire' : 'border-hairline text-sub'}`
   const card = (c: Candidate) => (
     <CandidateCard key={c.id} c={c} isNew={localDay(c.created_at) === today}
+      industryName={c.industry_id == null ? undefined : indName.get(c.industry_id)}
       onOpenDetail={(x) => setDetailId(x.id)} onToggleFavorite={(x) => favorite.mutate(x)}
       favPending={favPendingIds.has(c.id)} />
   )
@@ -179,7 +228,7 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
         找项目<span className="ml-3 text-xs font-normal text-faint">从 GitHub 矿脉里挑能换钱的坯料</span>
       </h1>
       <div className="flex items-center gap-3">
-        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={scout}>
+        <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={openScoutPick}>
           {scoutRun.running ? '抓取中…' : '抓取候选'}
         </button>
         <button className="btn-fire px-4 py-2 text-sm disabled:opacity-50" disabled={busy} onClick={scoutBreakouts}>
@@ -214,6 +263,33 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
         ))}
       </div>
 
+      {/* 行业筛选：行业锚定选品把候选归到行业上，这一行按行业筛；「未归属」＝回落抓取/手动投喂/旧候选 */}
+      {indList.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-faint">行业</span>
+          <button className={chipCls(indFilter === null)} onClick={() => setIndFilter(null)}>全部 ({ok.length})</button>
+          {indList.filter((i) => i.enabled).map((i) => (
+            <button key={i.id} className={chipCls(indFilter === i.id)} onClick={() => setIndFilter(i.id)}>
+              {i.name} ({indCount(i)})
+            </button>
+          ))}
+          {noIndCount > 0 && (
+            <button className={chipCls(indFilter === 'none')} onClick={() => setIndFilter('none')}>未归属 ({noIndCount})</button>
+          )}
+        </div>
+      )}
+
+      {/* 本次选品的拦截计数——判断门槛松紧的唯一依据（日志滚过去就没了，这里留到下次跑） */}
+      {scoutSummary && (
+        <div className="rounded-lg border-[1.5px] border-hairline p-3 text-xs text-sub">
+          本次选品：发现 {scoutSummary.found} 个 · 入库 {scoutSummary.added} · 评分 {scoutSummary.scored} ·
+          协议不过 {scoutSummary.rejected} ·
+          <b className="mx-1 text-ink">模板/脚手架挡掉 {scoutSummary.skippedTemplate}</b>·
+          <b className="mx-1 text-ink">业务含量不足挡掉 {scoutSummary.skippedShallow}</b>
+          <span className="ml-1 text-faint">（挡太多＝门槛偏严，可去设置页调「业务含量上限」权重；挡太少＝行业搜索词太泛，去设置页重新生成）</span>
+        </div>
+      )}
+
       {tab !== 'fav' && catCounts.size > 0 && (
         <div className="flex flex-wrap gap-2 text-xs">
           <button className={`rounded-full px-3 py-1 ${cat === null ? 'border-[1.5px] border-fire bg-fire-soft font-bold text-fire' : 'border-[1.5px] border-hairline text-sub'}`} onClick={() => setCat(null)}>全部 ({ok.length})</button>
@@ -233,6 +309,10 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
         <>
           <div className={grid}>{allShown.map(card)}</div>
           {rows.length === 0 && <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">暂无候选，点「抓取候选」</div>}
+          {/* 有候选但被筛空：不给提示的话页面是一片空白，看不出是筛没了还是真没有 */}
+          {rows.length > 0 && allShown.length === 0 && (
+            <div className="rounded-lg border-2 border-dashed border-hairline p-6 text-center text-faint">当前筛选条件下没有候选——点上面的「全部」看所有。</div>
+          )}
           {blocked.length > 0 && (
             <details className="rounded-lg bg-transparent border-[1.5px] border-hairline p-3 text-sm text-sub">
               <summary className="cursor-pointer">另有 {blocked.length} 个协议不可商用（GPL/AGPL 系），点开查看</summary>
@@ -288,10 +368,44 @@ export default function ScoutPage({ onOpenProject }: { onOpenProject: (slug: str
 
       {detail && (
         <CandidateDrawer candidate={detail} onClose={() => setDetailId(null)}
+          industryName={detail.industry_id == null ? undefined : indName.get(detail.industry_id)}
           onPick={(repo) => pick.mutate(repo)} onRescore={(id) => rescore.mutate(id)}
           onToggleFavorite={(c) => favorite.mutate(c)}
           picking={pickingRepos.has(detail.repo)} rescoring={rescoringIds.has(detail.id)}
           favPending={favPendingIds.has(detail.id)} />
+      )}
+
+      {/* 开始选品：勾选参与的行业子集（默认全选启用行业）。全停用时服务端回落 DEFAULT_TOPICS，照样能跑。 */}
+      {scoutPick && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setScoutPick(null)}>
+          <div className="w-full max-w-md rounded-lg border-2 border-ink bg-paper p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 font-bold text-ink">本次选品跑哪些行业？</div>
+            <div className="mb-3 text-xs text-faint">只列启用的行业（停用的在设置页开）。一个都不勾＝按全部启用行业跑。</div>
+            <div className="max-h-64 space-y-1 overflow-y-auto">
+              {indList.filter((i) => i.enabled).map((i) => (
+                <label key={i.id} className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-1" checked={scoutPick.has(i.id)}
+                    onChange={(e) => setScoutPick((prev) => {
+                      const next = new Set(prev)
+                      if (e.target.checked) next.add(i.id); else next.delete(i.id)
+                      return next
+                    })} />
+                  <span>
+                    <span className="font-medium">{i.name}</span>
+                    <span className="ml-2 text-xs text-faint">{i.keywordCount} 个搜索词</span>
+                  </span>
+                </label>
+              ))}
+              {indList.filter((i) => i.enabled).length === 0 && (
+                <p className="text-xs text-faint">当前没有启用的行业——直接开始会回落到内置通用搜索词，候选不归属任何行业。</p>
+              )}
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button className="btn-ink px-3 py-1.5 text-sm" onClick={() => setScoutPick(null)}>取消</button>
+              <button className="btn-fire px-3 py-1.5 text-sm" onClick={() => scout([...scoutPick])}>开始选品</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {addUrlOpen && (

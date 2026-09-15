@@ -2,17 +2,22 @@ import type { Candidate } from '../../api'
 
 export type Track = 'profit' | 'traffic'
 
-/** 三个评分维度的展示定义，max 读当前配置的权重（不再硬编码 30/40/30） */
-export function buildDims(weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number }) {
+/** 四个评分维度的展示定义，max 读当前配置的权重（不硬编码；默认 20/30/20/30 合计 100）。
+ *  businessDepth 是行业锚定选品加的第四维——**旧候选的 score_detail 里没有这个键**，
+ *  parseDetail 会兜底成 0，条显示 0/30 属实（那条分是三维时代算的，与四维分不可直接比较）。 */
+export function buildDims(weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number; businessDepth: number }) {
   return [
     { key: 'rebrandCost' as const, label: '换皮', max: weights.rebrandCost },
     { key: 'buyerClarity' as const, label: '买家', max: weights.buyerClarity },
     { key: 'visualAppeal' as const, label: '可视', max: weights.visualAppeal },
+    { key: 'businessDepth' as const, label: '业务', max: weights.businessDepth },
   ]
 }
 
 export interface Detail {
-  rebrandCost: number; buyerClarity: number; visualAppeal: number
+  rebrandCost: number; buyerClarity: number; visualAppeal: number; businessDepth: number
+  /** 业务含量的判定理由（旧候选没有，空串）。 */
+  businessDepthReason: string
   rationale: string; targetBuyer: string; painPoint: string
   summaryZh: string
   category: string
@@ -50,6 +55,7 @@ export function parseDetail(sd: string | null): Detail | null {
     const o = JSON.parse(sd)
     return {
       rebrandCost: num(o.rebrandCost), buyerClarity: num(o.buyerClarity), visualAppeal: num(o.visualAppeal),
+      businessDepth: num(o.businessDepth), businessDepthReason: str(o.businessDepthReason),
       rationale: str(o.rationale), targetBuyer: str(o.targetBuyer), painPoint: str(o.painPoint),
       summaryZh: str(o.summaryZh),
       category: str(o.category),
@@ -84,8 +90,10 @@ function daysAgoText(iso: string | null): string {
   return days <= 0 ? '今天更新' : `${days} 天前更新`
 }
 
-export default function CandidateCard({ c, isNew, onOpenDetail, onToggleFavorite, favPending }: {
+export default function CandidateCard({ c, isNew, industryName, onOpenDetail, onToggleFavorite, favPending }: {
   c: Candidate; isNew: boolean
+  /** 归属行业名（调用方按 industry_id 查 /api/industries 得来）；没有＝未归属，不渲染标签 */
+  industryName?: string
   onOpenDetail: (c: Candidate) => void
   onToggleFavorite: (c: Candidate) => void
   favPending: boolean
@@ -112,6 +120,11 @@ export default function CandidateCard({ c, isNew, onOpenDetail, onToggleFavorite
           </span>
         )}
       </div>
+      {industryName && (
+        <div className="-mt-1">
+          <span className="rounded bg-fire-soft px-1.5 py-0.5 text-[10px] font-bold text-fire">{industryName}</span>
+        </div>
+      )}
       <div className="line-clamp-2 min-h-[2.5rem] text-xs leading-relaxed text-sub">{d?.summaryZh || c.description || ''}</div>
       <div className="flex items-baseline gap-1.5 border-t-2 border-ink pt-2">
         <span className="text-[26px] font-black tracking-tighter text-fire">{c.score ?? '—'}</span>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, getBrandKit, imageAssetUrl, listImageAssets, putBrandKit, type AutoScoutStatus, type BrandKitView, type Project, type SettingsView } from '../api'
+import { api, createIndustry, deleteIndustry, getBrandKit, imageAssetUrl, listImageAssets, listIndustries, patchIndustry, putBrandKit, regenerateIndustryQueries, type AutoScoutStatus, type BrandKitView, type Industry, type Project, type SettingsView } from '../api'
+import { useConfirm } from '../components/ui/Confirm'
 
 // 可编辑草稿：key 字段留空=不改（占位显示已存打码值）
 interface Draft {
@@ -8,12 +9,12 @@ interface Draft {
   model_analysis: string; model_copy: string; model_scoring: string
   tts_mode: string; tts_key: string; tts_base_url: string; tts_model: string; tts_voice: string; melo_python: string; cosy_home: string
   github_mode: string; github_token: string
-  scout_weight_rebrand: string; scout_weight_buyer: string; scout_weight_visual: string
+  scout_weight_rebrand: string; scout_weight_buyer: string; scout_weight_visual: string; scout_weight_depth: string
 }
 const emptyDraft: Draft = {
   llm_mode: 'mock', llm_key: '', llm_base_url: '', model_analysis: '', model_copy: '', model_scoring: '',
   tts_mode: 'kokoro', tts_key: '', tts_base_url: '', tts_model: '', tts_voice: '', melo_python: '', cosy_home: '', github_mode: 'mock', github_token: '',
-  scout_weight_rebrand: '30', scout_weight_buyer: '40', scout_weight_visual: '30',
+  scout_weight_rebrand: '20', scout_weight_buyer: '30', scout_weight_visual: '20', scout_weight_depth: '30',
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -44,7 +45,7 @@ export default function SettingsPage() {
       model_analysis: s.llm.models.analysis, model_copy: s.llm.models.copy, model_scoring: s.llm.models.scoring,
       tts_mode: s.tts.mode, tts_key: '', tts_base_url: s.tts.base_url, tts_model: s.tts.model, tts_voice: s.tts.voice, melo_python: s.tts.melo_python, cosy_home: s.tts.cosy_home,
       github_mode: s.github.mode, github_token: '',
-      scout_weight_rebrand: String(s.scout.weights.rebrandCost), scout_weight_buyer: String(s.scout.weights.buyerClarity), scout_weight_visual: String(s.scout.weights.visualAppeal),
+      scout_weight_rebrand: String(s.scout.weights.rebrandCost), scout_weight_buyer: String(s.scout.weights.buyerClarity), scout_weight_visual: String(s.scout.weights.visualAppeal), scout_weight_depth: String(s.scout.weights.businessDepth),
     })
   }, [settings.data])
 
@@ -52,6 +53,12 @@ export default function SettingsPage() {
     mutationFn: () => api<SettingsView>('/api/settings', { method: 'PUT', body: JSON.stringify(d) }),
     onSuccess: () => { setSaved(true); setTest(''); setTtsTest(''); qc.invalidateQueries({ queryKey: ['settings'] }) },
     onError: (e) => alert(`保存失败: ${e instanceof Error ? e.message : String(e)}`),
+  })
+  const [rescoreMsg, setRescoreMsg] = useState('')
+  const rescoreAll = useMutation({
+    mutationFn: () => api<{ taskId: string }>('/api/candidates/rescore-all', { method: 'POST' }),
+    onSuccess: () => setRescoreMsg('已开始，去「找项目」页看进度与日志'),
+    onError: (e) => setRescoreMsg(`⚠ ${extractErrorMessage(e)}`),
   })
   const runTest = useMutation({
     mutationFn: () => api<{ ok: boolean; message: string }>('/api/settings/test-llm', { method: 'POST' }),
@@ -63,6 +70,10 @@ export default function SettingsPage() {
     onSuccess: (r) => setTtsTest(`${r.ok ? '✅' : '⚠️'} ${r.message}`),
     onError: (e) => setTtsTest(`⚠️ ${e instanceof Error ? e.message : String(e)}`),
   })
+
+  // 四维合计：空串/非数字按 0 算，提示用（服务端 putWeight 自己也会忽略非法值）
+  const weightSum = [d.scout_weight_rebrand, d.scout_weight_buyer, d.scout_weight_visual, d.scout_weight_depth]
+    .reduce((sum, v) => sum + (Number.isFinite(Number(v)) ? Number(v) : 0), 0)
 
   const s = settings.data
   if (!s) return <div className="text-faint">加载中…</div>
@@ -149,16 +160,32 @@ export default function SettingsPage() {
         <Field label="Personal Access Token" hint="可选，只读公开数据即可，提高限速"><input type="password" className={inputCls} value={d.github_token} placeholder={keyPlaceholder(s.github.token_set, s.github.token_masked)} onChange={(e) => set({ github_token: e.target.value })} /></Field>
       </section>
 
-      {/* 评分权重 */}
+      {/* 评分权重（四维；合计 100 只是约定，服务端不强制） */}
       <section className="space-y-3 card-forge p-4">
-        <h3 className="font-medium">评分权重（三维各自独立，不要求总和100）</h3>
-        <div className="grid grid-cols-3 gap-2">
+        <h3 className="font-medium">评分权重（四维上限）</h3>
+        <div className="grid grid-cols-4 gap-2">
           <Field label="换皮成本上限"><input type="number" min={0} className={inputCls} value={d.scout_weight_rebrand} onChange={(e) => set({ scout_weight_rebrand: e.target.value })} /></Field>
           <Field label="买家清晰度上限"><input type="number" min={0} className={inputCls} value={d.scout_weight_buyer} onChange={(e) => set({ scout_weight_buyer: e.target.value })} /></Field>
           <Field label="内容可视性上限"><input type="number" min={0} className={inputCls} value={d.scout_weight_visual} onChange={(e) => set({ scout_weight_visual: e.target.value })} /></Field>
+          <Field label="业务含量上限" hint="低于其 40% 的项目直接不入库"><input type="number" min={0} className={inputCls} value={d.scout_weight_depth} onChange={(e) => set({ scout_weight_depth: e.target.value })} /></Field>
         </div>
-        <p className="text-xs text-faint">改了权重不会自动重新评分老候选，想让老候选按新权重重评，去「找项目」页点「全部重新评分」。</p>
+        {/* 合计只在默认值上有不变量守护，用户填得出非 100 的组合——这里只提示不拦截（总分上限＝四项之和） */}
+        <p className={`text-xs ${weightSum === 100 ? 'text-faint' : 'text-amber-700'}`}>
+          四维合计应为 100，当前 {weightSum}{weightSum === 100 ? '' : ' ⚠ 满分不再是 100 分，新旧候选的分数会对不上'}
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-ink px-3 py-1 text-sm disabled:opacity-50" disabled={rescoreAll.isPending}
+            onClick={() => rescoreAll.mutate()}>{rescoreAll.isPending ? '提交中…' : '按新标准重评候选池'}</button>
+          {rescoreMsg && <span className="text-xs text-sub">{rescoreMsg}</span>}
+        </div>
+        <p className="text-xs text-faint">
+          改权重不会自动重评老候选。这个按钮<b className="text-ink">只重评「没真评过」的候选</b>；
+          已有旧三维分的候选要按新四维标准重评，得在候选详情里逐个点「重新评分」（批量强制重评的路由还没有，记在 backlog）。
+          <b className="text-ink">旧候选是三维评分（没有业务含量维），与新四维分不可直接比较。</b>
+        </p>
       </section>
+
+      <IndustrySection />
 
       <AutoScoutSection />
 
@@ -355,5 +382,102 @@ function AutoScoutSection() {
       )}
       <button className="btn-fire px-4 py-1.5 text-sm" onClick={save}>保存</button>
     </div>
+  )
+}
+
+/** 选品行业块（行业锚定选品）：行业 = 选品的锚。每个行业各自生成一组 GitHub 搜索词并缓存，
+ *  「抓取候选」按启用的行业逐个搜。改了名字/备注要重新生成搜索词才会生效（缓存不会自动失效）。 */
+function IndustrySection() {
+  const qc = useQueryClient()
+  const { confirm, element: confirmEl } = useConfirm()
+  const industries = useQuery({ queryKey: ['industries'], queryFn: listIndustries })
+  const [error, setError] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newNote, setNewNote] = useState('')
+  // 「重新生成」是逐行的：记住正在生成的行业 id，只禁用那一行的按钮
+  const [genIds, setGenIds] = useState<Set<number>>(new Set())
+  // 刚生成完的词数，落在行上给个即时反馈（列表 refetch 回来后也会显示同一个数）
+  const [genMsg, setGenMsg] = useState<Record<number, string>>({})
+
+  const rows = industries.data ?? []
+  const refresh = () => qc.invalidateQueries({ queryKey: ['industries'] })
+  // 失败一律落这里的内联提示，不用 alert（页面上还有别的块，弹窗会打断填写）
+  const run = async (fn: () => Promise<unknown>) => {
+    setError('')
+    try { await fn(); refresh() } catch (e) { setError(extractErrorMessage(e)) }
+  }
+
+  async function add() {
+    const name = newName.trim()
+    if (!name) return
+    await run(async () => {
+      await createIndustry({ name, ...(newNote.trim() ? { note: newNote.trim() } : {}) })
+      setNewName(''); setNewNote('')
+    })
+  }
+  async function remove(i: Industry) {
+    if (!(await confirm({ title: `删除行业「${i.name}」？`, body: '连同它的搜索词缓存一起删。已入库的候选不受影响（只是失去行业归属）。', danger: true }))) return
+    await run(() => deleteIndustry(i.id))
+  }
+  async function regenerate(i: Industry) {
+    setError('')
+    setGenIds((prev) => new Set(prev).add(i.id))
+    try {
+      const r = await regenerateIndustryQueries(i.id)
+      setGenMsg((prev) => ({ ...prev, [i.id]: `已生成 ${r.keywords.length} 个搜索词` }))
+      refresh()
+    } catch (e) {
+      setError(`「${i.name}」生成搜索词失败：${extractErrorMessage(e)}`)
+    } finally {
+      setGenIds((prev) => { const next = new Set(prev); next.delete(i.id); return next })
+    }
+  }
+
+  return (
+    <section className="space-y-3 card-forge p-4">
+      <h3 className="font-medium">选品行业（「抓取候选」按这些行业搜）</h3>
+      <p className="text-xs text-faint">
+        每个行业各自生成一组 GitHub 搜索词并缓存。改了名字或备注<b className="text-ink">不会自动重生成</b>——
+        要点该行的「重新生成」才会用新词去搜。停用的行业不参与抓取；全停用时回落到内置通用搜索词（选品不会失效）。
+      </p>
+      {error && <p className="text-sm text-red-600">⚠ {error}</p>}
+
+      <div className="space-y-2">
+        {rows.map((i) => (
+          <div key={i.id} className="rounded-md border-[1.5px] border-hairline p-2">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={i.enabled} title={i.enabled ? '已启用' : '已停用'}
+                onChange={(e) => run(() => patchIndustry(i.id, { enabled: e.target.checked }))} />
+              <input className={`${inputCls} flex-1`} defaultValue={i.name} key={`n${i.id}-${i.name}`}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== i.name) run(() => patchIndustry(i.id, { name: v })) }} />
+              <button className="rounded-md border-[1.5px] border-ink bg-card px-2 py-1.5 text-xs disabled:opacity-50"
+                disabled={genIds.has(i.id)} onClick={() => regenerate(i)}>
+                {genIds.has(i.id) ? '生成中…' : '重新生成'}
+              </button>
+              <button className="rounded-md border-[1.5px] border-red-600 px-2 py-1.5 text-xs text-red-600"
+                onClick={() => remove(i)}>删除</button>
+            </div>
+            <input className={`${inputCls} mt-1`} defaultValue={i.note ?? ''} key={`t${i.id}-${i.note ?? ''}`}
+              placeholder="备注：这个行业的老板日常在管什么（喂给大模型生成搜索词）"
+              onBlur={(e) => { const v = e.target.value; if (v !== (i.note ?? '')) run(() => patchIndustry(i.id, { note: v || null })) }} />
+            <div className="mt-1 text-xs text-faint">
+              {i.keywordCount} 个搜索词
+              {i.generatedAt ? ` · 生成于 ${new Date(i.generatedAt).toLocaleString()}` : ' · 尚未生成（抓取时会按需现生成）'}
+              {genMsg[i.id] && <span className="ml-2 text-green-600">{genMsg[i.id]}</span>}
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="text-xs text-faint">一个行业都没有——下面加一个，否则抓取会回落到内置通用搜索词。</p>}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input className={`${inputCls} w-40`} value={newName} placeholder="新行业名称"
+          onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} />
+        <input className={inputCls} value={newNote} placeholder="备注（可选）"
+          onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} />
+        <button className="btn-fire shrink-0 px-3 py-1.5 text-sm disabled:opacity-50" disabled={!newName.trim()} onClick={add}>新增</button>
+      </div>
+      {confirmEl}
+    </section>
   )
 }

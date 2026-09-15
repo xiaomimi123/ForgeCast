@@ -3,9 +3,9 @@ import { generateIndustryQueries, type Industry } from '@forgecast/scout'
 import type { Hono } from 'hono'
 
 /** 挂载行业 CRUD 路由。与 preset-routes.ts 同风格：纯路由 + 直连 sqlite。
- *  DELETE 必须在同一事务里显式删 industry_queries 对应行——本仓没开
- *  `PRAGMA foreign_keys`，industry_queries 的 `ON DELETE CASCADE` 不生效，
- *  光删 industries 会留孤儿缓存行。 */
+ *  DELETE 在同一事务里显式删 industry_queries 对应行：better-sqlite3 默认
+ *  `PRAGMA foreign_keys=ON`，industry_queries 的 `ON DELETE CASCADE` 实测已生效，
+ *  这一行是防御性双保险（将来若有人关掉 FK，缓存行仍不会变孤儿）。 */
 export function registerIndustryRoutes(app: Hono, ctx: CoreCtx): void {
   app.get('/api/industries', (c) => {
     const rows = ctx.db.prepare(
@@ -83,7 +83,7 @@ export function registerIndustryRoutes(app: Hono, ctx: CoreCtx): void {
     if (!Number.isFinite(id) || !ctx.db.prepare('SELECT id FROM industries WHERE id = ?').get(id)) {
       return c.json({ error: '行业不存在' }, 404)
     }
-    // 同一事务显式删缓存行：本仓未开 PRAGMA foreign_keys，ON DELETE CASCADE 不生效。
+    // 同一事务显式删缓存行：FK 级联实测已生效，这是冗余但无害的双保险（见文件头注释）。
     const tx = ctx.db.transaction(() => {
       ctx.db.prepare('DELETE FROM industry_queries WHERE industry_id = ?').run(id)
       ctx.db.prepare('DELETE FROM industries WHERE id = ?').run(id)
