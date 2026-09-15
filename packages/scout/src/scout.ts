@@ -2,7 +2,7 @@ import type { CoreCtx } from '@forgecast/core'
 import { createGithubClient, type GithubClient } from './github'
 import { isTemplateRepo, queriesFor, type Industry } from './industry'
 import { isLicenseOk } from './license'
-import { BUSINESS_DEPTH_MIN, CATEGORIES, categorizeHeuristic, generateSummaryZh, scoreCandidate } from './score'
+import { CATEGORIES, businessDepthFloor, categorizeHeuristic, generateSummaryZh, scoreCandidate } from './score'
 import type { RepoMeta } from './types'
 
 export const DEFAULT_TOPICS = [
@@ -32,7 +32,7 @@ ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.descripti
  *  forceLicenseOk：手动投喂（addRepo）用，用户自担来源可用性，无视协议白名单一律放行。
  *  source：'manual'=用户手动投喂，'scout'=自动抓取/找爆款（默认）。
  *  opts.industryId：归属行业（null=未走行业锚定，如 DEFAULT_TOPICS 回落/手动投喂）。
- *  opts.enforceDepth：业务含量门槛，businessDepth < BUSINESS_DEPTH_MIN 时**连 candidate 都不建**，
+ *  opts.enforceDepth：业务含量门槛，businessDepth 低于 businessDepthFloor 时**连 candidate 都不建**，
  *    返回 'shallow' 让调用方计数——只有行业锚定选品开这个闸，手动投喂/爆款检测不受影响。
  *  opts.readme：调用方已抓过的 README（模板硬排会先抓一次），传进来免得重复请求。 */
 async function ingest(
@@ -47,7 +47,7 @@ async function ingest(
   if (ok && scoreIt) {
     const readme = opts.readme ?? await gh.fetchReadme(meta.repo)
     const d = await scoreCandidate(ctx, meta, readme)
-    if (opts.enforceDepth && d.businessDepth < BUSINESS_DEPTH_MIN) return 'shallow'
+    if (opts.enforceDepth && d.businessDepth < businessDepthFloor(ctx.config.scout.weights)) return 'shallow'
     score = d.rebrandCost + d.buyerClarity + d.visualAppeal + d.businessDepth
     techStack = JSON.stringify(d.techStack)
     scoreDetail = JSON.stringify({
@@ -120,21 +120,6 @@ export async function scoutCandidates(
     }
   }
 
-  // 模板/脚手架硬排：跑在 LLM 之前（省 token）。名字/描述没嫌疑的连 README 都不抓；
-  // 有嫌疑的才抓一次 README 看业务实证（有实证=真业务系统，不排），抓到的 README 顺手给后面评分复用。
-  let skippedTemplate = 0
-  let skippedShallow = 0
-  const readmes = new Map<string, string>()
-  const kept: RepoMeta[] = []
-  for (const m of found) {
-    if (isTemplateRepo(m.repo, m.description, '')) {
-      const readme = await gh.fetchReadme(m.repo)
-      if (isTemplateRepo(m.repo, m.description, readme)) { skippedTemplate++; continue }
-      readmes.set(m.repo, readme)
-    }
-    kept.push(m)
-  }
-
   const existing = new Set(
     (ctx.db.prepare('SELECT repo FROM candidates').all() as Array<{ repo: string }>).map((r) => r.repo),
   )
@@ -142,10 +127,31 @@ export async function scoutCandidates(
   // 曾入库但从未评分的 repo（score_detail 为 NULL）在每日自动抓取里不会补评分，需靠「全部重新评分」按钮兜底。
   // 现实现对 LLM 额度更保守，属已知偏差，非 bug。
   const isNew = (m: RepoMeta) => !existing.has(m.repo)
-  const scorePool = kept
-    .filter((m) => isLicenseOk(m.license) && (!opts.onlyNew || isNew(m)))
-    .sort((a, b) => b.stars - a.stars)
-  const toScore = new Set(scorePool.slice(0, limit).map((m) => m.repo))
+  const inPool = (list: RepoMeta[]) => new Set(
+    list.filter((m) => isLicenseOk(m.license) && (!opts.onlyNew || isNew(m)))
+      .sort((a, b) => b.stars - a.stars).slice(0, limit).map((m) => m.repo),
+  )
+
+  // 模板/脚手架硬排：跑在 LLM 之前（省 token）。三层收窄，尽量不为它多发 README 请求：
+  // 1) 名字段/描述没命中排除词 → 连嫌疑都算不上，直接留下（零请求，绝大多数走这条）
+  // 2) 有嫌疑但协议不过 / 已入库 / 排不进本轮评分名额（按 star 预排的 Top-limit）→ 本轮反正不花 LLM 钱，
+  //    直接按模板跳过，也不发请求；等它 star 涨进评分名额那轮再抓 README 验反证
+  // 3) 真要评分的嫌疑仓库 → 抓一次 README 找业务实体反证，抓到的顺手给后面评分复用（不重复请求）
+  const preZone = inPool(found)
+  let skippedTemplate = 0
+  let skippedShallow = 0
+  const readmes = new Map<string, string>()
+  const kept: RepoMeta[] = []
+  for (const m of found) {
+    if (!isTemplateRepo(m.repo, m.description, '')) { kept.push(m); continue }
+    if (!preZone.has(m.repo)) { skippedTemplate++; continue }
+    const readme = await gh.fetchReadme(m.repo)
+    if (isTemplateRepo(m.repo, m.description, readme)) { skippedTemplate++; continue }
+    readmes.set(m.repo, readme)
+    kept.push(m)
+  }
+
+  const toScore = inPool(kept)
   // 口径说明：可商用数按硬排后的全量算（不受 onlyNew 影响），评分数按 toScore 算——
   // 两者在 onlyNew 模式下会差很多，分开报才不误导。
   const licenseOkCount = kept.filter((m) => isLicenseOk(m.license)).length
@@ -174,7 +180,7 @@ export async function scoutCandidates(
     }
     if (!ok) rejected++
   }
-  if (skippedShallow) log(`业务含量不足（businessDepth < ${BUSINESS_DEPTH_MIN}）跳过 ${skippedShallow} 个`)
+  if (skippedShallow) log(`业务含量不足（businessDepth < ${businessDepthFloor(ctx.config.scout.weights)}）跳过 ${skippedShallow} 个`)
   return { found: found.length, scored, rejected, added, skippedTemplate, skippedShallow }
 }
 

@@ -15,10 +15,14 @@ beforeEach(() => {
   ctx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
 })
 
-// 模板 fixture：scoutCandidates 会硬排掉它（scoutBreakouts 不做模板硬排，仍会评分入池）
+// scoutCandidates 会挡掉的两条：模板硬排（TEMPLATE_FIXTURE）与业务含量门槛（SHALLOW_FIXTURE）。
+// scoutBreakouts 两道闸都不开，仍会把它们评分入池，所以两套口径要分开数。
 const TEMPLATE_FIXTURE = 'acme/nextjs-saas-starter'
+const SHALLOW_FIXTURE = 'lucide-icons/lucide'
 const okCount = candidateFixtures.filter((f) => isLicenseOk(f.license)).length          // 协议可商用总数（breakouts 口径）
-const okScoutable = candidateFixtures.filter((f) => isLicenseOk(f.license) && f.repo !== TEMPLATE_FIXTURE).length // scout 口径（已扣模板）
+const okScoutable = candidateFixtures.filter(                                           // scout 口径（已扣模板与浅业务）
+  (f) => isLicenseOk(f.license) && f.repo !== TEMPLATE_FIXTURE && f.repo !== SHALLOW_FIXTURE,
+).length
 
 describe('scoutCandidates (mock)', () => {
   it('fixtures 入池：可商用者评分、GPL 标记不评分、按 score 排序、幂等去重', async () => {
@@ -27,7 +31,7 @@ describe('scoutCandidates (mock)', () => {
     expect(r1.scored).toBeGreaterThanOrEqual(4)
 
     const rows: any[] = ctx.db.prepare('SELECT * FROM candidates ORDER BY license_ok DESC, score DESC').all()
-    const gpl = rows.find((x) => x.repo === 'gpl-example/copyleft-tool')
+    const gpl = rows.find((x) => x.repo === 'copyleftlabs/copyleft-tool')
     expect(gpl.license_ok).toBe(0)
     expect(gpl.score).toBeNull()
     const scored = rows.filter((x) => x.license_ok === 1)
@@ -84,8 +88,8 @@ describe('addRepo (mock)', () => {
     expect(JSON.parse(row.tech_stack)).toContain('react')
   })
   it('手动投喂强制放行协议门槛：GPL fixture 也 license_ok=1 并正常评分', async () => {
-    await addRepo(ctx, 'https://github.com/gpl-example/copyleft-tool')
-    const row: any = ctx.db.prepare("SELECT * FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    await addRepo(ctx, 'https://github.com/copyleftlabs/copyleft-tool')
+    const row: any = ctx.db.prepare("SELECT * FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(row.license_ok).toBe(1)
     expect(row.score).toBeGreaterThan(0)
   })
@@ -102,12 +106,12 @@ describe('addRepo (mock)', () => {
     expect(other.source).toBe('scout')
   })
   it('回归：已标 manual 的 GPL repo 被自动抓取重新扫到时，license_ok 不会被真实协议打回 0', async () => {
-    await addRepo(ctx, 'https://github.com/gpl-example/copyleft-tool')
-    let row: any = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    await addRepo(ctx, 'https://github.com/copyleftlabs/copyleft-tool')
+    let row: any = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(row.license_ok).toBe(1)
 
-    await scoutCandidates(ctx) // gpl-example/copyleft-tool 的 topics 含 'inventory'，在 DEFAULT_TOPICS 内，会被重新扫到
-    row = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    await scoutCandidates(ctx) // copyleftlabs/copyleft-tool 的 topics 含 'inventory'，在 DEFAULT_TOPICS 内，会被重新扫到
+    row = ctx.db.prepare("SELECT license_ok FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(row.license_ok).toBe(1)
   })
 })
@@ -202,7 +206,7 @@ describe('cleanupCandidates (mock)', () => {
     await cleanupCandidates(ctx, { threshold: 50 })
     const picked: any = ctx.db.prepare("SELECT status FROM candidates WHERE repo = 'twentyhq/twenty'").get()
     expect(picked.status).toBe('picked') // 没被 dismiss 覆盖
-    const gpl: any = ctx.db.prepare("SELECT status, score FROM candidates WHERE repo = 'gpl-example/copyleft-tool'").get()
+    const gpl: any = ctx.db.prepare("SELECT status, score FROM candidates WHERE repo = 'copyleftlabs/copyleft-tool'").get()
     expect(gpl.score).toBeNull() // license_ok=0 本就不评分，不该被"补评分"逻辑碰到
     expect(gpl.status).toBe('candidate') // 也不该被 dismiss（license gate 已经在別处标记不可商用）
   })
@@ -277,7 +281,7 @@ describe('scoutBreakouts (mock)', () => {
     const r = await scoutBreakouts(ctx)
     expect(r.hits.length).toBe(r.added)
     expect(r.hits.every((h) => typeof h.repo === 'string' && typeof h.url === 'string')).toBe(true)
-    const gplHit = r.hits.find((h) => h.repo === 'gpl-example/copyleft-tool')
+    const gplHit = r.hits.find((h) => h.repo === 'copyleftlabs/copyleft-tool')
     expect(gplHit).toBeUndefined() // 协议不过的不该出现在 hits 里
   })
 
@@ -307,7 +311,7 @@ describe('candidatesNeedingSummary (mock)', () => {
     ctx.db.prepare('UPDATE candidates SET score_detail = ? WHERE id = ?').run(JSON.stringify(d), chatwoot.id)
     expect(candidatesNeedingSummary(ctx)).not.toContain(chatwoot.id)
 
-    const gpl: any = ctx.db.prepare("SELECT id FROM candidates WHERE repo='gpl-example/copyleft-tool'").get()
+    const gpl: any = ctx.db.prepare("SELECT id FROM candidates WHERE repo='copyleftlabs/copyleft-tool'").get()
     expect(candidatesNeedingSummary(ctx)).not.toContain(gpl.id) // 协议不过，从未评分，没有 score_detail
   })
 })
@@ -386,18 +390,26 @@ describe('行业锚定选品', () => {
   })
 
   it('业务含量不足（businessDepth < 12）直接不入库，skippedShallow 计数并有日志', async () => {
-    ctx.config.scout.weights.businessDepth = 8 // 上限压到 8 → mock 下所有候选都 < 12
     const msgs: string[] = []
     const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
-    expect(r.skippedShallow).toBe(okScoutable)
-    const scored = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE license_ok = 1').get() as any
-    expect(scored.c).toBe(0) // 连 candidate 都没建
-    expect(msgs.some((m) => m === `业务含量不足（businessDepth < 12）跳过 ${okScoutable} 个`)).toBe(true)
+    expect(r.skippedShallow).toBe(1)
+    const row = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE) as any
+    expect(row.c).toBe(0) // 连 candidate 都没建
+    expect(msgs.some((m) => m === '业务含量不足（businessDepth < 12）跳过 1 个')).toBe(true)
   })
 
-  it('默认权重下 fixtures 业务含量都够，skippedShallow = 0', async () => {
+  it('回归：第四维权重被调到 8（低于定值门槛 12）时门槛等比缩，不会静默清空选品', async () => {
+    ctx.config.scout.weights.businessDepth = 8 // 门槛 = min(12, 8*0.4) = 3.2
     const r = await scoutCandidates(ctx)
-    expect(r.skippedShallow).toBe(0)
+    expect(r.added).toBeGreaterThan(0)
+    const rows = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE license_ok = 1').get() as any
+    expect(rows.c).toBeGreaterThan(0)
+  })
+
+  it('默认权重下真业务 fixtures 都够格，skippedShallow 只算到那条浅的', async () => {
+    const r = await scoutCandidates(ctx)
+    expect(r.skippedShallow).toBe(1)
+    expect(r.added).toBe(okScoutable)
   })
 
   it('score 合成含 businessDepth，score_detail 也带该维与理由', async () => {

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { INDUSTRY_MOCK_KEYWORDS, generateIndustryQueries, isTemplateRepo, queriesFor, type Industry } from '../src/industry'
+import { INDUSTRY_MOCK_KEYWORDS, businessProofHits, generateIndustryQueries, isTemplateRepo, queriesFor, type Industry } from '../src/industry'
 
 let ctx: CoreCtx
 beforeEach(() => {
@@ -105,9 +105,35 @@ describe('isTemplateRepo', () => {
     expect(isTemplateRepo('acme/ui', 'a component-library of buttons', 'buttons and inputs')).toBe(true)
   })
 
-  it('名字带 admin 但 README 有业务实证（api + role）→ 不排', () => {
+  it('名字带 admin 但 README 有业务实证（role + permission）→ 不排', () => {
     const readme = 'vue-element-admin is a dashboard. It talks to a REST api and supports role based permission control.'
     expect(isTemplateRepo('PanJiaChen/vue-element-admin', 'A magical vue admin-ui', readme)).toBe(false)
+  })
+
+  // 审查实测：无词边界时 `Author` 命中 auth、`rapid`/`capital` 命中 api，
+  // 这条真实感 starter README 会被判成"有业务实证"而放行，且业务含量拿满分——功能等于没开。
+  const REAL_STARTER_README = 'Ship your SaaS in a weekend. Authentication with NextAuth, Stripe payments, '
+    + 'Prisma ORM, Tailwind UI, dark mode, rapid prototyping, capital-efficient. Author: acme. Deploy to Vercel in one click.'
+
+  it('真实感 SaaS starter（Authentication/Prisma/Author/rapid/capital 全齐）→ 照排不误', () => {
+    expect(isTemplateRepo('acme/nextjs-saas-starter', 'A production-ready SaaS starter template', REAL_STARTER_README)).toBe(true)
+  })
+
+  it('同一条 README 的业务含量不满分：只有数据层词、没有业务实体词', () => {
+    const { proof, dataModel } = businessProofHits(REAL_STARTER_README)
+    expect(proof).toBe(false)    // 没有 order/customer/invoice/role/permission/workflow
+    expect(dataModel).toBe(true) // Prisma 确实是数据层
+  })
+
+  it('词边界：Author 不算 auth、rapid/capital 不算 api', () => {
+    expect(businessProofHits('Author: acme. rapid prototyping, capital efficient.')).toEqual({ proof: false, dataModel: false })
+    expect(businessProofHits('exposes a REST api').dataModel).toBe(true)
+  })
+
+  it('owner 段不参与模板判定（回归：gpl-example/* 这类正经仓库被 owner 里的 example 株连）', () => {
+    expect(isTemplateRepo('gpl-example/copyleft-tool', '开源库存管理工具', 'A copyleft inventory tool.')).toBe(false)
+    expect(isTemplateRepo('demo-org/crm-server', 'CRM 服务端', '')).toBe(false)
+    expect(isTemplateRepo('acme/crm-demo', 'CRM 演示', '')).toBe(true) // name 段命中仍照排
   })
 
   it('没命中排除词的普通仓库一律不排（README 是什么都无所谓）', () => {

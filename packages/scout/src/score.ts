@@ -4,8 +4,15 @@ import type { RepoMeta, ScoreDetail, Track } from './types'
 
 type Weights = { rebrandCost: number; buyerClarity: number; visualAppeal: number; businessDepth: number }
 
-/** 业务含量低于此分的候选连 candidate 都不建（定值，不随权重上限浮动）。 */
+/** 业务含量入库门槛的定值上限。 */
 export const BUSINESS_DEPTH_MIN = 12
+
+/** 实际门槛：定值 12，但第四维权重被设置页调低时按 40% 等比缩。
+ *  不缩的话，用户把 scout_weight_depth 调到 ≤11 会让 Math.min(w.businessDepth, …) 的结果恒低于 12，
+ *  所有候选被静默全拒、选品返回 0 个——排查起来毫无线索，是个会吃掉整个功能的坑。 */
+export function businessDepthFloor(weights: { businessDepth: number }): number {
+  return Math.min(BUSINESS_DEPTH_MIN, weights.businessDepth * 0.4)
+}
 
 const TECHS = ['react', 'next', 'vue', 'node', 'python', 'go', 'docker']
 const EXIT_ROUTES = ['托管', '定制', '一键包']

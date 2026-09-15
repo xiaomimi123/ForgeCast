@@ -7,49 +7,51 @@ export interface Industry {
   enabled: number
 }
 
-/** mock 词表：8 个 seed 行业各 12-20 个 GitHub 上真实存在的英文技术关键词。
+/** mock 词表：8 个 seed 行业各 12-20 个 GitHub topic。
+ *  **表里每个词都实调过 GitHub 搜索接口**（`topic:<词> stars:>300`，取 total_count > 0 的），
+ *  因为 searchRepos 只发 `topic:` 查询——不是 topic 的通用技术词必然 0 命中，写进来等于白跑一轮。
  *  **这是 generateIndustryQueries 的 mock 分支专属数据**——绝不借道 ctx.llm 拿通用返回
  *  （mock LLM 返回的是文案 fixture，拿来当搜索词是灾难）。 */
 export const INDUSTRY_MOCK_KEYWORDS: Record<string, string[]> = {
   资讯媒体: [
-    'rss-reader', 'news-aggregator', 'headless-cms', 'content-management', 'publishing',
-    'newsletter', 'feed-parser', 'web-scraper', 'markdown-editor', 'static-site-generator',
-    'social-media-scheduler', 'media-library', 'digital-asset-management', 'editorial-workflow',
+    'rss-reader', 'news-aggregator', 'cms', 'headless-cms', 'content-management',
+    'publishing', 'newsletter', 'feed-parser', 'web-scraper', 'markdown-editor',
+    'static-site-generator', 'social-media-scheduler', 'media-library', 'digital-asset-management',
   ],
   情感社交: [
-    'social-network', 'community-forum', 'chat-app', 'instant-messaging', 'matchmaking',
-    'dating-app', 'user-profile', 'group-chat', 'moderation', 'private-messaging',
-    'follow-system', 'activity-feed', 'live-stream', 'friend-recommendation',
+    'social-network', 'forum', 'social', 'chat-app', 'instant-messaging',
+    'matchmaking', 'dating-app', 'user-profile', 'group-chat', 'moderation',
+    'private-messaging', 'activity-feed', 'live-stream', 'video-chat',
   ],
   教育培训: [
-    'lms', 'learning-management-system', 'course-platform', 'online-course', 'quiz',
+    'lms', 'learning-management-system', 'course', 'online-course', 'quiz',
     'exam-system', 'student-management', 'e-learning', 'classroom', 'attendance',
     'grading', 'tutoring', 'flashcards', 'assignment', 'enrollment',
   ],
   外贸跨境: [
     'erp', 'quotation', 'invoice', 'shipping', 'logistics',
-    'inventory-management', 'multi-currency', 'order-management', 'purchase-order', 'customs',
-    'b2b-ecommerce', 'supplier-management', 'payment-gateway', 'shipment-tracking', 'i18n',
+    'inventory-management', 'multi-currency', 'order-management', 'purchase-order', 'supply-chain',
+    'warehouse', 'b2b-ecommerce', 'payment-gateway', 'shipment-tracking', 'i18n',
   ],
   本地生活服务: [
-    'booking', 'appointment-scheduling', 'reservation', 'point-of-sale', 'membership',
-    'loyalty-program', 'coupon', 'review-system', 'store-management', 'queue-management',
-    'local-business', 'service-booking', 'check-in', 'voucher',
+    'booking', 'appointment-scheduling', 'appointment', 'reservation', 'point-of-sale',
+    'membership', 'loyalty', 'coupon', 'reviews', 'store-management',
+    'queue-management', 'qrcode', 'check-in', 'voucher',
   ],
   健康养生: [
-    'clinic-management', 'ehr', 'emr', 'patient-management', 'appointment-booking',
-    'health-tracker', 'fitness-tracker', 'nutrition', 'wellness', 'medical-records',
-    'telemedicine', 'spa-booking', 'treatment-plan', 'medication-reminder',
+    'healthcare', 'health', 'medical', 'ehr', 'emr',
+    'hospital', 'appointment-booking', 'fitness', 'fitness-tracker', 'nutrition',
+    'nutrition-tracker', 'wellness', 'medical-records', 'telemedicine',
   ],
   汽车房产: [
-    'real-estate', 'property-management', 'dealership', 'car-rental', 'vehicle-management',
-    'listing', 'rental-management', 'lease-management', 'contract-management', 'mortgage',
-    'inspection', 'commission', 'showing-scheduler', 'tenant-portal',
+    'real-estate', 'real-estate-website', 'property', 'property-management', 'automotive',
+    'car', 'car-rental', 'vehicle', 'rental', 'listing',
+    'contracts', 'mortgage', 'inspection',
   ],
   餐饮零售: [
-    'restaurant-management', 'point-of-sale', 'menu', 'order-management', 'kitchen-display',
-    'table-booking', 'retail', 'stock-management', 'shift-scheduling', 'loyalty-program',
-    'food-delivery', 'barcode', 'receipt-printing', 'supplier-management',
+    'restaurant', 'restaurant-management', 'menu', 'food', 'food-delivery',
+    'kitchen', 'order-management', 'table-booking', 'retail', 'inventory',
+    'pos', 'scheduling', 'loyalty', 'barcode',
   ],
 }
 
@@ -76,8 +78,8 @@ export async function generateIndustryQueries(ctx: CoreCtx, industry: Industry):
       `我要在 GitHub 上找能"换皮"成商业产品、卖给下面这个行业中小老板的开源项目。`,
       `行业：${industry.name}`,
       `行业里老板的真实业务场景：${industry.note ?? '（未提供）'}`,
-      `请给出 12-20 个用于 GitHub 搜索的英文技术关键词，要求：`,
-      `- 必须是 GitHub 上真实存在、能搜到项目的词（topic 名或通用技术词），不要生造`,
+      `请给出 12-20 个用于 GitHub 搜索的 topic（我只会发 \`topic:<词>\` 查询，不是全文搜索），要求：`,
+      `- 必须是 GitHub 的 topic 名（github.com/topics/<词> 能打开、底下有项目），不要生造、不要给通用技术词`,
       `- 优先"业务系统"类词（如 crm / booking / invoice / inventory-management），不要给框架、UI 库、脚手架类词`,
       `- 全小写，单词间用连字符，不要中文，不要引号`,
       `输出 JSON：{"keywords":["...","..."]}`,
@@ -118,22 +120,27 @@ function parseKeywords(text: string): string[] {
   return arr.map(String)
 }
 
-// 模板/脚手架：名字或描述命中即嫌疑
+// 模板/脚手架：**仓库名段**或描述命中即嫌疑。
+// 只看 repo 的 name 段，owner 段不参与——owner 里带 example/demo/learning 的正经组织不少
+// （典型误伤：`copyleftlabs/copyleft-tool`、`nodejs-learning/*`），拿 owner 判模板纯属株连。
 const TEMPLATE_RE = /template|boilerplate|starter|theme|scaffold|admin-ui|component-library|awesome-|example|demo|tutorial|learning/i
-// 业务实证（反证）：README 里出现即说明它是真业务系统而非空壳，命中则不排
-// （典型用例：vue-element-admin 名字带 admin，但 README 有 api + role，是真后台而非纯 UI 皮）
-const BUSINESS_PROOF_RE = /database|schema|migration|model|api|endpoint|auth|role|permission|order|customer|invoice|workflow|prisma|sequelize|django|rails/i
 
-/** 模板硬排：名字/描述像脚手架，且 README 拿不出业务实证 → true（跳过，连 candidate 都不建）。纯函数。 */
+// 业务实体词：真业务系统才会有的名词。**只有它才算"业务实证"**——
+// 脚手架也会写 prisma/api/authentication（Next.js SaaS starter 就是典例），
+// 拿技术栈词当实证等于给所有漂亮空壳发通行证，硬排会形同虚设。
+const BUSINESS_ENTITY_RE = /\b(order|customer|invoice|role|permission|workflow)s?\b/i
+// 数据层词：说明它至少有持久化模型。单独出现不足以证明是业务系统，只用于业务含量推分的第二档。
+// 短词一律加词边界：无边界时 `Author` 命中 auth、`rapid`/`capital` 命中 api，实测把 SaaS starter 判成满分业务系统。
+const DATA_STACK_RE = /\b(api|model|schema|database|migration|endpoint|prisma|sequelize|django|rails)s?\b|\bauth(entication|orization)?\b|\boauth\b/i
+
+/** 模板硬排：仓库名/描述像脚手架，且 README 里拿不出**业务实体**实证 → true（跳过，连 candidate 都不建）。纯函数。 */
 export function isTemplateRepo(repo: string, description: string | null, readme: string): boolean {
-  if (!TEMPLATE_RE.test(`${repo} ${description ?? ''}`)) return false
-  return !BUSINESS_PROOF_RE.test(readme)
+  const name = repo.includes('/') ? repo.slice(repo.indexOf('/') + 1) : repo
+  if (!TEMPLATE_RE.test(`${name} ${description ?? ''}`)) return false
+  return !BUSINESS_ENTITY_RE.test(readme)
 }
 
-/** README 里有业务实证词 / 有数据模型词——mock 业务含量推分用，顺带给出人看的理由。 */
+/** README 里有业务实体词 / 有数据层词——mock 业务含量推分用，顺带给出人看的理由。 */
 export function businessProofHits(readme: string): { proof: boolean; dataModel: boolean } {
-  return {
-    proof: BUSINESS_PROOF_RE.test(readme),
-    dataModel: /database|schema|\bmodel\b|migration|prisma|sequelize/i.test(readme),
-  }
+  return { proof: BUSINESS_ENTITY_RE.test(readme), dataModel: DATA_STACK_RE.test(readme) }
 }

@@ -30,18 +30,29 @@ export const candidateFixtures: CandidateFixture[] = [
     tree: ['packages/', 'Dockerfile', 'README.md'],
   },
   {
-    // 模板/脚手架 fixture：名字与描述命中排除词、README 无任何业务实证 —— 用于验证 scout 的模板硬排
+    // 模板硬排的**真实感**反例：README 满篇技术栈热词（Authentication / Prisma / API…），
+    // 正是"名字像模板、内容也确实是空壳"的典型。词边界没加好时 Author→auth、rapid→api 会让它蒙混过关，
+    // 拿技术栈词当业务实证时它还会拿满业务含量分——这条 fixture 就是钉死这两个坑的。
     repo: 'acme/nextjs-saas-starter', url: 'https://github.com/acme/nextjs-saas-starter',
-    description: 'A SaaS starter template with Tailwind',
+    description: 'A production-ready SaaS starter template',
     license: 'MIT', stars: 3000, lastCommit: '2026-06-02T00:00:00Z', topics: ['boilerplate'],
-    readme: 'Ship your landing page in minutes. Next.js + Tailwind, dark mode, pricing section, blog.',
+    readme: 'Ship your SaaS in a weekend. Authentication with NextAuth, Stripe payments, Prisma ORM, Tailwind UI, dark mode, rapid prototyping, capital-efficient. Author: acme. Deploy to Vercel in one click.',
     tree: ['app/', 'README.md'],
   },
   {
-    repo: 'gpl-example/copyleft-tool', url: 'https://github.com/gpl-example/copyleft-tool',
+    // 业务含量门槛的靶子：名字/描述都正常（模板硬排抓不到它），但 README 里既无业务实体也无数据层——
+    // 图标库正是"能拍视频但没法卖给老板"的典型，该在评分后被 businessDepth 门槛挡在库外
+    repo: 'lucide-icons/lucide', url: 'https://github.com/lucide-icons/lucide',
+    description: '一套好看的开源图标',
+    license: 'ISC', stars: 12000, lastCommit: '2026-06-12T00:00:00Z', topics: ['icons'],
+    readme: 'Beautiful & consistent icons. Copy and paste the SVG into your project, or install the package. 1500+ icons, tree-shakable.',
+    tree: ['icons/', 'README.md'],
+  },
+  {
+    repo: 'copyleftlabs/copyleft-tool', url: 'https://github.com/copyleftlabs/copyleft-tool',
     description: '开源库存管理工具（GPL，用于触发协议 gate）',
     license: 'GPL-3.0', stars: 4000, lastCommit: '2026-04-01T00:00:00Z', topics: ['inventory'],
-    readme: 'A copyleft inventory tool with order/customer database schema. Node backend with docker. (协议不可商用，用于触发 gate)',
+    readme: 'A copyleft inventory tool. Node backend with docker. (协议不可商用，用于触发 gate)',
     tree: ['src/', 'Dockerfile', 'README.md'],
   },
 ]

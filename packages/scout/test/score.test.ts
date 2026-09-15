@@ -283,9 +283,11 @@ describe('businessDepth 业务含量（mock 推分）', () => {
     const c = ctxWith({})
     const full = await scoreCandidate(c, meta, '订单 order 与 customer 档案，含 database schema 与 migration')
     expect(full.businessDepth).toBe(30) // min(30, 6+14+10)
-    const proofOnly = await scoreCandidate(c, meta, '提供 REST api 与 role 权限控制')
+    const proofOnly = await scoreCandidate(c, meta, '有 order 与 customer 两类业务实体')
     expect(proofOnly.businessDepth).toBe(20) // 6+14
-    const none = await scoreCandidate(c, meta, 'a pretty terminal theme with nice colors')
+    const stackOnly = await scoreCandidate(c, meta, 'Prisma ORM + REST api，没有任何业务实体')
+    expect(stackOnly.businessDepth).toBe(16) // 6+10：光有数据层不算业务实证
+    const none = await scoreCandidate(c, meta, 'a pretty terminal skin with nice colors')
     expect(none.businessDepth).toBe(6)
     expect(none.businessDepthReason).toContain('未命中')
   })

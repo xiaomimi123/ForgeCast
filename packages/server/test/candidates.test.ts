@@ -70,7 +70,7 @@ describe('candidates API (mock)', () => {
     await runTask(taskId)
     const gpl = await app.request('/api/candidates/pick', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ repo: 'gpl-example/copyleft-tool' }),
+      body: JSON.stringify({ repo: 'copyleftlabs/copyleft-tool' }),
     })
     expect(gpl.status).toBe(400)
   })
