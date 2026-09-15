@@ -15,7 +15,7 @@ export interface ForgecastConfig {
     models: { analysis: string; copy: string; scoring: string }
   }
   github: { mode: GithubMode; token: string }
-  scout: { weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number } }
+  scout: { weights: { rebrandCost: number; buyerClarity: number; visualAppeal: number; businessDepth: number } }
   video: { mode: VideoMode; bgm: string; beatPython: string; captions: boolean; bg: string; mood: string }
   rebrandExec: { mode: RebrandExecMode }
   tts: { mode: TtsMode; baseURL: string; apiKey: string; model: string; voice: string; meloPython: string; cosyHome: string; asrPython: string }
@@ -44,7 +44,9 @@ export function loadConfig(root?: string, env: NodeJS.ProcessEnv = process.env):
       },
     },
     github: { mode: githubMode, token: env.FORGECAST_GITHUB_TOKEN ?? '' },
-    scout: { weights: { rebrandCost: 30, buyerClarity: 40, visualAppeal: 30 } },
+    // 四维权重合计 100：加入 businessDepth（业务含量）后，其余三维等比让位，
+    // 让"有订单/客户实体+数据库模型+角色权限"的真业务系统排在漂亮空壳前面
+    scout: { weights: { rebrandCost: 20, buyerClarity: 30, visualAppeal: 20, businessDepth: 30 } },
     video: {
       mode: videoMode,
       bgm: env.FORGECAST_BGM ?? '',

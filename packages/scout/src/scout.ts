@@ -1,7 +1,8 @@
 import type { CoreCtx } from '@forgecast/core'
 import { createGithubClient, type GithubClient } from './github'
+import { isTemplateRepo, queriesFor, type Industry } from './industry'
 import { isLicenseOk } from './license'
-import { CATEGORIES, categorizeHeuristic, generateSummaryZh, scoreCandidate } from './score'
+import { BUSINESS_DEPTH_MIN, CATEGORIES, categorizeHeuristic, generateSummaryZh, scoreCandidate } from './score'
 import type { RepoMeta } from './types'
 
 export const DEFAULT_TOPICS = [
@@ -12,11 +13,12 @@ export const DEFAULT_TOPICS = [
 // source 只升不降：一旦被标为 manual（手动投喂），之后自动抓取重新 ingest 同一 repo 也不会把它冲回 scout。
 // license_ok 同理跟着 source 一起 sticky：manual 的候选不管后续真实协议怎么重新判定，都不会被自动流程打回不可商用。
 const LICENSE_OK_STICKY = `CASE WHEN candidates.source = 'manual' THEN 1 ELSE excluded.license_ok END`
-const UPSERT = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status, source)
-VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'candidate', @source)
+const UPSERT = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status, source, industry_id)
+VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'candidate', @source, @industry_id)
 ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=${LICENSE_OK_STICKY},
   stars=excluded.stars, last_commit=excluded.last_commit, tech_stack=excluded.tech_stack,
   score=excluded.score, score_detail=excluded.score_detail,
+  industry_id=COALESCE(excluded.industry_id, candidates.industry_id),
   source=CASE WHEN excluded.source = 'manual' THEN 'manual' ELSE candidates.source END`
 
 // onlyNew 模式下已存在候选只刷元数据：score/score_detail/tech_stack/favorite/status 保持旧值
@@ -28,22 +30,29 @@ ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.descripti
 
 /** 抓 README + 评分（仅协议过关者）后 upsert 入池；rejected 者不评分只登记。
  *  forceLicenseOk：手动投喂（addRepo）用，用户自担来源可用性，无视协议白名单一律放行。
- *  source：'manual'=用户手动投喂，'scout'=自动抓取/找爆款（默认）。 */
+ *  source：'manual'=用户手动投喂，'scout'=自动抓取/找爆款（默认）。
+ *  opts.industryId：归属行业（null=未走行业锚定，如 DEFAULT_TOPICS 回落/手动投喂）。
+ *  opts.enforceDepth：业务含量门槛，businessDepth < BUSINESS_DEPTH_MIN 时**连 candidate 都不建**，
+ *    返回 'shallow' 让调用方计数——只有行业锚定选品开这个闸，手动投喂/爆款检测不受影响。
+ *  opts.readme：调用方已抓过的 README（模板硬排会先抓一次），传进来免得重复请求。 */
 async function ingest(
   ctx: CoreCtx, gh: GithubClient, meta: RepoMeta, scoreIt: boolean,
   forceLicenseOk = false, source: 'manual' | 'scout' = 'scout',
-): Promise<void> {
+  opts: { industryId?: number | null; enforceDepth?: boolean; readme?: string } = {},
+): Promise<'ok' | 'shallow'> {
   const ok = forceLicenseOk || isLicenseOk(meta.license)
   let score: number | null = null
   let scoreDetail: string | null = null
   let techStack: string | null = null
   if (ok && scoreIt) {
-    const readme = await gh.fetchReadme(meta.repo)
+    const readme = opts.readme ?? await gh.fetchReadme(meta.repo)
     const d = await scoreCandidate(ctx, meta, readme)
-    score = d.rebrandCost + d.buyerClarity + d.visualAppeal
+    if (opts.enforceDepth && d.businessDepth < BUSINESS_DEPTH_MIN) return 'shallow'
+    score = d.rebrandCost + d.buyerClarity + d.visualAppeal + d.businessDepth
     techStack = JSON.stringify(d.techStack)
     scoreDetail = JSON.stringify({
       rebrandCost: d.rebrandCost, buyerClarity: d.buyerClarity, visualAppeal: d.visualAppeal,
+      businessDepth: d.businessDepth, businessDepthReason: d.businessDepthReason,
       rationale: d.rationale, targetBuyer: d.targetBuyer, painPoint: d.painPoint,
       summaryZh: d.summaryZh, category: d.category,
     })
@@ -51,25 +60,80 @@ async function ingest(
   ctx.db.prepare(UPSERT).run({
     repo: meta.repo, url: meta.url, description: meta.description, license: meta.license, license_ok: ok ? 1 : 0,
     stars: meta.stars, last_commit: meta.lastCommit, tech_stack: techStack, score, score_detail: scoreDetail, source,
+    industry_id: opts.industryId ?? null,
   })
+  return 'ok'
 }
 
-/** 搜索 topic 白名单 → 去重 → 协议 gate → 过关者按 star 取 Top-limit 抓 README 评分 → 入池。
- *  onlyNew：已存在的 repo 只刷元数据（不评分不覆盖旧评分），只有新 repo 进入评分池。 */
+/** 取参与本次选品的行业：默认全部启用行业，industryIds 给了就只取其中启用的那些。 */
+function selectIndustries(ctx: CoreCtx, industryIds?: number[]): Industry[] {
+  const rows = ctx.db.prepare(
+    'SELECT id, name, note, enabled FROM industries WHERE enabled = 1 ORDER BY sort_order, id',
+  ).all() as Industry[]
+  if (!industryIds?.length) return rows
+  const want = new Set(industryIds)
+  return rows.filter((r) => want.has(r.id))
+}
+
+/** 行业锚定选品：启用行业 → 各自生成搜索词 → 搜 GitHub（结果带 industry_id）→ 模板硬排 → 协议 gate →
+ *  过关者按 star 取 Top-limit 抓 README 评分 → 业务含量门槛 → 入池。
+ *  onlyNew：已存在的 repo 只刷元数据（不评分不覆盖旧评分），只有新 repo 进入评分池。
+ *  行业全停用（或显式传 topics）→ 回落 DEFAULT_TOPICS，industry_id 记 null，选品不失效。 */
 export async function scoutCandidates(
   ctx: CoreCtx,
   opts: {
     topics?: string[]; limit?: number; pushedAfter?: string; onlyNew?: boolean
+    industryIds?: number[]
     onProgress?: (msg: string) => void
   } = {},
-): Promise<{ found: number; scored: number; rejected: number; added: number }> {
+): Promise<{ found: number; scored: number; rejected: number; added: number; skippedTemplate: number; skippedShallow: number }> {
   const log = opts.onProgress ?? (() => {})
   const gh = createGithubClient(ctx.config.github)
-  const topics = opts.topics ?? DEFAULT_TOPICS
   const limit = opts.limit ?? 30
   const pushedAfter = opts.pushedAfter ?? new Date(Date.now() - 183 * 864e5).toISOString().slice(0, 10)
-  log(`搜索 GitHub（${topics.length} 个 topic）…`)
-  const found = await gh.searchRepos(topics, { minStars: 300, pushedAfter, perTopic: 20 })
+
+  // 搜索计划：一个行业一组搜索词。显式传 topics（CLI/接口指定）则完全不走行业。
+  const plans: Array<{ industryId: number | null; name: string; keywords: string[] }> = []
+  for (const ind of opts.topics ? [] : selectIndustries(ctx, opts.industryIds)) {
+    try {
+      plans.push({ industryId: ind.id, name: ind.name, keywords: await queriesFor(ctx, ind) })
+    } catch (e) {
+      // 单个行业生成搜索词失败（live LLM 抽风）不拖垮整轮选品
+      log(`行业「${ind.name}」搜索词生成失败，跳过：${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  const industryCount = plans.length
+  if (!plans.length) plans.push({ industryId: null, name: '', keywords: opts.topics ?? DEFAULT_TOPICS })
+  const keywordCount = new Set(plans.flatMap((p) => p.keywords)).size
+  log(`搜索 GitHub（${keywordCount} 个关键词 · ${industryCount} 个行业）…`)
+
+  // 逐行业搜索并去重：同一 repo 被多个行业搜到时，归给先命中的那个行业
+  const found: RepoMeta[] = []
+  const industryOf = new Map<string, number | null>()
+  for (const p of plans) {
+    const hits = await gh.searchRepos(p.keywords, { minStars: 300, pushedAfter, perTopic: 20 })
+    if (!hits.length && p.name) log(`行业「${p.name}」的 ${p.keywords.length} 个关键词 0 命中（词可能太偏，可在行业设置里重生成）`)
+    for (const m of hits) {
+      if (industryOf.has(m.repo)) continue
+      industryOf.set(m.repo, p.industryId)
+      found.push(m)
+    }
+  }
+
+  // 模板/脚手架硬排：跑在 LLM 之前（省 token）。名字/描述没嫌疑的连 README 都不抓；
+  // 有嫌疑的才抓一次 README 看业务实证（有实证=真业务系统，不排），抓到的 README 顺手给后面评分复用。
+  let skippedTemplate = 0
+  let skippedShallow = 0
+  const readmes = new Map<string, string>()
+  const kept: RepoMeta[] = []
+  for (const m of found) {
+    if (isTemplateRepo(m.repo, m.description, '')) {
+      const readme = await gh.fetchReadme(m.repo)
+      if (isTemplateRepo(m.repo, m.description, readme)) { skippedTemplate++; continue }
+      readmes.set(m.repo, readme)
+    }
+    kept.push(m)
+  }
 
   const existing = new Set(
     (ctx.db.prepare('SELECT repo FROM candidates').all() as Array<{ repo: string }>).map((r) => r.repo),
@@ -78,19 +142,20 @@ export async function scoutCandidates(
   // 曾入库但从未评分的 repo（score_detail 为 NULL）在每日自动抓取里不会补评分，需靠「全部重新评分」按钮兜底。
   // 现实现对 LLM 额度更保守，属已知偏差，非 bug。
   const isNew = (m: RepoMeta) => !existing.has(m.repo)
-  const scorePool = found
+  const scorePool = kept
     .filter((m) => isLicenseOk(m.license) && (!opts.onlyNew || isNew(m)))
     .sort((a, b) => b.stars - a.stars)
   const toScore = new Set(scorePool.slice(0, limit).map((m) => m.repo))
-  // 口径说明：可商用数按 found 全量算（不受 onlyNew 影响），评分数按 toScore 算——
+  // 口径说明：可商用数按硬排后的全量算（不受 onlyNew 影响），评分数按 toScore 算——
   // 两者在 onlyNew 模式下会差很多，分开报才不误导。
-  const licenseOkCount = found.filter((m) => isLicenseOk(m.license)).length
+  const licenseOkCount = kept.filter((m) => isLicenseOk(m.license)).length
   log(`搜到 ${found.length} 个仓库 · 协议可商用 ${licenseOkCount} 个 · 本次评分 ${toScore.size} 个`)
+  if (skippedTemplate) log(`模板/脚手架硬排跳过 ${skippedTemplate} 个`)
 
   let scored = 0
   let rejected = 0
   let added = 0
-  for (const m of found) {
+  for (const m of kept) {
     const ok = isLicenseOk(m.license)
     if (opts.onlyNew && !isNew(m)) {
       ctx.db.prepare(UPSERT_META).run({
@@ -100,13 +165,17 @@ export async function scoutCandidates(
     } else {
       const willScore = toScore.has(m.repo)
       if (willScore) log(`评分 ${scored + 1}/${toScore.size}：${m.repo}`)
-      await ingest(ctx, gh, m, willScore)
+      const r = await ingest(ctx, gh, m, willScore, false, 'scout', {
+        industryId: industryOf.get(m.repo) ?? null, enforceDepth: true, readme: readmes.get(m.repo),
+      })
       if (willScore) scored++
+      if (r === 'shallow') { skippedShallow++; continue } // 连 candidate 都没建，不计 added/rejected
       if (isNew(m) && ok) added++
     }
     if (!ok) rejected++
   }
-  return { found: found.length, scored, rejected, added }
+  if (skippedShallow) log(`业务含量不足（businessDepth < ${BUSINESS_DEPTH_MIN}）跳过 ${skippedShallow} 个`)
+  return { found: found.length, scored, rejected, added, skippedTemplate, skippedShallow }
 }
 
 /** 手动投喂单个 repo（URL 或 owner/name）：抓元数据+评分入池。用户手动指定来源，无视协议白名单强制放行。 */

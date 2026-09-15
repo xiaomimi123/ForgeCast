@@ -16,9 +16,11 @@ export interface CandidateFixture extends RepoMeta {
 export type Track = 'profit' | 'traffic'
 
 export interface ScoreDetail {
-  rebrandCost: number // 0-30 换皮成本
-  buyerClarity: number // 0-40 买家清晰度
-  visualAppeal: number // 0-30 内容可视性
+  rebrandCost: number // 0-20 换皮成本
+  buyerClarity: number // 0-30 买家清晰度
+  visualAppeal: number // 0-20 内容可视性
+  businessDepth: number // 0-30 业务含量：有没有订单/客户实体、数据库模型、角色权限（低于 12 直接不入库）
+  businessDepthReason: string // 业务含量的判定理由，一句话
   techStack: string[]
   rationale: string
   targetBuyer: string // 什么老板会掏钱，一句话；mock 下为空串（不编造）

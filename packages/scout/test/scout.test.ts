@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
+import { DEFAULT_TOPICS, addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
+import { INDUSTRY_MOCK_KEYWORDS } from '../src/industry'
 import { candidateFixtures } from '../src/fixtures/candidate-fixtures'
 import { isLicenseOk } from '../src/license'
 
@@ -14,7 +15,10 @@ beforeEach(() => {
   ctx = { db: openDb(config.paths.db), config, llm: createLlmClient(config.llm) }
 })
 
-const okCount = candidateFixtures.filter((f) => isLicenseOk(f.license)).length
+// 模板 fixture：scoutCandidates 会硬排掉它（scoutBreakouts 不做模板硬排，仍会评分入池）
+const TEMPLATE_FIXTURE = 'acme/nextjs-saas-starter'
+const okCount = candidateFixtures.filter((f) => isLicenseOk(f.license)).length          // 协议可商用总数（breakouts 口径）
+const okScoutable = candidateFixtures.filter((f) => isLicenseOk(f.license) && f.repo !== TEMPLATE_FIXTURE).length // scout 口径（已扣模板）
 
 describe('scoutCandidates (mock)', () => {
   it('fixtures 入池：可商用者评分、GPL 标记不评分、按 score 排序、幂等去重', async () => {
@@ -53,7 +57,7 @@ describe('scoutCandidates (mock)', () => {
     const msgs: string[] = []
     const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
 
-    expect(msgs[0]).toMatch(/^搜索 GitHub（\d+ 个 topic）…$/)
+    expect(msgs[0]).toMatch(/^搜索 GitHub（\d+ 个关键词 · \d+ 个行业）…$/)
     expect(msgs[1]).toMatch(/^搜到 \d+ 个仓库 · 协议可商用 \d+ 个 · 本次评分 \d+ 个$/)
 
     const scoreLines = msgs.filter((m) => m.startsWith('评分 '))
@@ -159,15 +163,15 @@ describe('scoutCandidates onlyNew', () => {
     expect(JSON.parse(row.score_detail).targetBuyer).toBe('真评')
     expect(row.favorite).toBe(1)                                   // 收藏未被洗
     expect(row.stars).toBe(first.stars)                            // 元数据已刷新（seed 时是 1）
-    expect(r.added).toBe(okCount - 1)                              // 排除已存在的 first
+    expect(r.added).toBe(okScoutable - 1)                          // 排除已存在的 first
     // 新入库的可商用候选都评了分
     const fresh = ctx.db.prepare('SELECT score FROM candidates WHERE repo != ? AND license_ok = 1').all(first.repo) as any[]
-    expect(fresh.length).toBe(okCount - 1)
+    expect(fresh.length).toBe(okScoutable - 1)
     for (const f of fresh) expect(f.score).not.toBeNull()
   })
-  it('全新库跑 onlyNew：全部视为新项，added = 可商用 fixture 数', async () => {
+  it('全新库跑 onlyNew：全部视为新项，added = 可商用（且非模板）fixture 数', async () => {
     const r = await scoutCandidates(ctx, { onlyNew: true })
-    expect(r.added).toBe(okCount)
+    expect(r.added).toBe(okScoutable)
   })
   it('非 onlyNew 行为不变，也返回 added', async () => {
     await scoutCandidates(ctx, {})
@@ -328,5 +332,80 @@ describe('backfillCandidateSummary (mock)', () => {
   })
   it('候选不存在 → 抛错', async () => {
     await expect(backfillCandidateSummary(ctx, 999999)).rejects.toThrow(/不存在/)
+  })
+})
+
+describe('行业锚定选品', () => {
+  const enabledIndustries = () =>
+    ctx.db.prepare('SELECT id, name FROM industries WHERE enabled = 1 ORDER BY sort_order').all() as Array<{ id: number; name: string }>
+
+  it('默认（8 行业启用）：逐行业生成搜索词并落缓存，候选带 industry_id', async () => {
+    const msgs: string[] = []
+    await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    const inds = enabledIndustries()
+    expect(inds).toHaveLength(8)
+    // 每个启用行业都生成并缓存了搜索词
+    const cached = ctx.db.prepare('SELECT industry_id FROM industry_queries').all() as any[]
+    expect(cached).toHaveLength(8)
+    // 搜索日志的 topic 数 = 各行业关键词去重合计
+    const total = new Set(inds.flatMap((i) => INDUSTRY_MOCK_KEYWORDS[i.name])).size
+    expect(msgs[0]).toBe(`搜索 GitHub（${total} 个关键词 · ${inds.length} 个行业）…`)
+    // 候选归属到行业（mock 下所有 fixture 由第一个行业命中）
+    const rows = ctx.db.prepare('SELECT repo, industry_id FROM candidates').all() as any[]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r) => r.industry_id === inds[0].id)).toBe(true)
+  })
+
+  it('全部行业停用 → 回落 DEFAULT_TOPICS，industry_id 为 null', async () => {
+    ctx.db.prepare('UPDATE industries SET enabled = 0').run()
+    const msgs: string[] = []
+    await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    expect(msgs[0]).toBe(`搜索 GitHub（${DEFAULT_TOPICS.length} 个关键词 · 0 个行业）…`)
+    const rows = ctx.db.prepare('SELECT industry_id FROM candidates').all() as any[]
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r) => r.industry_id === null)).toBe(true)
+    expect(ctx.db.prepare('SELECT COUNT(*) c FROM industry_queries').get() as any).toEqual({ c: 0 })
+  })
+
+  it('industryIds 指定子集：只给该行业生成搜索词，候选归到它名下', async () => {
+    const target = enabledIndustries()[2]
+    await scoutCandidates(ctx, { industryIds: [target.id] })
+    const cached = ctx.db.prepare('SELECT industry_id FROM industry_queries').all() as any[]
+    expect(cached).toEqual([{ industry_id: target.id }])
+    const rows = ctx.db.prepare('SELECT industry_id FROM candidates').all() as any[]
+    expect(rows.every((r) => r.industry_id === target.id)).toBe(true)
+  })
+
+  it('模板硬排：命中排除词且 README 无业务实证的仓库不入库，skippedTemplate 计数并有日志', async () => {
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    expect(r.skippedTemplate).toBe(1)
+    const row = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE repo = ?').get(TEMPLATE_FIXTURE) as any
+    expect(row.c).toBe(0)
+    expect(msgs.some((m) => m === '模板/脚手架硬排跳过 1 个')).toBe(true)
+  })
+
+  it('业务含量不足（businessDepth < 12）直接不入库，skippedShallow 计数并有日志', async () => {
+    ctx.config.scout.weights.businessDepth = 8 // 上限压到 8 → mock 下所有候选都 < 12
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    expect(r.skippedShallow).toBe(okScoutable)
+    const scored = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE license_ok = 1').get() as any
+    expect(scored.c).toBe(0) // 连 candidate 都没建
+    expect(msgs.some((m) => m === `业务含量不足（businessDepth < 12）跳过 ${okScoutable} 个`)).toBe(true)
+  })
+
+  it('默认权重下 fixtures 业务含量都够，skippedShallow = 0', async () => {
+    const r = await scoutCandidates(ctx)
+    expect(r.skippedShallow).toBe(0)
+  })
+
+  it('score 合成含 businessDepth，score_detail 也带该维与理由', async () => {
+    await scoutCandidates(ctx)
+    const row: any = ctx.db.prepare("SELECT score, score_detail FROM candidates WHERE repo = 'chatwoot/chatwoot'").get()
+    const d = JSON.parse(row.score_detail)
+    expect(d.businessDepth).toBeGreaterThanOrEqual(12)
+    expect(typeof d.businessDepthReason).toBe('string')
+    expect(row.score).toBe(d.rebrandCost + d.buyerClarity + d.visualAppeal + d.businessDepth)
   })
 })
