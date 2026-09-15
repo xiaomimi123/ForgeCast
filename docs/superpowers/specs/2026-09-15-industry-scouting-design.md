@@ -95,6 +95,18 @@ repo 名/描述命中 `template|boilerplate|starter|theme|scaffold|admin-ui|comp
 - **UI 没有雷达图**：§3 说的「评分明细」在实现里是四条进度条（`buildDims`），不是雷达图；第四维「业务」按同一套条渲染，低分时在下方补一行 `businessDepthReason`。
 - **「按新标准重评候选池」的实际语义**：设置页的按钮复用既有 `POST /api/candidates/rescore-all`，而该路由只重评 `score_detail` 里没有 `targetBuyer` 的候选（＝「没真评过」的），**不会**强制重评已有旧三维分的候选。逐个重评仍走候选抽屉的「重新评分」。批量强制重评的路由未新增——记 backlog，UI 与 README 已写明旧三维分与新四维分不可直接比较。
 
+## 8. 最终审查修复波（2026-09-15，拿真实仓库实跑后）
+
+审查用 8 个真实仓库实跑终态代码，拦截率 4/7、误伤率 3/9（误伤集中在教育/健康/本地生活）。本波的修正：
+
+- **GitHub 搜索节流**（M1）：`searchRepos` 逐词之间按 token 有无节流（2s / 6.5s），403·429 走 5s→15s 退避重试，结局通过 `SearchOpts.onNote` 回调上报。日志据此区分「限流，已跳过」与「真 0 命中（词可能太偏）」——旧日志把限流报成词太偏，会把用户引去反复重生成搜索词。另外**每行业每轮最多取 10 个词**（`MAX_KEYWORDS_PER_INDUSTRY`），8 行业 × 14 词 ≈ 113 次请求必然打爆 30/min 限额。
+- **模板排除词拆两张表**（M2）：**name 段用全表**（含 example/demo/tutorial/theme/learning），**description 只用强脚手架词** `template|boilerplate|starter|scaffold|awesome-`。原因：`learning` 作用在描述上会把 moodle（「the world's open source learning platform」）挡在 LLM 之前。
+- **业务实证词表补齐 + 行业域词**（M3）：实体词补 `student|course|enrollment|patient|appointment|booking|reservation|inventory|ticket|member|shipment|quotation`（刻意不收 `payment|subscription|product|storefront`——都是 SaaS/电商模板的口头禅）；另加一张**行业域词**表（`medical|patient|learner|educator|classroom|payroll|restaurant|warehouse|crm|erp|lms|helpdesk|e-commerce` 等），因为真实仓库的 README 往往是营销/开发说明，通篇没有实体名词（moodle 只说 learners/educators，openemr 只说 medical practice）。
+- **README 里的 URL 不参与词判定**：`https://github.com/<o>/<r>/actions/workflows/ci.yml/badge.svg` 这种 CI 徽章人人都有，无边界匹配 `workflows` 等于给每个仓库白送一个业务实证词——实测 openemr / ant-design-pro 都是靠徽章过的门槛。
+- **业务实证要求两个互不相同的词**：单个词几乎全是噪音（ant-design-pro 的 "Solid workflow"、vue-element-admin 的 "Permission Authentication"、vercel/commerce 的 "ecommerce template"），而真业务系统都稳稳 ≥2。**模板硬排的反证仍只要 1 个词**——那条硬排在 live 下也跑且连 candidate 都不建，错杀代价更大。
+- **数据层词加成 10 → 5**（Minor 12）：`github=live + llm=mock`（有 GH token 没 LLM key）是合法组合，旧口径下「只有 prisma/api 的空壳」拿 16 分稳过门槛 12。现在 6+5=11 < 12，**必须至少有业务实证才可能过线**；实证加成相应 14 → 19，满分仍是 30。
+- **shallow 仓库落 `status='dismissed'` 记录**（M4）：旧实现「连 candidate 都不建」，导致每日 `onlyNew` 抓取每天把同一批浅仓库重抓 README + 重烧一次 LLM，还长期占用 Top-limit 评分名额。现在落一条 dismissed（既有状态，选品页折叠在「已淘汰」里；双轨看板一并过滤掉 dismissed），人工状态（starred/picked）不会被打回。
+
 ### backlog（本次未做）
 
 - 候选 ↔ 行业多对多（交叉行业统计）。

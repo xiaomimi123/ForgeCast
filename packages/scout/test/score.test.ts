@@ -279,14 +279,14 @@ describe('自定义权重', () => {
 })
 
 describe('businessDepth 业务含量（mock 推分）', () => {
-  it('业务实证词 + 数据模型词都命中 → 封顶；只有实证词 → 20；都没有 → 6（低于 12 的入库门槛）', async () => {
+  it('业务实证词 + 数据模型词都命中 → 封顶；只有实证词 → 25；只有数据层词 → 11（也低于门槛）；都没有 → 6', async () => {
     const c = ctxWith({})
     const full = await scoreCandidate(c, meta, '订单 order 与 customer 档案，含 database schema 与 migration')
-    expect(full.businessDepth).toBe(30) // min(30, 6+14+10)
+    expect(full.businessDepth).toBe(30) // min(30, 6+19+5)
     const proofOnly = await scoreCandidate(c, meta, '有 order 与 customer 两类业务实体')
-    expect(proofOnly.businessDepth).toBe(20) // 6+14
+    expect(proofOnly.businessDepth).toBe(25) // 6+19
     const stackOnly = await scoreCandidate(c, meta, 'Prisma ORM + REST api，没有任何业务实体')
-    expect(stackOnly.businessDepth).toBe(16) // 6+10：光有数据层不算业务实证
+    expect(stackOnly.businessDepth).toBe(11) // 6+5：光有数据层不算业务实证，且刻意压到门槛 12 以下
     const none = await scoreCandidate(c, meta, 'a pretty terminal skin with nice colors')
     expect(none.businessDepth).toBe(6)
     expect(none.businessDepthReason).toContain('未命中')

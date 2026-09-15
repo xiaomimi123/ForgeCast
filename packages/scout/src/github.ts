@@ -2,6 +2,13 @@ import type { ForgecastConfig } from '@forgecast/core'
 import { candidateFixtures } from './fixtures/candidate-fixtures'
 import type { RepoMeta, SearchOpts } from './types'
 
+/** GitHub search API 限速：带 token 30 次/分 → 2s/次；没 token 10 次/分 → 6.5s/次。 */
+const THROTTLE_WITH_TOKEN = 2000
+const THROTTLE_NO_TOKEN = 6500
+/** 被限流（403/429）后的退避重试间隔，用完还失败就跳过这个词。 */
+const RETRY_BACKOFF_MS = [5000, 15000]
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
 export interface GithubClient {
   searchRepos(topics: string[], opts: SearchOpts): Promise<RepoMeta[]>
   /** 按关键词全文搜（tailor 找轮子用）：失败抛错（调用方按能力项隔离失败），searchRepos 则是静默跳过 */
@@ -11,6 +18,9 @@ export interface GithubClient {
   fetchReadme(repo: string): Promise<string>
   fetchTree(repo: string): Promise<string[]>
 }
+
+/** 403（二级限流/额度耗尽）与 429（显式限流）都算限流。 */
+function isRateLimited(status: number): boolean { return status === 403 || status === 429 }
 
 /** GitHub 客户端：mock 返回 fixture（离线），live 走官方 API（token 可选） */
 export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: typeof fetch = fetch): GithubClient {
@@ -45,20 +55,37 @@ export function createGithubClient(cfg: ForgecastConfig['github'], fetchImpl: ty
 
   return {
     async searchRepos(topics, opts) {
+      // 一词一次 search 请求，GitHub 限速 30 次/分（带 token）。不节流的话
+      // 8 行业 × 十几个词一轮就打爆限额，后面的词全静默 0 命中——日志还会把它报成"词太偏"，
+      // 用户于是反复重生成搜索词，越修越错。所以：请求间节流 + 429/403 退避重试 + 结局回调。
+      const sleep = opts.sleep ?? defaultSleep
+      const throttleMs = opts.throttleMs ?? (cfg.token ? THROTTLE_WITH_TOKEN : THROTTLE_NO_TOKEN)
+      const note = opts.onNote ?? (() => {})
       const seen = new Map<string, RepoMeta>()
-      for (const topic of topics) {
+      for (const [i, topic] of topics.entries()) {
+        if (i > 0 && throttleMs > 0) await sleep(throttleMs)
         const q = `topic:${topic} stars:>${opts.minStars} pushed:>${opts.pushedAfter}`
         const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&per_page=${opts.perTopic}`
-        const res = await fetchImpl(url, { headers })
-        if (!res.ok) continue // 单个 topic 失败不影响其他（限速等）
+        let res = await fetchImpl(url, { headers })
+        for (let attempt = 0; !res.ok && isRateLimited(res.status) && attempt < RETRY_BACKOFF_MS.length; attempt++) {
+          await sleep(RETRY_BACKOFF_MS[attempt])
+          res = await fetchImpl(url, { headers })
+        }
+        if (!res.ok) {
+          // 限流与真失败要分开报：前者说明"没搜成"，后者才是"词/请求有问题"
+          note({ topic, kind: isRateLimited(res.status) ? 'rate-limited' : 'error', status: res.status })
+          continue // 单个 topic 失败不影响其他
+        }
         const data: any = await res.json()
-        for (const it of data.items ?? []) {
+        const items = data.items ?? []
+        for (const it of items) {
           seen.set(it.full_name, {
             repo: it.full_name, url: it.html_url, description: it.description ?? null,
             license: it.license?.spdx_id ?? null,
             stars: it.stargazers_count ?? 0, lastCommit: it.pushed_at ?? null, topics: it.topics ?? [],
           })
         }
+        note({ topic, kind: 'ok', count: items.length })
       }
       return [...seen.values()]
     },

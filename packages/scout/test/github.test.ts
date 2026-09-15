@@ -48,6 +48,65 @@ describe('createGithubClient live', () => {
     expect(init.headers.authorization).toBe('Bearer t1')
   })
 
+  it('searchRepos 节流：逐词之间 sleep，节流参数可注入', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [] })))
+    const slept: number[] = []
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    await gh.searchRepos(['a', 'b', 'c'], {
+      minStars: 300, pushedAfter: '2024-01-01', perTopic: 20,
+      throttleMs: 1234, sleep: async (ms) => { slept.push(ms) },
+    })
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(slept).toEqual([1234, 1234]) // 第一个词不等
+  })
+
+  it('searchRepos 限流：429 退避重试，重试仍失败 → 报 rate-limited 而不是当成 0 命中', async () => {
+    const fetchImpl = vi.fn(async () => new Response('rate limited', { status: 429 }))
+    const notes: any[] = []
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    const repos = await gh.searchRepos(['crm'], {
+      minStars: 300, pushedAfter: '2024-01-01', perTopic: 20,
+      throttleMs: 0, sleep: async () => {}, onNote: (n) => notes.push(n),
+    })
+    expect(repos).toEqual([])
+    expect(fetchImpl).toHaveBeenCalledTimes(3) // 首发 + 两次退避重试
+    expect(notes).toEqual([{ topic: 'crm', kind: 'rate-limited', status: 429 }])
+  })
+
+  it('searchRepos 限流：403 退避后成功 → 正常返回，结局记 ok', async () => {
+    let n = 0
+    const fetchImpl = vi.fn(async () => {
+      n++
+      return n === 1
+        ? new Response('secondary rate limit', { status: 403 })
+        : new Response(JSON.stringify({ items: [{ full_name: 'acme/widget', html_url: 'u', description: null, license: null, stargazers_count: 1, pushed_at: null, topics: [] }] }))
+    })
+    const notes: any[] = []
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    const repos = await gh.searchRepos(['crm'], {
+      minStars: 300, pushedAfter: '2024-01-01', perTopic: 20,
+      throttleMs: 0, sleep: async () => {}, onNote: (nt) => notes.push(nt),
+    })
+    expect(repos).toHaveLength(1)
+    expect(notes).toEqual([{ topic: 'crm', kind: 'ok', count: 1 }])
+  })
+
+  it('searchRepos 真 0 命中与非限流错误分得开', async () => {
+    const fetchImpl = vi.fn(async (url: string) => (String(url).includes('bad')
+      ? new Response('boom', { status: 500 })
+      : new Response(JSON.stringify({ items: [] }))))
+    const notes: any[] = []
+    const gh = createGithubClient(liveCfg, fetchImpl as any)
+    await gh.searchRepos(['good', 'bad'], {
+      minStars: 300, pushedAfter: '2024-01-01', perTopic: 20,
+      throttleMs: 0, sleep: async () => {}, onNote: (n) => notes.push(n),
+    })
+    expect(notes).toEqual([
+      { topic: 'good', kind: 'ok', count: 0 },
+      { topic: 'bad', kind: 'error', status: 500 },
+    ])
+  })
+
   it('fetchReadme：raw 命中直接返回，不打 API', async () => {
     const fetchImpl = vi.fn(async () => new Response('# raw 内容'))
     const gh = createGithubClient(liveCfg, fetchImpl as any)

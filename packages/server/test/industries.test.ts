@@ -100,7 +100,7 @@ describe('行业 CRUD /api/industries', () => {
     expect(res.status).toBe(404)
   })
 
-  it('删行业后 industry_queries 缓存行也没了（无 PRAGMA foreign_keys，需路由显式删）', async () => {
+  it('删行业后 industry_queries 缓存行也没了（路由显式删，不依赖外键级联）', async () => {
     const created = await json(await app.request('/api/industries', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: '资讯媒体2' }),

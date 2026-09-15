@@ -105,9 +105,12 @@ function heuristicScore(meta: RepoMeta, readme: string, weights: Weights): Score
   const rebrandCost = Math.min(weights.rebrandCost, 12 + (has(/docker/) ? 9 : 0) + (has(/react|next|vue|node/) ? 9 : 0))
   const buyerClarity = Math.min(weights.buyerClarity, 18 + (readme.length > 200 ? 10 : 0) + (hasVertical ? 12 : 0))
   const visualAppeal = Math.min(weights.visualAppeal, 8 + (has(/screenshot|demo|preview/) ? 12 : 0) + (has(/dashboard|ui|interface/) ? 10 : 0))
-  // 业务含量：命中业务实证词 +14，再命中数据库/模型词 +10，底分 6（都不中=6，低于 12 的门槛，直接被硬排）
+  // 业务含量：命中业务实证词 +19，再命中数据库/模型词 +5，底分 6（都不中=6，低于 12 的门槛，直接被硬排）。
+  // 数据层词的加成刻意压到 5（6+5=11 < 门槛 12）：`github=live + llm=mock`（有 GH token 没 LLM key）
+  // 是合法组合，旧的 +10 让"只有 prisma/api 的漂亮空壳"拿 16 分稳过门槛，这条路径下门槛几乎不拦人。
+  // 现在必须至少命中一个**业务实体词**才可能过线。
   const { proof, dataModel } = businessProofHits(readme)
-  const businessDepth = Math.min(weights.businessDepth, 6 + (proof ? 14 : 0) + (dataModel ? 10 : 0))
+  const businessDepth = Math.min(weights.businessDepth, 6 + (proof ? 19 : 0) + (dataModel ? 5 : 0))
   const businessDepthReason = `离线启发式：业务实证词${proof ? '命中' : '未命中'}·数据模型词${dataModel ? '命中' : '未命中'}`
   const techStack = TECHS.filter((t) => r.includes(t)).concat(meta.topics)
   const base = {

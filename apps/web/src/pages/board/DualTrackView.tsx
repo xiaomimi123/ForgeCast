@@ -21,13 +21,15 @@ export default function DualTrackView({ candidates, onOpenDetail, onPick, pickin
   onPick: (repo: string) => void
   picking: Set<string>
 }) {
-  const rows = candidates.map((c) => ({ c, d: parseDetail(c.score_detail) }))
+  // dismissed（低分淘汰 / 业务含量不足）不进双轨看板——它们在选品页的"已淘汰"折叠区里可查，
+  // 摆进看板只会挤占真候选的位置。
+  const rows = candidates.filter((c) => c.status !== 'dismissed').map((c) => ({ c, d: parseDetail(c.score_detail) }))
   const profitRows = rows.filter((r) => r.d?.track === 'profit').sort((a, b) => (b.d?.gapScore ?? 0) - (a.d?.gapScore ?? 0))
   const trafficRows = rows.filter((r) => r.d?.track === 'traffic').sort((a, b) => (b.d?.emotionScore ?? 0) - (a.d?.emotionScore ?? 0))
 
   const [dismissedHotId, setDismissedHotId] = useState<number | null>(null)
   const hot = candidates
-    .filter((c) => c.source === 'scout' && c.id !== dismissedHotId)
+    .filter((c) => c.source === 'scout' && c.status !== 'dismissed' && c.id !== dismissedHotId)
     .map((c) => ({ c, hrs: hoursSince(c.created_at) }))
     .filter((x): x is { c: Candidate; hrs: number } => x.hrs != null && x.hrs <= 48 && x.c.stars >= 2000 && x.c.license_ok === 1)
     .sort((a, b) => b.c.stars - a.c.stars)[0]?.c

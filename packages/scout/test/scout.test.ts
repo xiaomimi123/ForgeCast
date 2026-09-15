@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLlmClient, loadConfig, openDb, type CoreCtx } from '@forgecast/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_TOPICS, addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
+import { DEFAULT_TOPICS, MAX_KEYWORDS_PER_INDUSTRY, addRepo, backfillCandidateSummary, backfillCategories, candidatesNeedingRescore, candidatesNeedingSummary, cleanupCandidates, scoutBreakouts, scoutCandidates } from '../src/scout'
 import { INDUSTRY_MOCK_KEYWORDS } from '../src/industry'
 import { candidateFixtures } from '../src/fixtures/candidate-fixtures'
 import { isLicenseOk } from '../src/license'
@@ -169,7 +169,7 @@ describe('scoutCandidates onlyNew', () => {
     expect(row.stars).toBe(first.stars)                            // 元数据已刷新（seed 时是 1）
     expect(r.added).toBe(okScoutable - 1)                          // 排除已存在的 first
     // 新入库的可商用候选都评了分
-    const fresh = ctx.db.prepare('SELECT score FROM candidates WHERE repo != ? AND license_ok = 1').all(first.repo) as any[]
+    const fresh = ctx.db.prepare("SELECT score FROM candidates WHERE repo != ? AND license_ok = 1 AND status = 'candidate'").all(first.repo) as any[]
     expect(fresh.length).toBe(okScoutable - 1)
     for (const f of fresh) expect(f.score).not.toBeNull()
   })
@@ -352,7 +352,8 @@ describe('行业锚定选品', () => {
     const cached = ctx.db.prepare('SELECT industry_id FROM industry_queries').all() as any[]
     expect(cached).toHaveLength(8)
     // 搜索日志的 topic 数 = 各行业关键词去重合计
-    const total = new Set(inds.flatMap((i) => INDUSTRY_MOCK_KEYWORDS[i.name])).size
+    // 每行业最多取 MAX_KEYWORDS_PER_INDUSTRY 个词（GitHub search 限速，见 scout.ts）
+    const total = new Set(inds.flatMap((i) => INDUSTRY_MOCK_KEYWORDS[i.name].slice(0, MAX_KEYWORDS_PER_INDUSTRY))).size
     expect(msgs[0]).toBe(`搜索 GitHub（${total} 个关键词 · ${inds.length} 个行业）…`)
     // 候选归属到行业（mock 下所有 fixture 由第一个行业命中）
     const rows = ctx.db.prepare('SELECT repo, industry_id FROM candidates').all() as any[]
@@ -380,6 +381,47 @@ describe('行业锚定选品', () => {
     expect(rows.every((r) => r.industry_id === target.id)).toBe(true)
   })
 
+  it('M1：搜索被限流时日志说"限流"而不是"词太偏"，并计入 rateLimited', async () => {
+    const spy = vi.spyOn(await import('../src/github'), 'createGithubClient')
+    spy.mockImplementation((() => ({
+      async searchRepos(topics: string[], opts: any) {
+        for (const t of topics) opts.onNote?.({ topic: t, kind: 'rate-limited', status: 429 })
+        return []
+      },
+      async searchByKeywords() { return [] },
+      async searchBreakouts() { return [] },
+      async fetchReadme() { return '' },
+      async fetchTree() { return [] },
+    })) as any)
+    const msgs: string[] = []
+    const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
+    spy.mockRestore()
+    expect(r.rateLimited).toBeGreaterThan(0)
+    expect(r.found).toBe(0)
+    expect(msgs.some((m) => m.includes('被 GitHub 限流，已跳过'))).toBe(true)
+    expect(msgs.some((m) => m.includes('词可能太偏'))).toBe(false) // 不能误导用户去重生成搜索词
+  })
+
+  it('M1：每个行业最多取 MAX_KEYWORDS_PER_INDUSTRY 个搜索词（GitHub search 限速 30/min）', async () => {
+    const seen: string[][] = []
+    const spy = vi.spyOn(await import('../src/github'), 'createGithubClient')
+    spy.mockImplementation(((cfg: any) => {
+      const real = (spy.getMockImplementation() as any) // 不用真实现，直接手写一个记录用的
+      void real
+      return {
+        async searchRepos(topics: string[]) { seen.push(topics); return [] },
+        async searchByKeywords() { return [] },
+        async searchBreakouts() { return [] },
+        async fetchReadme() { return '' },
+        async fetchTree() { return [] },
+      }
+    }) as any)
+    await scoutCandidates(ctx)
+    spy.mockRestore()
+    expect(seen).toHaveLength(8)
+    expect(Math.max(...seen.map((t) => t.length))).toBeLessThanOrEqual(MAX_KEYWORDS_PER_INDUSTRY)
+  })
+
   it('模板硬排：命中排除词且 README 无业务实证的仓库不入库，skippedTemplate 计数并有日志', async () => {
     const msgs: string[] = []
     const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
@@ -389,13 +431,33 @@ describe('行业锚定选品', () => {
     expect(msgs.some((m) => m === '模板/脚手架硬排跳过 1 个')).toBe(true)
   })
 
-  it('业务含量不足（businessDepth < 12）直接不入库，skippedShallow 计数并有日志', async () => {
+  it('业务含量不足（businessDepth < 12）不进候选池，落一条 dismissed 记录，skippedShallow 计数并有日志', async () => {
     const msgs: string[] = []
     const r = await scoutCandidates(ctx, { onProgress: (m) => msgs.push(m) })
     expect(r.skippedShallow).toBe(1)
-    const row = ctx.db.prepare('SELECT COUNT(*) c FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE) as any
-    expect(row.c).toBe(0) // 连 candidate 都没建
+    const row = ctx.db.prepare('SELECT status, score FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE) as any
+    expect(row.status).toBe('dismissed') // 有记录但不在候选池里
+    expect(row.score).toBeGreaterThan(0) // 带评分，下次能靠记录识别，不用重烧 LLM
     expect(msgs.some((m) => m === '业务含量不足（businessDepth < 12）跳过 1 个')).toBe(true)
+  })
+
+  it('M4 回归：shallow 仓库次日 onlyNew 抓取不再重抓 README / 重烧评分', async () => {
+    await scoutCandidates(ctx)
+    const before: any = ctx.db.prepare('SELECT score, score_detail FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE)
+    const r2 = await scoutCandidates(ctx, { onlyNew: true })
+    expect(r2.skippedShallow).toBe(0) // 已不是 new，不再进评分池
+    const after: any = ctx.db.prepare('SELECT status, score, score_detail FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE)
+    expect(after.status).toBe('dismissed')
+    expect(after.score).toBe(before.score)
+    expect(after.score_detail).toBe(before.score_detail)
+  })
+
+  it('M4：shallow 记录不覆盖人工状态（已 starred 的候选不会被打回 dismissed）', async () => {
+    await scoutCandidates(ctx)
+    ctx.db.prepare("UPDATE candidates SET status = 'starred' WHERE repo = ?").run(SHALLOW_FIXTURE)
+    await scoutCandidates(ctx)
+    const row: any = ctx.db.prepare('SELECT status FROM candidates WHERE repo = ?').get(SHALLOW_FIXTURE)
+    expect(row.status).toBe('starred')
   })
 
   it('回归：第四维权重被调到 8（低于定值门槛 12）时门槛等比缩，不会静默清空选品', async () => {

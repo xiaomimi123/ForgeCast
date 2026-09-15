@@ -36,4 +36,17 @@ export interface ScoreDetail {
   wowScore?: number // traffic 专属：爽感 0-100
 }
 
-export interface SearchOpts { minStars: number; pushedAfter: string; perTopic: number }
+export interface SearchOpts {
+  minStars: number
+  pushedAfter: string
+  perTopic: number
+  /** 两次搜索请求之间的间隔（毫秒）。GitHub search API 限速 30 次/分（带 token），默认按此节流。 */
+  throttleMs?: number
+  /** 逐词搜索的结果回调：调用方靠它区分"限流跳过"与"真 0 命中"。 */
+  onNote?: (note: SearchNote) => void
+  /** 睡眠实现（测试注入，免得真等）。 */
+  sleep?: (ms: number) => Promise<void>
+}
+
+/** 单个关键词的搜索结局：ok=拿到结果（count 可能是 0），rate-limited=被限流且重试后仍失败，error=其它 HTTP 错。 */
+export interface SearchNote { topic: string; kind: 'ok' | 'rate-limited' | 'error'; status?: number; count?: number }

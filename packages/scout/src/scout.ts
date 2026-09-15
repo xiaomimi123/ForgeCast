@@ -5,6 +5,11 @@ import { isLicenseOk } from './license'
 import { CATEGORIES, businessDepthFloor, categorizeHeuristic, generateSummaryZh, scoreCandidate } from './score'
 import type { RepoMeta } from './types'
 
+/** 每个行业每轮最多搜这么多关键词。
+ *  GitHub search 限速 30 次/分：8 行业 × 14 词 ≈ 113 次请求，一轮下来只有排前面的两三个行业真搜到东西，
+ *  后面的全撞限流。收到 10 是"一轮能跑完 + 词表里最靠谱的前几个"的折中（词表本就按重要度排序）。 */
+export const MAX_KEYWORDS_PER_INDUSTRY = 10
+
 export const DEFAULT_TOPICS = [
   'crm', 'e-commerce', 'live-chat', 'booking', 'invoice', 'inventory', 'form-builder',
   'dashboard', 'chatbot', 'link-in-bio', 'scheduling', 'pos', 'wiki', 'survey',
@@ -23,6 +28,19 @@ ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.descripti
 
 // onlyNew 模式下已存在候选只刷元数据：score/score_detail/tech_stack/favorite/status 保持旧值
 // （保护 live 真评分不被 mock 启发式洗掉，也不重复烧 LLM 额度）
+// shallow（业务含量不够）也要落一条记录：status='dismissed'，让 isNew/inPool 认得出它，
+// 否则每日 onlyNew 抓取每天都会把同一批浅仓库重抓 README + 重烧一次 LLM，还长期霸占 Top-limit 评分名额。
+// 用既有的 dismissed 状态（UI 里本就折叠在"已淘汰"里），不新造状态值。
+// 已存在的候选不降级：只有当前还是 candidate 的才改判 dismissed，favorite/matched 等人工状态一律保留。
+const UPSERT_SHALLOW = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, tech_stack, score, score_detail, status, source, industry_id)
+VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, @tech_stack, @score, @score_detail, 'dismissed', @source, @industry_id)
+ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=${LICENSE_OK_STICKY},
+  stars=excluded.stars, last_commit=excluded.last_commit, tech_stack=excluded.tech_stack,
+  score=excluded.score, score_detail=excluded.score_detail,
+  industry_id=COALESCE(excluded.industry_id, candidates.industry_id),
+  status=CASE WHEN candidates.status = 'candidate' THEN 'dismissed' ELSE candidates.status END,
+  source=CASE WHEN excluded.source = 'manual' THEN 'manual' ELSE candidates.source END`
+
 const UPSERT_META = `INSERT INTO candidates (repo, url, description, license, license_ok, stars, last_commit, status)
 VALUES (@repo, @url, @description, @license, @license_ok, @stars, @last_commit, 'candidate')
 ON CONFLICT(repo) DO UPDATE SET url=excluded.url, description=excluded.description, license=excluded.license, license_ok=${LICENSE_OK_STICKY},
@@ -44,10 +62,11 @@ async function ingest(
   let score: number | null = null
   let scoreDetail: string | null = null
   let techStack: string | null = null
+  let shallow = false
   if (ok && scoreIt) {
     const readme = opts.readme ?? await gh.fetchReadme(meta.repo)
     const d = await scoreCandidate(ctx, meta, readme)
-    if (opts.enforceDepth && d.businessDepth < businessDepthFloor(ctx.config.scout.weights)) return 'shallow'
+    shallow = !!opts.enforceDepth && d.businessDepth < businessDepthFloor(ctx.config.scout.weights)
     score = d.rebrandCost + d.buyerClarity + d.visualAppeal + d.businessDepth
     techStack = JSON.stringify(d.techStack)
     scoreDetail = JSON.stringify({
@@ -57,12 +76,12 @@ async function ingest(
       summaryZh: d.summaryZh, category: d.category,
     })
   }
-  ctx.db.prepare(UPSERT).run({
+  ctx.db.prepare(shallow ? UPSERT_SHALLOW : UPSERT).run({
     repo: meta.repo, url: meta.url, description: meta.description, license: meta.license, license_ok: ok ? 1 : 0,
     stars: meta.stars, last_commit: meta.lastCommit, tech_stack: techStack, score, score_detail: scoreDetail, source,
     industry_id: opts.industryId ?? null,
   })
-  return 'ok'
+  return shallow ? 'shallow' : 'ok'
 }
 
 /** 取参与本次选品的行业：默认全部启用行业，industryIds 给了就只取其中启用的那些。 */
@@ -86,7 +105,7 @@ export async function scoutCandidates(
     industryIds?: number[]
     onProgress?: (msg: string) => void
   } = {},
-): Promise<{ found: number; scored: number; rejected: number; added: number; skippedTemplate: number; skippedShallow: number }> {
+): Promise<{ found: number; scored: number; rejected: number; added: number; skippedTemplate: number; skippedShallow: number; rateLimited: number }> {
   const log = opts.onProgress ?? (() => {})
   const gh = createGithubClient(ctx.config.github)
   const limit = opts.limit ?? 30
@@ -96,7 +115,7 @@ export async function scoutCandidates(
   const plans: Array<{ industryId: number | null; name: string; keywords: string[] }> = []
   for (const ind of opts.topics ? [] : selectIndustries(ctx, opts.industryIds)) {
     try {
-      plans.push({ industryId: ind.id, name: ind.name, keywords: await queriesFor(ctx, ind) })
+      plans.push({ industryId: ind.id, name: ind.name, keywords: (await queriesFor(ctx, ind)).slice(0, MAX_KEYWORDS_PER_INDUSTRY) })
     } catch (e) {
       // 单个行业生成搜索词失败（live LLM 抽风）不拖垮整轮选品
       log(`行业「${ind.name}」搜索词生成失败，跳过：${e instanceof Error ? e.message : String(e)}`)
@@ -110,9 +129,18 @@ export async function scoutCandidates(
   // 逐行业搜索并去重：同一 repo 被多个行业搜到时，归给先命中的那个行业
   const found: RepoMeta[] = []
   const industryOf = new Map<string, number | null>()
+  let rateLimited = 0
   for (const p of plans) {
-    const hits = await gh.searchRepos(p.keywords, { minStars: 300, pushedAfter, perTopic: 20 })
-    if (!hits.length && p.name) log(`行业「${p.name}」的 ${p.keywords.length} 个关键词 0 命中（词可能太偏，可在行业设置里重生成）`)
+    let limitedHere = 0
+    const hits = await gh.searchRepos(p.keywords, {
+      minStars: 300, pushedAfter, perTopic: 20,
+      onNote: (n) => { if (n.kind === 'rate-limited') { limitedHere++; rateLimited++ } },
+    })
+    if (limitedHere) {
+      log(`行业「${p.name || '默认词表'}」有 ${limitedHere}/${p.keywords.length} 个关键词被 GitHub 限流，已跳过（不是词太偏；配 token 或稍后重跑）`)
+    } else if (!hits.length && p.name) {
+      log(`行业「${p.name}」的 ${p.keywords.length} 个关键词 0 命中（词可能太偏，可在行业设置里重生成）`)
+    }
     for (const m of hits) {
       if (industryOf.has(m.repo)) continue
       industryOf.set(m.repo, p.industryId)
@@ -181,7 +209,8 @@ export async function scoutCandidates(
     if (!ok) rejected++
   }
   if (skippedShallow) log(`业务含量不足（businessDepth < ${businessDepthFloor(ctx.config.scout.weights)}）跳过 ${skippedShallow} 个`)
-  return { found: found.length, scored, rejected, added, skippedTemplate, skippedShallow }
+  if (rateLimited) log(`本轮共 ${rateLimited} 个关键词因 GitHub 限流没搜成`)
+  return { found: found.length, scored, rejected, added, skippedTemplate, skippedShallow, rateLimited }
 }
 
 /** 手动投喂单个 repo（URL 或 owner/name）：抓元数据+评分入池。用户手动指定来源，无视协议白名单强制放行。 */
