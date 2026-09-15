@@ -109,7 +109,7 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 |---|---|---|---|
 | **样式预设** | 单个图层的 `style` + `effects` | `style_presets` 表（全局，名字唯一） | 剪辑台右栏图层检查器的「预设」条 |
 | **排版模板** | 整条视频每个非视频层的位置/字号/颜色/特效 | `layout_templates` 表（全局，名字唯一，带 `template`+`ratio`） | 剪辑台工具栏「版式」菜单；出片时右栏「排版模板」下拉 |
-| **品牌 kit** | 主色 / 强调色 / 标题字号倍数 / CTA 文案 | `projects.brand_kit`（按项目一份） | 设置页「品牌 kit」块；剪辑台「版式 → 应用品牌 kit」 |
+| **品牌 kit** | 主色 / 强调色 / 标题字号倍数 / CTA 文案 / 品牌 logo | `projects.brand_kit`（按项目一份） | 设置页「品牌 kit」块；剪辑台「版式 → 应用品牌 kit」 |
 
 - **样式预设**：选中一层 → 预设条里挑一个**同 kind** 的预设，「套用」只作用这一层，「全部同类」套给所有同 kind 的层；「存为预设…」把当前层存下来（可勾「含位置」，不勾就把 `x/y` 剔掉再存——**含不含位置在存的那一刻定死**，套用时无条件按 payload 走）；下拉右侧「×」删掉当前选中的那个预设。
 - **排版模板**：「存为版式…」记下每层的 `{角色, style, effects}`。角色键 = `style.cssClass`（没有就退到语义段 id，再退到 `manual-<kind>`）+ 同名出现序号，套用时**按角色对位**覆盖——两条视频的卡片数不一样也能套，对不上的条目/层静默跳过。存的时候记下模板名与画幅（`width >= height` 即横屏），套用只列**同模板同画幅**的；出片时选了版式，服务端还会再核对一次模板一致（不一致 400）。
@@ -117,12 +117,14 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
   - `primaryColor` → CTA 层文字色；`ctaText` → 只换 CTA 层文本的**第一行**（第二行 `@品牌名` 原样保留）；
   - `accentColor` → 卖点卡（`card` / `highlightCard`）背景；
   - `titleScale` → 标题层（`painT` / `hookT` / `title`）字号 = `round(模板基准字号 × 倍数)`，基准表按「画幅取向 → 模板 → 类名」抄自模板 CSS（story 没有标题层，所以对 story 天然无效）。
+  - `logoAssetId` → **出片时自动贴 logo**：把该图片素材拷进本条视频的素材包（`hf/<videoId>/assets/media/`），并在 spec 末尾追加一层 `media-logo`（右上角，`x=画布宽-240 / y=60 / width=180`，铺满全片，落在最上层）。素材没了/跨项目只记一条 warning，不打断出片；已有 `media-logo` 层则跳过（重渲不会叠出第二个）。
   - **changelog 的 CTA 层不在作用域内**——它的类名是 `brand` 且品牌名在第一行，刻意避开，免得换第一行时把品牌名换掉。
 - 三条硬规则：
   1. **kit 不覆盖用户的选择**：`overridden: true` 的层（手调过、或刚被套过样式预设/版式的层）一律跳过，剪辑台会如实报出跳过了几层；想让 kit 覆盖这些层，先用「清除位置覆盖」之类的手段退回模板态。
   2. **kit 为空 = 零变化**：没设 kit 的项目，产出与本功能上线前**逐字节一致**（已用基线对照真渲验证）。
   3. 出片链路的顺序是 **先 kit、后版式**——同一层上版式里的值赢过 kit。
-- 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
+- 接口：`GET/POST/DELETE /api/style-presets`、`GET/POST/DELETE /api/layout-templates`、`GET/PUT /api/projects/:slug/brand-kit`（`logoAssetId` 必须是**本项目上传的图片素材** id，否则 400）；出片 `POST /api/projects/:slug/video` 可带 `layoutTemplateId`。删预设/删版式不影响已出片、已套用的 spec（存的是值快照）。
+- 图片素材接口（logo 与剪辑台加图层共用）：`POST /api/projects/:slug/upload-image`（multipart，png/jpg/jpeg/webp/svg、≤10MB，落 `workspace/<slug>/uploads/` 并登记一条 `type='image' origin='upload'` 素材）、`GET /api/projects/:slug/image-assets`（列本项目上传图片 + `shots/` 截图）、`POST /api/projects/:slug/videos/:videoId/media-asset`（body `{assetId}` 或 `{shotPath}` 二选一 → 拷进该视频素材包 `assets/media/`，重名加 `-1` 后缀，返 `{src}`；跨项目 400、`shotPath` 越出项目目录 400）。
 
 ### 图层特效（描边/圆角/阴影 · 毛玻璃 · 文字描边/发光 · 渐变 + 动画参数）
 
@@ -159,6 +161,38 @@ forgecast demand <import|list|extract|star|dismiss|request|match|matches>  # 需
 > **顺带的观感变化**：模板自带、此前同样画不出来的 `.highlightCard`（flash 黄框）与 `.card`（talk 黄框+
 > 半透明底）现在会现身。它们的版式沿用 `lower()` 既有的「无 x/y/width、文档流靠顶」形态，看起来是画面
 > 顶部一条通栏细带——这条版式债是既有的，未在本期处理。
+
+### 素材图层（工具栏「＋素材」：图片 / 形状 / 品牌 logo）
+
+给成片补一张图、压一条分割线、垫一块色块。设计见 `docs/superpowers/specs/2026-09-10-media-layers-design.md`。
+入口是剪辑台工具栏的「＋素材」菜单（选中一条内容项后才可用——图片要拷进该视频的素材包）。
+
+- **图片三个来源**（「图片…」开素材弹层）：
+  1. **本项目上传的图**（`origin='upload'`，弹层第一组）；
+  2. **项目截图**（`workspace/<slug>/shots/` 下的 png/jpg/webp，demo 模板用的那批）；
+  3. **弹层内上传新图**：png / jpg / jpeg / webp / svg，≤10MB（前端先拦一道，服务端 400 兜底），落 `workspace/<slug>/uploads/` 并登记成素材，上传成功直接加层。
+
+  选中哪一份都是先**拷进这条视频的素材包**（`hf/<videoId>/assets/media/<原名>`，重名加 `-1` 后缀），
+  图层 `content.src` 存相对路径——**值快照**：日后删掉素材库里的原图，已出片、已存 spec 都不受影响。
+- **形状三种**：**矩形** 400×240、**圆形** 400×240（真椭圆，两端基类 CSS `.clip:has(> .shape-ellipse){border-radius:50%}`）、
+  **线条** 600×6（`height` 就是线粗、`bg` 就是线色）。加进来自带底色 `#C13A1B`（`--fc-accent` 同值），
+  免得加完一片透明像「点了没反应」；描边 / 圆角 / 阴影 / 毛玻璃 / 渐变 / 九个动画特效对素材层全部通用。
+- **品牌 logo**：在**设置页「品牌 kit」块**里选（下拉只列本项目上传的图片，带缩略图，选「不使用 logo」＝清空），
+  出片时自动贴到右上角（`media-logo` 层，`x=画布宽-240 / y=60 / width=180`，图按 `width` 等比缩放）——规则见上一节 `logoAssetId`。
+  选中的素材若被删掉，下拉会重置成「不使用 logo」并提示「原 logo 素材已删除」，**点保存即从 kit 里清掉**。
+- **删除规则**：只有 `media-` 前缀的层能删（含 `media-logo`），模板生成的文案 / 截图 / 字幕层删不了（会抛错）。
+  入口两处：分镜列表「素材图层」分段展开后的「删除」、时间轴头部「删除素材层」，都带 in-app 二次确认。
+  加层 / 删层 / 拖挪各算**一步 undo**。**撤销「加图片」只回退 spec，不会回收已拷进素材包的那个文件**（孤儿文件，不影响渲染）。
+
+> **真渲抽帧验收（flash 竖版 1080×1920，本期）**：图片层 / svg 层 / 矩形 / 圆形 / 线条 / kit logo 六层同框，
+> 位置与名义值一致（相机缓推带来 ≤14px 整体偏移）；圆形填充率 0.781 ≈ π/4（π/4=0.785，胶囊形会接近 1），四角为背景色——**真椭圆**；
+> 线条 600×6 洋红渲出；logo 落在 (842,48) 180×180。**svg 与 png 渲染一致**（Chrome Headless 的 `<img>` 直接吃 svg），
+> 故 MIME 白名单保留 svg。
+>
+> **图片缩放**：图片层的 `<img>` 按图层 `width/height` **等比缩放、不裁切**（`object-fit: contain`）——
+> 只设一维时另一维自动等比，两维都设时图片完整装进框内。两端同值，所以中栏预览＝成片，画布拖角缩放跟手。
+> 模板自带的截图层走 `.phoneWrap`/`.wideWrap` 取景框，不受这条影响（它们不走裸 `<img>` 分支）。
+> 复验（本波）：300×120 的 kit logo 设 `width:180` → 抽帧实测 180×72；400×100 的图放进 200×200 的层 → 实测 200×50。
 
 **成片库批量审片**（实施说明 §7）
 

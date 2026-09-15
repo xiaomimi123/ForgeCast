@@ -26,6 +26,30 @@ import { registerSpecRoutes } from './spec-routes'
 // 可通过 PATCH 修改的项目字段白名单
 const PATCHABLE = ['brand_name', 'target_buyer', 'demo_url', 'price_deploy', 'price_custom', 'stage'] as const
 
+/** 图片素材白名单（上传与进包共用）。svg 收在里面是因为它进的是自家渲染器的 publicDir，不对外分发。 */
+export const IMAGE_EXT_RE = /\.(png|jpe?g|webp|svg)$/i
+export const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'])
+/** 单张图片上限 10MB——素材包要能整体搬走，一张几十兆的原图进包只会让每次重渲都拖着它。 */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+/** videoId 形状（防路径穿越，与 spec-routes.ts 的 VIDEO_ID_RE 同一条规则）。 */
+const MEDIA_VIDEO_ID_RE = /^[0-9a-f-]{8,64}$/i
+
+/** `child` 是否落在 `dir` 之内（两端都应是已 resolve/realpath 的绝对路径）。 */
+export function insideDir(dir: string, child: string): boolean {
+  return child === dir || child.startsWith(dir + path.sep)
+}
+
+/** 目录内避让重名：`logo.png` 已在 → `logo-1.png` → `logo-2.png`…（不覆盖已进包的同名素材）。 */
+export function uniqueName(dir: string, name: string): string {
+  if (!fs.existsSync(path.join(dir, name))) return name
+  const ext = path.extname(name)
+  const stem = name.slice(0, name.length - ext.length)
+  for (let i = 1; ; i++) {
+    const candidate = `${stem}-${i}${ext}`
+    if (!fs.existsSync(path.join(dir, candidate))) return candidate
+  }
+}
+
 /**
  * fail-soft 读文件：读不到（不存在 / 权限异常 / 被换成目录 / TOCTOU 等）一律返回空串，不抛错。
  * 用于 analysis.md 这类"没有也正常"的可选文件——不该让整个项目列表接口因为单个项目的文件问题而 500。
@@ -343,6 +367,112 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     return c.json({ files: fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [] })
   })
 
+  // —— 素材图层入口（子项目⑤第四期）：图片上传 / 可选素材列表 / 拷进某条视频的素材包 ——
+
+  /** 图片上传白名单。扩展名与 MIME 双卡：浏览器给的 MIME 可伪造，扩展名决定落盘后谁来解码。
+   *  svg 单列——它是可执行文档（内嵌 script），只在**自家渲染器**里当图片用，不对外分发。 */
+  app.post('/api/projects/:slug/upload-image', async (c) => {
+    const slug = c.req.param('slug')
+    const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+    if (!project) return c.json({ error: '项目不存在' }, 404)
+    const body = await c.req.parseBody()
+    const file = body.file
+    if (!(file instanceof File)) return c.json({ error: '缺少 file 字段' }, 400)
+    const safeName = path.basename(file.name)
+    if (!IMAGE_EXT_RE.test(safeName)) return c.json({ error: '仅支持 png/jpg/jpeg/webp/svg' }, 400)
+    // MIME 空串（某些客户端不填）放行，交给扩展名判定；填了就必须在白名单里
+    if (file.type && !IMAGE_MIME.has(file.type)) return c.json({ error: `不支持的图片类型: ${file.type}` }, 400)
+    if (file.size > MAX_IMAGE_BYTES) return c.json({ error: '图片不得超过 10MB' }, 400)
+    const dir = path.join(ctx.config.paths.workspace, slug, 'uploads')
+    fs.mkdirSync(dir, { recursive: true })
+    // 同名不覆盖：旧素材行还指着旧文件（与 upload-video 同一条规则）
+    const finalName = fs.existsSync(path.join(dir, safeName)) ? `${Date.now()}-${safeName}` : safeName
+    fs.writeFileSync(path.join(dir, finalName), Buffer.from(await file.arrayBuffer()))
+    const relPath = path.join(slug, 'uploads', finalName)
+    const info = ctx.db.prepare(
+      "INSERT INTO assets (project_id, type, hook, file_path, warnings, origin) VALUES (?, 'image', NULL, ?, '[]', 'upload')",
+    ).run(project.id, relPath)
+    return c.json({ id: Number(info.lastInsertRowid), filePath: relPath })
+  })
+
+  /** 素材弹层的候选列表：本项目上传的图片 + demo 截图目录里的图。
+   *  `path` 一律是**相对 workspace** 的（upload）/ **相对项目目录**的（shot）——与 media-asset
+   *  的两个入参一一对应：upload 走 assetId，shot 走 shotPath。 */
+  app.get('/api/projects/:slug/image-assets', (c) => {
+    const slug = c.req.param('slug')
+    if (!ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)) return c.json({ error: '项目不存在' }, 404)
+    const uploads = ctx.db.prepare(
+      "SELECT id, file_path FROM assets WHERE project_id = (SELECT id FROM projects WHERE slug = ?) AND type = 'image' AND origin = 'upload' ORDER BY id DESC",
+    ).all(slug) as Array<{ id: number; file_path: string }>
+    const out: Array<Record<string, unknown>> = uploads.map((r) => ({
+      kind: 'upload', id: r.id, path: r.file_path, name: path.basename(r.file_path),
+    }))
+    const shotsDir = path.join(ctx.config.paths.workspace, slug, 'shots')
+    if (fs.existsSync(shotsDir)) {
+      for (const f of fs.readdirSync(shotsDir).filter((n) => /\.(png|jpe?g|webp)$/i.test(n)).sort()) {
+        out.push({ kind: 'shot', path: path.join('shots', f), name: f })
+      }
+    }
+    return c.json(out)
+  })
+
+  /**
+   * 把一份图片素材拷进某条视频的素材包（`hf/<videoId>/assets/media/`），返回 spec 能直接用的相对 src。
+   *
+   * 为什么是拷贝而不是引用原路径：spec 里的 `content.src` 一律相对 hf 目录解析（Remotion 的
+   * publicDir 就是它），素材包要能独立搬走/重渲；指原路径的话删一次上传目录就全断。
+   * 重名不覆盖（加 `-1`/`-2` 后缀）：同一张图允许多次进包，各图层各指各的，互不影响。
+   */
+  app.post('/api/projects/:slug/videos/:videoId/media-asset', async (c) => {
+    const slug = c.req.param('slug')
+    const videoId = c.req.param('videoId')
+    if (!MEDIA_VIDEO_ID_RE.test(videoId)) return c.json({ error: 'videoId 非法' }, 400)
+    // slug 定项目、videoId 只定素材包目录——**不**反查 assets 行：素材包在渲染登记之前就已存在
+    // （管线先 scaffold 目录、后 INSERT），靠 spec_path 反查会让「渲染完成前加图层」吃 404。
+    const project: any = ctx.db.prepare('SELECT id FROM projects WHERE slug = ?').get(slug)
+    if (!project) return c.json({ error: '项目不存在' }, 404)
+    const hfDir = path.join(ctx.config.paths.workspace, slug, 'hf', videoId)
+    if (!fs.existsSync(hfDir)) return c.json({ error: '素材包不存在' }, 404)
+
+    const body = await c.req.json().catch(() => ({} as any))
+    const hasAsset = body?.assetId !== undefined && body?.assetId !== null
+    const hasShot = typeof body?.shotPath === 'string' && body.shotPath !== ''
+    if (hasAsset === hasShot) return c.json({ error: 'assetId 与 shotPath 二选一' }, 400)
+
+    let srcAbs: string
+    if (hasAsset) {
+      if (typeof body.assetId !== 'number') return c.json({ error: 'assetId 必须是数字' }, 400)
+      const row: any = ctx.db.prepare("SELECT project_id, file_path FROM assets WHERE id = ? AND type = 'image' AND origin = 'upload'").get(body.assetId)
+      if (!row) return c.json({ error: '图片素材不存在' }, 404)
+      // 跨项目是**授权**问题（400），不是「找不到」（404）——照 talk uploadAssetId 的先例分开报
+      if (row.project_id !== project.id) return c.json({ error: '所选素材不属于本项目' }, 400)
+      srcAbs = path.join(ctx.config.paths.workspace, row.file_path)
+      if (!fs.existsSync(srcAbs)) return c.json({ error: '素材文件已丢失' }, 404)
+    } else {
+      // 截图路径来自外部输入：必须钉死在**本项目目录**内。绝对路径 / .. / 反斜杠一律拒绝，
+      // 再用 resolve 后的前缀做一次兜底（软链、大小写、多重 ./ 等花样都在这一关收口）。
+      const rel: string = body.shotPath
+      if (rel.includes('\\') || path.isAbsolute(rel) || rel.split('/').includes('..')) {
+        return c.json({ error: 'shotPath 不允许绝对路径或 ..' }, 400)
+      }
+      const projDir = path.resolve(ctx.config.paths.workspace, slug)
+      srcAbs = path.resolve(projDir, rel)
+      if (!IMAGE_EXT_RE.test(srcAbs)) return c.json({ error: '仅支持 png/jpg/jpeg/webp/svg' }, 400)
+      if (!fs.existsSync(srcAbs) || !fs.statSync(srcAbs).isFile()) return c.json({ error: '截图不存在' }, 404)
+      // 第二道：按 **realpath** 再核一次。上面那道拦的是路径字面量里的 `..`，拦不住
+      // 「项目目录里放一条指向外面的软链」——resolve 不解析软链，只有 realpath 会。
+      if (!insideDir(fs.realpathSync(projDir), fs.realpathSync(srcAbs))) {
+        return c.json({ error: 'shotPath 越出项目目录' }, 400)
+      }
+    }
+
+    const mediaDir = path.join(hfDir, 'assets', 'media')
+    fs.mkdirSync(mediaDir, { recursive: true })
+    const finalName = uniqueName(mediaDir, path.basename(srcAbs))
+    fs.copyFileSync(srcAbs, path.join(mediaDir, finalName))
+    return c.json({ src: `assets/media/${finalName}` })
+  })
+
   // AI 生成演示图：LLM 写 3 份完整 HTML（仪表盘/列表/详情）+ Playwright 截图，落进 shots/
   app.post('/api/projects/:slug/screens', async (c) => {
     const slug = c.req.param('slug')
@@ -462,6 +592,7 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
   // 切勿把本路由暴露到 loopback 之外。
   const MIME: Record<string, string> = {
     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    '.gif': 'image/gif', '.svg': 'image/svg+xml',
     '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -475,9 +606,17 @@ export function createApp(ctx: CoreCtx, queue: TaskQueue): Hono {
     if (!abs.startsWith(wsRoot + path.sep) || !fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
       return c.notFound()
     }
-    return c.body(fs.readFileSync(abs) as any, 200, {
-      'content-type': MIME[path.extname(abs)] ?? 'application/octet-stream',
-    })
+    const ext = path.extname(abs)
+    const headers: Record<string, string> = {
+      'content-type': MIME[ext] ?? 'application/octet-stream',
+    }
+    // SVG 不是普通图片：它是可执行文档，顶层导航打开时里面的 <script>/onload 会在本源上跑。
+    // 素材是用户自己上传的（本机单人用），但仍按最小权限给这一支加 sandbox——CSP 的
+    // sandbox 指令把响应放进无源沙箱、禁脚本。**只对 .svg 加**：其他类型加了会误伤
+    // hf/ 产物页（那是靠脚本跑 GSAP 时间线的）。<img src="x.svg"> 这种渲染路径本来就
+    // 不执行脚本，所以剪辑台/预览里的显示不受这条影响。
+    if (ext === '.svg') headers['content-security-policy'] = 'sandbox'
+    return c.body(fs.readFileSync(abs) as any, 200, headers)
   })
 
   // —— M1 scout ——

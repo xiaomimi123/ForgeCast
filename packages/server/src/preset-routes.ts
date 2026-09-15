@@ -8,7 +8,7 @@ const TEMPLATES = ['flash', 'story', 'demo', 'changelog', 'insight', 'talk'] as 
 const RATIOS = ['portrait', 'landscape'] as const
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
-const BRAND_KIT_KEYS = ['primaryColor', 'accentColor', 'titleScale', 'ctaText'] as const
+const BRAND_KIT_KEYS = ['primaryColor', 'accentColor', 'titleScale', 'ctaText', 'logoAssetId'] as const
 
 /** brand-kit PUT 校验：色值 hex、titleScale 0.5-2、ctaText <=60 字符、未知键 400。合法返回 null。 */
 export function validateBrandKit(body: any): string | null {
@@ -28,6 +28,12 @@ export function validateBrandKit(body: any): string | null {
   }
   if (body.ctaText !== undefined && (typeof body.ctaText !== 'string' || body.ctaText.length > 60)) {
     return 'ctaText 必须是不超过 60 字符的字符串'
+  }
+  // 只做**形状**校验：logoAssetId 指向哪条素材、是不是本项目的，得查库——那一步留在 PUT 路由里
+  // （本函数刻意保持纯函数，与 spec-routes 的 validateSpecPut 同一个分工）。
+  if (body.logoAssetId !== undefined
+    && (typeof body.logoAssetId !== 'number' || !Number.isInteger(body.logoAssetId) || body.logoAssetId <= 0)) {
+    return 'logoAssetId 必须是正整数素材 id'
   }
   return null
 }
@@ -124,6 +130,14 @@ export function registerPresetRoutes(app: Hono, ctx: CoreCtx): void {
     const body = await c.req.json().catch(() => null)
     const err = validateBrandKit(body)
     if (err) return c.json({ error: err }, 400)
+    // logo 必须是**本项目上传的图片素材**：出片时要按这条 id 把文件拷进素材包，指错了只会在
+    // 渲染阶段变成一条 warning——那时用户早已离开这个设置面板，所以在写入前就拦住。
+    if (body.logoAssetId !== undefined) {
+      const logo = ctx.db.prepare(
+        "SELECT id FROM assets WHERE id = ? AND project_id = ? AND type = 'image' AND origin = 'upload'",
+      ).get(body.logoAssetId, project.id)
+      if (!logo) return c.json({ error: '所选 logo 不是本项目上传的图片素材' }, 400)
+    }
     ctx.db.prepare('UPDATE projects SET brand_kit = ? WHERE id = ?').run(JSON.stringify(body), project.id)
     return c.json(body)
   })

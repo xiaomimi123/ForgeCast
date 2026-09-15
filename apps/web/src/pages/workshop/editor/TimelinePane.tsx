@@ -1,8 +1,8 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
-import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
+import type { Layer, VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import {
   addCaptionLayer, addManualBeat, allBeats, deriveShots, layoutRow, moveLayer, moveShotBy,
-  removeCaptionLayer, removeManualBeat, resizeLayer, snapToBeats, trimVideoLayer, updateLayerText,
+  removeCaptionLayer, removeManualBeat, removeMediaLayer, resizeLayer, snapToBeats, trimVideoLayer, updateLayerText,
   type Beat, type ShotView,
 } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
 import { fmtTimecode } from './ShotList'
-import { isManualCaption } from './ui'
+import { isManualCaption, isMediaLayer, mediaLayerLabel, OUTLINE } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /** §4 尺寸表。五条轨道的高度是**唯一**来源：轨道名列与轨道行都从这个数组渲，才不会各写各的。
@@ -21,18 +21,26 @@ import type { useEditorState } from './useEditorState'
  * 分镜/卡点轨没有时间参照物。留它之后 compact 高度 = 头32 + 刻度20 + 分镜46 + 卡点26 = 124 ≤ 148。 */
 const HEAD_H = 32
 const NAME_W = 104
+/** 素材轨里一道的高度（含 2px 间隔）。三道以内每道都是这个高度，轨道整体跟着长。 */
+const MEDIA_LANE_H = 14
+/** 素材轨最多长到几道；再多的层挤在同样高度里按比例压扁（时间轴总高有限，不能无限长）。 */
+const MEDIA_LANE_MAX = 3
 type TrackDef = {
-  key: 'ruler' | 'film' | 'shots' | 'caption' | 'bgm' | 'beats'
+  key: 'ruler' | 'film' | 'shots' | 'media' | 'caption' | 'bgm' | 'beats'
   name: string
   h: number
   compact: boolean
   /** talk 独有的轨（口播底片）——其余六模板没有视频层，这一轨不渲染也不占高度。 */
   talkOnly?: boolean
+  /** 有素材层时才出的轨（＋素材加的图片/形状、kit logo）。没有素材层就不渲染也不占高度。 */
+  mediaOnly?: boolean
 }
 const TRACKS_ALL: TrackDef[] = [
   { key: 'ruler', name: '刻度', h: 20, compact: true },
   { key: 'film', name: '口播底片', h: 26, compact: true, talkOnly: true },
   { key: 'shots', name: '分镜', h: 46, compact: true },
+  // 素材轨的高度**按分道数变**（见 mediaTrackHeight），这里的 h 只是「一道」时的基准值
+  { key: 'media', name: '素材', h: MEDIA_LANE_H + 4, compact: true, mediaOnly: true },
   { key: 'caption', name: '字幕', h: 30, compact: false },
   { key: 'bgm', name: 'BGM', h: 30, compact: false },
   { key: 'beats', name: '卡点', h: 26, compact: true },
@@ -47,13 +55,33 @@ export function hasFilmTrack(spec: VideoSpec | null | undefined): boolean {
   return spec.template === 'talk' && spec.layers.some((l) => l.content.kind === 'video')
 }
 
+/** 这份 spec 需不需要素材轨：有至少一层 `media-*`（＋素材加的，或 kit 注入的 logo）。 */
+export function hasMediaTrack(spec: VideoSpec | null | undefined): boolean {
+  if (!spec || isUnsupported(spec)) return false
+  return spec.layers.some((l) => isMediaLayer(l.id))
+}
+
+/**
+ * 素材轨的高度：**按分道数长**，最多 MEDIA_LANE_MAX 道。素材层默认 start 0 / duration 全片，
+ * 三层就是三条完全重叠的条——固定高度下每条只剩几像素，点不着也读不出是谁。
+ * 与 `timelineHeight` 同源（EditorPage 的网格行高走的就是后者），两边不能各算各的。
+ */
+export function mediaTrackHeight(spec: VideoSpec | null | undefined): number {
+  if (!hasMediaTrack(spec)) return 0
+  const lanes = mediaLanes(spec!.layers.filter((l) => isMediaLayer(l.id))).count
+  return 4 + Math.min(MEDIA_LANE_MAX, Math.max(1, lanes)) * MEDIA_LANE_H
+}
+
 /**
  * 时间轴容器高度。**EditorPage 的网格行高与本组件的 section 高度必须同源**——两边各写各的，
  * talk 多出来的那一轨就会溢出网格行（时间轴被下一块盖住半条卡点轨）。
+ * 素材轨同理：它按「有没有素材层」出现，加层的那一刻高度就得跟着长。
  */
 export function timelineHeight(spec: VideoSpec | null | undefined, compact: boolean): number {
   const base = compact ? TIMELINE_H_COMPACT : TIMELINE_H
-  return base + (hasFilmTrack(spec) ? TRACKS_ALL.find((t) => t.key === 'film')!.h : 0)
+  const extra = (hasFilmTrack(spec) ? TRACKS_ALL.find((t) => t.key === 'film')!.h : 0)
+    + mediaTrackHeight(spec)
+  return base + extra
 }
 /** Clip 高 38 = 轨 46 减上下 padding 4（§5）。 */
 const CLIP_H = 38
@@ -70,9 +98,26 @@ type Drag =
   | { mode: 'resize'; shot: ShotView; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
   /** talk 口播底片的两端裁剪。`edge` 决定 δ 的符号换算，见 `onDragMove`。 */
   | { mode: 'trim'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; edge: 'start' | 'end' }
-  /** talk 手动字幕的挪位 / 改时长（普通图层口径：moveLayer / resizeLayer）。 */
-  | { mode: 'cap-move'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseStart: number; beats: number[] }
-  | { mode: 'cap-resize'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
+  /** 单层的挪位 / 改时长（普通图层口径：moveLayer / resizeLayer）。talk 手动字幕与素材层共用。 */
+  | { mode: 'lyr-move'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseStart: number; beats: number[] }
+  | { mode: 'lyr-resize'; base: VideoSpec; startX: number; pxPerSec: number; layerId: string; baseDuration: number }
+
+/**
+ * 素材条的分道：时间上重叠的层各占一道。素材层默认 start 0 / duration 全片，两层同挤一道会
+ * **完全重叠**，下面那层点都点不着；贪心取第一条已经空出来的道（按 start 排序遍历）。
+ */
+function mediaLanes(layers: Layer[]): { of: (id: string) => number; count: number } {
+  const ends: number[] = []
+  const lane = new Map<string, number>()
+  for (const l of [...layers].sort((a, b) => a.start - b.start)) {
+    // 1e-6 容差：`round3` 之后「上一层的右缘」与「这一层的左缘」可能差一个浮点尾数
+    let i = ends.findIndex((e) => e <= l.start + 1e-6)
+    if (i < 0) { i = ends.length; ends.push(0) }
+    ends[i] = l.start + l.duration
+    lane.set(l.id, i)
+  }
+  return { of: (id: string) => lane.get(id) ?? 0, count: Math.max(1, ends.length) }
+}
 
 /**
  * 底部时间轴（实施说明 §4/§5）。容器 186：头 32 + 刻度 20 + 分镜 46 + 字幕 30 + BGM 30 + 卡点 26 = 184。
@@ -115,9 +160,6 @@ export default function TimelinePane({
   /** talk 才有底片轨与可编辑字幕轨；判定同 `hasFilmTrack`（EditorPage 算行高用的也是它）。 */
   const isTalk = hasFilmTrack(usable)
   const film = useMemo(() => (isTalk ? usable!.layers.find((l) => l.content.kind === 'video') ?? null : null), [usable, isTalk])
-  const TRACKS = TRACKS_ALL.filter((t) => (!t.talkOnly || isTalk) && (!compact || t.compact))
-  const trackH = (key: TrackDef['key']) => TRACKS_ALL.find((t) => t.key === key)!.h
-  const containerH = timelineHeight(usable, !!compact)
   const allShots = useMemo(() => (usable ? deriveShots(usable) : []), [usable])
   /** 分镜轨只排非底片的分镜：底片自己占一轨（见组件头注释）。 */
   const shots = useMemo(
@@ -128,6 +170,24 @@ export default function TimelinePane({
     () => (usable ? usable.layers.filter((l) => l.content.kind === 'caption') : []),
     [usable],
   )
+  /** 素材层（`media-*`）：自成一轨，可拖挪位、拖右缘改时长。判据与 `removeMediaLayer` 同源。 */
+  const medias = useMemo(
+    () => (usable ? usable.layers.filter((l) => isMediaLayer(l.id)) : []),
+    [usable],
+  )
+  const hasMedia = medias.length > 0
+  /** 当前选中的素材层（选中的是别的层、或这一层已被删/撤销掉时为 null）。头部删除按钮的判据。 */
+  const selectedMedia = medias.find((l) => l.id === selectedLayerId) ?? null
+  /** 重叠的素材层分道摆放（全片铺满的两层若同挤一道就会完全重叠，点都点不着下面那层）。 */
+  const lanes = useMemo(() => mediaLanes(medias), [medias])
+  const TRACKS = TRACKS_ALL.filter(
+    (t) => (!t.talkOnly || isTalk) && (!t.mediaOnly || hasMedia) && (!compact || t.compact),
+  )
+  // 素材轨的高度按分道数变，其余轨走 TRACKS_ALL 的定值
+  const trackH = (key: TrackDef['key']) => (
+    key === 'media' ? mediaTrackHeight(usable) : TRACKS_ALL.find((t) => t.key === key)!.h
+  )
+  const containerH = timelineHeight(usable, !!compact)
   const duration = usable?.durationSec ?? 0
   const beatGrid = usable?.audio.beatGrid ?? null
   const beats = useMemo(() => allBeats(beatGrid, duration), [beatGrid, duration])
@@ -212,14 +272,18 @@ export default function TimelinePane({
     capture(e.pointerId)
   }
 
-  /** talk 手动字幕：右缘热区＝改时长，其余＝挪位（与分镜 Clip 同一套口径）。 */
-  function startCaptionDrag(e: ReactPointerEvent, layer: { id: string; start: number; duration: number }, mode: 'cap-move' | 'cap-resize') {
+  /**
+   * 单层拖拽：右缘热区＝改时长，其余＝挪位（与分镜 Clip 同一套口径）。
+   * talk 手动字幕与素材层共用——两者都是「自己一层、自己一轨」，`moveLayer`/`resizeLayer`
+   * 的同轨邻居钳制对它们是天然满足的。
+   */
+  function startLayerDrag(e: ReactPointerEvent, layer: { id: string; start: number; duration: number }, mode: 'lyr-move' | 'lyr-resize') {
     if (!usable) return
     ed.commit()
     const r = areaRef.current?.getBoundingClientRect()
     if (!r || r.width === 0 || duration <= 0) return
     const pxPerSec = r.width / duration
-    dragRef.current = mode === 'cap-resize'
+    dragRef.current = mode === 'lyr-resize'
       ? { mode, base: usable, startX: e.clientX, pxPerSec, layerId: layer.id, baseDuration: layer.duration }
       : {
         mode, base: usable, startX: e.clientX, pxPerSec, layerId: layer.id, baseStart: layer.start,
@@ -239,12 +303,12 @@ export default function TimelinePane({
       ed.applyTransient(trimVideoLayer(d.base, d.layerId, d.edge, d.edge === 'start' ? deltaSec : -deltaSec))
       return
     }
-    if (d.mode === 'cap-move') {
+    if (d.mode === 'lyr-move') {
       const snapped = snapToBeats(d.beats, Math.max(0, d.baseStart + deltaSec), SNAP_SEC)
       ed.applyTransient(moveLayer(d.base, d.layerId, snapped))
       return
     }
-    if (d.mode === 'cap-resize') {
+    if (d.mode === 'lyr-resize') {
       ed.applyTransient(resizeLayer(d.base, d.layerId, d.baseDuration + deltaSec))
       return
     }
@@ -398,6 +462,24 @@ export default function TimelinePane({
   }
 
   /**
+   * 删掉当前选中的素材层（时间轴头部的「删除」）。与 ShotList 的素材行同一条链路：
+   * 显式 confirm → `removeMediaLayer` → 一步 undo。这里是「在时间轴上选中了它」时的就近入口。
+   */
+  async function doRemoveMedia(layerId: string) {
+    const label = usable?.layers.find((l) => l.id === layerId)
+    const name = label ? mediaLayerLabel(label) : null
+    const what = name ? (name.name ? `${name.kind}「${name.name}」` : name.kind) : '这一层'
+    if (!(await confirm({ title: `删除${what}？`, body: '这一层会从画面上移除（⌘/Ctrl+Z 可撤销）。', danger: true }))) return
+    // await 期间用户可能已经撤销/切了内容项：重新从 ed.spec 取，别用捕获的旧引用
+    const cur = ed.spec
+    if (!cur || !cur.layers.some((l) => l.id === layerId)) { onNotice('这一层已经不在了'); return }
+    ed.commit()
+    ed.apply(removeMediaLayer(cur, layerId))
+    onSelectLayer(null)
+    onNotice('已删除素材层（⌘/Ctrl+Z 可撤销）')
+  }
+
+  /**
    * 就地改字提交。值没变就不 apply——点一下失焦不该占掉一格 undo。
    * **清空即删**：手动字幕清空文本＝删掉这一层（否则会留下一条看不见、也没有删除入口的空层）。
    * 五模板 TTS 的字幕层不走这条（它们与旁白一一对应，删了就对不上），空文本时丢弃编辑保留旧文本。
@@ -431,7 +513,20 @@ export default function TimelinePane({
       >
         <span className="font-mono text-[12px] tabular-nums text-[var(--fc-ink)]">{fmtTimecode(currentSec)}</span>
         <span className="font-mono text-[10px] text-[var(--fc-faint)]">/ {fmtTimecode(duration)}</span>
-        <span className="ml-auto font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
+        {/* 选中的是**还在的**素材层时，头部出一个就近的删除入口（分镜/字幕层不出——它们与文案一一
+            对应）。判「还在」不只判前缀：删掉/撤销掉之后 selectedLayerId 还挂着旧 id，
+            只判前缀会留下一个点了只会说「这一层已经不在了」的按钮。 */}
+        {selectedMedia && (
+          <button
+            className={`${OUTLINE} ml-auto !px-2 !py-0.5 !text-[11px]`}
+            disabled={ed.busy}
+            title="删掉选中的这一层素材（可撤销）"
+            onClick={() => void doRemoveMedia(selectedMedia.id)}
+          >删除素材层</button>
+        )}
+        <span className={`font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)] ${
+          selectedMedia ? 'ml-2' : 'ml-auto'
+        }`}>
           {!usable
             ? '时间轴'
             : isTalk
@@ -452,7 +547,8 @@ export default function TimelinePane({
               <div
                 key={t.key}
                 className="flex items-center border-b border-[var(--fc-track)] px-3 font-mono text-[10px] text-[var(--fc-muted)]"
-                style={{ height: t.h, boxSizing: 'border-box' }}
+                // 高度走 `trackH` 而不是 `t.h`：素材轨的高度按分道数变，直接读定值会与轨道行错位
+                style={{ height: trackH(t.key), boxSizing: 'border-box' }}
               >
                 {t.name}
               </div>
@@ -525,6 +621,54 @@ export default function TimelinePane({
               ))}
             </div>
 
+            {/* 素材轨 26（有素材层才出）：＋素材加的图片/形状与 kit logo，拖挪位、拖右缘改时长 */}
+            {hasMedia && (
+              <div
+                className="relative border-b border-[var(--fc-track)]"
+                style={{ height: trackH('media'), boxSizing: 'border-box' }}
+              >
+                {medias.map((l) => {
+                  const label = mediaLayerLabel(l)
+                  // 分道后每道的高度：轨高减上下 2px 边距再均分，最矮 6px（再矮就点不着了）
+                  const laneH = Math.max(6, Math.floor((trackH('media') - 4) / lanes.count))
+                  const barH = Math.max(6, laneH - 2)
+                  return (
+                    <div
+                      key={l.id}
+                      title={`${label.kind}${label.name ? ` · ${label.name}` : ''}——拖动挪位，拖右缘改时长`}
+                      onPointerDown={(e) => {
+                        e.stopPropagation()
+                        onSelectLayer(l.id)
+                        seekToSec(l.start)
+                        const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        startLayerDrag(e, l, box.right - e.clientX <= EDGE_PX ? 'lyr-resize' : 'lyr-move')
+                      }}
+                      className={`absolute cursor-grab overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-none ${
+                        selectedLayerId === l.id
+                          ? 'bg-[var(--fc-accent-tint)] text-[var(--fc-accent-deep)]'
+                          : 'bg-[var(--fc-sunken)] text-[var(--fc-muted)]'
+                      }`}
+                      style={{
+                        left: pct(l.start), width: pct(l.duration),
+                        top: 2 + lanes.of(l.id) * laneH, height: barH,
+                        display: 'flex', alignItems: 'center',
+                        boxSizing: 'border-box',
+                        border: dragId === l.id
+                          ? '1px dashed var(--fc-accent)'
+                          : selectedLayerId === l.id ? '1px solid var(--fc-accent)' : '1px solid var(--fc-line)',
+                      }}
+                    >
+                      {label.name || label.kind}
+                      <span
+                        className="absolute right-0 top-0 h-full cursor-ew-resize"
+                        style={{ width: EDGE_PX, boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             {/* 字幕轨 30：细条。五模板下只显示+点选（跟随旁白，拖了就错位）；
                 talk 下可拖 / 可改时长 / 空白双击加字幕 / 双击条目就地改字。<1040 隐藏（§4） */}
             {!compact && (
@@ -552,7 +696,7 @@ export default function TimelinePane({
                       onSelectLayer(l.id)
                       seekToSec(l.start)
                       const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                      startCaptionDrag(e, l, box.right - e.clientX <= EDGE_PX ? 'cap-resize' : 'cap-move')
+                      startLayerDrag(e, l, box.right - e.clientX <= EDGE_PX ? 'lyr-resize' : 'lyr-move')
                     }}
                     className={`absolute overflow-hidden truncate rounded-[var(--fc-r-xs)] px-1 text-[9px] leading-[14px] ${
                       isTalk ? 'cursor-grab' : 'cursor-pointer'

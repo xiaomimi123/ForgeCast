@@ -4,17 +4,18 @@
 // 样式改由 index.css 用 `@import ... layer(forgecast-compositions)` 引入，见那里的注释。
 // **别顺手改回包入口**——子项目②的 Critical 就是这么来的。
 import { SpecComposition } from '@forgecast/compositions/src/SpecComposition'
+import type { VideoSpec } from '@forgecast/compositions/src/videospec-types'
 import { FPS, secToFrames } from '@forgecast/compositions/src/time'
 import { Player, type PlayerRef } from '@remotion/player'
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react'
-import { applyLayoutTemplate, extractLayoutTemplate } from '@forgecast/editing'
+import { addImageLayer, addShapeLayer, applyLayoutTemplate, extractLayoutTemplate, setLayerStyle } from '@forgecast/editing'
 // 深导入 `src/brand-kit`（而非包入口 `@forgecast/studio`）：入口把 @remotion/renderer、
 // better-sqlite3 这些 Node 侧的东西一并拉进来，浏览器包里放不下也跑不了。brand-kit.ts 自己
 // 只 `import type` videospec，是一支纯函数——同 `@forgecast/compositions/src/SpecComposition`
 // 的深导入先例。**别顺手改成包入口**。
 import { applyBrandKit } from '@forgecast/studio/src/brand-kit'
-import { api, createLayoutTemplate, getBrandKit, listLayoutTemplates, type Asset, type BgmList, type ContentItemView, type LayoutTemplate } from '../../../api'
+import { addMediaAsset, api, createLayoutTemplate, getBrandKit, listLayoutTemplates, type Asset, type BgmList, type ContentItemView, type LayoutTemplate } from '../../../api'
 import { StatusTag } from '../../../components/ContentCard'
 import { useConfirm } from '../../../components/ui/Confirm'
 import { usePrompt } from '../../../components/ui/Prompt'
@@ -23,6 +24,7 @@ import type { TaskRun } from '../../../useTaskRun'
 import CanvasOverlay from './CanvasOverlay'
 import InspectorPane from './InspectorPane'
 import QueuePane from './QueuePane'
+import MediaPicker, { type MediaPick } from './MediaPicker'
 import ShotList from './ShotList'
 import TimelinePane, { timelineHeight } from './TimelinePane'
 import { OUTLINE, SOLID, type VideoParams } from './ui'
@@ -51,6 +53,8 @@ const NARROW_PX = 1240
  */
 const NARROW_LEFT_PX = 1040
 const MID_MIN = 560
+/** 新加形状层的默认底色（--fc-accent 的字面量；spec 里只能存具体颜色，不能存 CSS 变量）。 */
+const SHAPE_DEFAULT_BG = '#C13A1B'
 /** 9:16 画布：高度由 mat 高减上下留白得出，宽 = 高 × 0.5625 */
 const CANVAS_H = MAT_H - MAT_PAD * 2
 const CANVAS_W = Math.round(CANVAS_H * 0.5625)
@@ -116,6 +120,13 @@ export default function EditorPage({
   /** 「版式」下拉（存版式 / 套版式 / 应用品牌 kit）。与 ⋯ 各自独立一份开合 + 各自的外点关闭。 */
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false)
   const layoutMenuRef = useRef<HTMLDivElement>(null)
+  /** 「＋素材」下拉（图片… / 矩形 / 圆形 / 线条）。同「版式」款：自己一份开合 + 自己的外点关闭。 */
+  const [mediaMenuOpen, setMediaMenuOpen] = useState(false)
+  const mediaMenuRef = useRef<HTMLDivElement>(null)
+  /** 素材选择弹层开着吗（「图片…」开它）。 */
+  const [pickerOpen, setPickerOpen] = useState(false)
+  /** 「拷进素材包 → 加层」这条链路在途：弹层整体禁用，避免连点加出两层。 */
+  const [mediaBusy, setMediaBusy] = useState(false)
   const { prompt, element: promptEl } = usePrompt()
   const [notice, setNotice] = useState<string | null>(null)
   /**
@@ -149,6 +160,7 @@ export default function EditorPage({
   // 换内容项时复位这条内容独有的临时状态
   useEffect(() => {
     setCurrentSec(0); setMenuOpen(false); setLayoutMenuOpen(false); setNotice(null); setResetUnavailable(false); setSelectedLayerId(null)
+    setMediaMenuOpen(false); setPickerOpen(false)
   }, [videoId])
   const bumpSpecEpoch = useCallback(() => setSpecEpoch((v) => v + 1), [])
 
@@ -171,6 +183,15 @@ export default function EditorPage({
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [layoutMenuOpen])
+
+  useEffect(() => {
+    if (!mediaMenuOpen) return
+    function onDown(e: MouseEvent) {
+      if (!mediaMenuRef.current?.contains(e.target as Node)) setMediaMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [mediaMenuOpen])
 
   // 播放头：Player 的 frameupdate 是 imperative API，只能在 ref 就绪后订阅
   useEffect(() => {
@@ -296,6 +317,67 @@ export default function EditorPage({
   )
   /** 三个版式动作共用的闸门：没 spec / 正在存盘 / 服务端读改写在途时全都点不动。 */
   const layoutLocked = !ed.spec || ed.saving || ed.busy || busy
+
+  /**
+   * 「＋素材」的闸门。比版式多两条：
+   * - `isUnsupported`（custom-* / 空图层）：那份 spec 没有图层模型，加进去的层不会被渲染，
+   *   是典型的「零报错坏结果」；
+   * - `videoId`：图片要先拷进 `hf/<videoId>/assets/media/`，没有素材包就没地方放。
+   *   形状层其实不需要素材包，但两者共用一个入口按钮，取严的那一档更好解释。
+   */
+  const mediaLocked = layoutLocked || !videoId || !ed.spec || isUnsupported(ed.spec) || mediaBusy
+
+  /** 加一层素材后的公共收尾：新层恒在数组末尾（两支 add* 都是 concat），选中它并给回执。 */
+  function afterAddMedia(next: VideoSpec, what: string) {
+    ed.apply(next)
+    const added = next.layers[next.layers.length - 1]
+    setSelectedLayerId(added.id)
+    setNotice(`已加${what}（画布上可拖/缩，⌘/Ctrl+Z 可撤销）`)
+  }
+
+  /**
+   * 矩形 / 圆形 / 线条：零请求，直接加一层居中的形状（一次加层＝一步 undo）。
+   *
+   * **加完顺手补一个底色**（同一次 `apply`，仍是一步 undo）：`.shape` 两端的基类 CSS 只管圆角，
+   * `style.bg` 不给就是完全透明——加完只看得见选中框、画面上什么都没有，是典型的
+   * 「点了没反应」。默认取 accent 而不是墨色/白：六个模板的背景有深有浅，这一支在两边都看得见。
+   * 用户在右栏「底色」里换成别的即可（`overridden` 已由 addShapeLayer 置位，刷 kit 不会覆盖）。
+   */
+  function doAddShape(shape: 'rect' | 'ellipse' | 'line', label: string) {
+    const spec = ed.spec
+    if (!spec) return
+    // 先收掉别处可能还没收尾的 transient 序列（数字框正在编辑时点菜单），免得挤进同一格 undo
+    ed.commit()
+    const withShape = addShapeLayer(spec, shape)
+    const added = withShape.layers[withShape.layers.length - 1]
+    // 「圆形」不在这里写 radius：radius 只接受 px，非正方形时只能得到胶囊形。真椭圆由两端的
+    // `.shape-ellipse { border-radius: 50% }` 基类 CSS 负责（compositions base.css + studio FX_CSS）。
+    afterAddMedia(setLayerStyle(withShape, added.id, { bg: SHAPE_DEFAULT_BG }), label)
+  }
+
+  /**
+   * 选中一份图片素材：先 `POST media-asset` 把它**拷进这条视频的素材包**（返回相对 src），
+   * 再 `addImageLayer`。顺序不能反——先加层再拷贝的话，拷贝失败就留下一层指向不存在文件的图层，
+   * 预览是空白、渲染时才炸。
+   */
+  async function doAddImage(pick: MediaPick, name: string) {
+    const spec = ed.spec
+    if (!spec || !videoId) return
+    setMediaBusy(true)
+    try {
+      const { src } = await addMediaAsset(selected, videoId, pick)
+      // await 期间用户可能切了内容项 / 撤销过：重新从 ed.spec 取当前那一份再加层
+      const cur = ed.spec
+      if (!cur || isUnsupported(cur)) { setNotice('素材已进包，但当前内容已切换，未加图层'); return }
+      ed.commit()
+      afterAddMedia(addImageLayer(cur, src), `图片「${name}」`)
+      setPickerOpen(false)
+    } catch (e) {
+      setNotice(`加图片失败：${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setMediaBusy(false)
+    }
+  }
 
   async function doSaveLayout() {
     const spec = ed.spec
@@ -459,6 +541,27 @@ export default function EditorPage({
               {ed.saving && <span className="font-mono text-[10px] text-[var(--fc-faint)]">保存中…</span>}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              <div className="relative" ref={mediaMenuRef}>
+                <button className={OUTLINE} disabled={mediaLocked}
+                  onClick={() => setMediaMenuOpen((v) => !v)}
+                  title={mediaLocked ? '这条内容还没有可编辑的素材包' : '加一层图片 / 矩形 / 圆形 / 线条'}>＋素材</button>
+                {mediaMenuOpen && (
+                  <div className="absolute right-0 z-20 mt-1 w-52 rounded-[var(--fc-r-sm)] border border-[var(--fc-line-2)] bg-[var(--fc-surface-2)] py-1 text-sm shadow-lg">
+                    <button className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)]"
+                      title="从本项目上传图 / 截图里挑一张，或现传一张"
+                      onClick={() => { setMediaMenuOpen(false); setPickerOpen(true) }}>图片…</button>
+                    <div className="mt-1 border-t border-[var(--fc-line)] pt-1">
+                      {([
+                        ['rect', '矩形'], ['ellipse', '圆形'], ['line', '线条'],
+                      ] as const).map(([shape, label]) => (
+                        <button key={shape} className="block w-full px-3 py-1.5 text-left hover:bg-[var(--fc-bg)]"
+                          title="加一层居中的形状，颜色 / 圆角 / 透明在右栏图层检查器里调"
+                          onClick={() => { setMediaMenuOpen(false); doAddShape(shape, label) }}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="relative" ref={layoutMenuRef}>
                 <button className={OUTLINE} disabled={layoutLocked}
                   onClick={() => setLayoutMenuOpen((v) => !v)}
@@ -597,6 +700,14 @@ export default function EditorPage({
       )}
 
       {transitionExtras}
+      {/* 素材选择弹层：只在有素材包（videoId）时挂——它的每一条路径都要往包里拷文件 */}
+      {pickerOpen && videoId && (
+        <MediaPicker
+          slug={selected} busy={mediaBusy}
+          onPick={(pick, name) => { void doAddImage(pick, name) }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
       {confirmEl}
       {promptEl}
     </div>

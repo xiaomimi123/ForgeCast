@@ -1,11 +1,11 @@
 import { secToFrames } from '@forgecast/compositions/src/time'
 import type { Layer, VideoSpec } from '@forgecast/compositions/src/videospec-types'
-import { addManualBeat, deriveShots, removeCaptionLayer, updateLayerText, type ShotView } from '@forgecast/editing'
+import { addManualBeat, deriveShots, removeCaptionLayer, removeMediaLayer, updateLayerText, type ShotView } from '@forgecast/editing'
 import type { PlayerRef } from '@remotion/player'
 import { useEffect, useMemo, useState, type RefObject } from 'react'
 import type { ConfirmOpts } from '../../../components/ui/Confirm'
 import { isUnsupported } from '../../../lib/rebase'
-import { isManualCaption, OUTLINE } from './ui'
+import { isManualCaption, isMediaLayer, mediaLayerLabel, OUTLINE } from './ui'
 import type { useEditorState } from './useEditorState'
 
 /**
@@ -101,6 +101,15 @@ export default function ShotList({
       : []),
     [usable],
   )
+  /**
+   * 素材层（`media-*`：＋素材加的图片/形状，以及出片期按品牌 kit 注入的 `media-logo`）。
+   * 它们 `from` 为 null，不进 `deriveShots`，所以自成一段列出来——这也是**唯一**的删除入口
+   * （图片没有文本，走不了字幕那条「清空即删」）。按 track 排：与画布上的层叠顺序一致。
+   */
+  const medias = useMemo(
+    () => (usable ? usable.layers.filter((l) => isMediaLayer(l.id)).sort((a, b) => a.track - b.track) : []),
+    [usable],
+  )
   /** 全列唯一 active（§5）。存 sectionId 而非索引：重写 / 撤销后段序不变但内容会变，索引会指错行。 */
   const [activeId, setActiveId] = useState<string | null>(null)
   /**
@@ -172,6 +181,22 @@ export default function ShotList({
     if (next === spec) { onNotice(`${fmtTimecode(shot.startSec)} 处已经有卡点了`); return }
     ed.apply(next)
     onNotice(`已在 ${fmtTimecode(shot.startSec)} 加卡点`)
+  }
+
+  /**
+   * 删一层素材。**显式 confirm**：这一层可能是用户拖了半天才摆好的图，误点一次代价不小；
+   * 撤销栈能救回来，但用户未必知道自己刚删了什么（图片在画面外时删掉毫无视觉反馈）。
+   */
+  async function doRemoveMedia(layerId: string, label: string) {
+    if (!(await confirm({ title: `删除${label}？`, body: '这一层会从画面上移除（⌘/Ctrl+Z 可撤销）。', danger: true }))) return
+    // await 期间用户可能已经撤销/切了内容项：重新从 ed.spec 取，别用捕获的旧引用
+    const cur = ed.spec
+    if (!cur || !cur.layers.some((l) => l.id === layerId)) { onNotice('这一层已经不在了'); return }
+    ed.commit()
+    ed.apply(removeMediaLayer(cur, layerId))
+    if (activeId === layerId) setActiveId(null)
+    onSelectLayer(null)
+    onNotice('已删除素材层（⌘/Ctrl+Z 可撤销）')
   }
 
   async function doRewrite(shot: ShotView) {
@@ -278,6 +303,34 @@ export default function ShotList({
           ))}
         </div>
 
+        {/* 素材层：＋素材加的图片/形状（含 kit logo）。行内带删除——它们没有文本，删不了「清空即删」 */}
+        {medias.length > 0 && (
+          <div className="mt-3">
+            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wide text-[var(--fc-muted)]">
+              素材图层 <span className="text-[var(--fc-faint)]">· {medias.length} 层</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {medias.map((l) => {
+                const label = mediaLayerLabel(l)
+                return (
+                  <MediaRow
+                    key={l.id}
+                    layer={l}
+                    active={activeId === l.id}
+                    locked={ed.busy}
+                    onSelect={() => {
+                      if (activeId !== l.id) { commitDraft(); setActiveId(l.id); setDraft(null) }
+                      onSelectLayer(l.id)
+                      playerRef.current?.seekTo(secToFrames(l.start))
+                    }}
+                    onRemove={() => void doRemoveMedia(l.id, label.name ? `${label.kind}「${label.name}」` : label.kind)}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* talk 手动字幕：与分镜行同一套编辑口径（草稿 → 失焦/⌘Enter → updateLayerText） */}
         {film && (
           <div className="mt-3">
@@ -350,6 +403,50 @@ function FilmRow({ layer, active, onSelect }: { layer: Layer; active: boolean; o
         <p className="mt-1 text-[11px] leading-relaxed text-[var(--fc-faint)]">
           在时间轴底片轨拖两端裁剪；右栏图层检查器里可以数字微调裁头 / 裁尾 / 音量。
         </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 一行素材层：类型 + 文件名 + 起止，展开后出「删除」。
+ * 它没有可改的文本——位置/尺寸在画布上拖，颜色/特效在右栏检查器里调，这一行只管**定位与删除**。
+ */
+function MediaRow({ layer, active, locked, onSelect, onRemove }: {
+  layer: Layer
+  active: boolean
+  /** 服务端读改写在途（ed.busy）：删层会让本地 spec 与在途那次读改写的输入分叉，先别动。 */
+  locked: boolean
+  onSelect: () => void
+  onRemove: () => void
+}) {
+  const label = mediaLayerLabel(layer)
+  return (
+    <div
+      onClick={onSelect}
+      className={`cursor-pointer rounded-[var(--fc-r-sm)] border border-[var(--fc-line)] ${
+        active ? 'bg-[var(--fc-surface-2)]' : 'bg-[var(--fc-bg)] hover:border-[var(--fc-line-2)]'
+      }`}
+      style={{ padding: active ? 11 : '9px 11px', borderLeft: active ? '3px solid var(--fc-accent)' : undefined }}
+    >
+      <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--fc-faint)]">
+        <span>{fmtTimecode(layer.start)}</span>
+        <span className="rounded-[var(--fc-r-xs)] bg-[var(--fc-sunken)] px-1.5 py-0.5 text-[var(--fc-muted)]">{label.kind}</span>
+        <span className="ml-auto">{layer.duration.toFixed(1)}s</span>
+      </div>
+      <p className="mt-1 truncate text-sm text-[var(--fc-ink)]" title={label.name || layer.id}>
+        {label.name || <span className="text-[var(--fc-faint)]">{layer.id}</span>}
+      </p>
+      {active && (
+        <div className="mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          <button
+            className={`${OUTLINE} !py-1 !text-xs`}
+            disabled={locked}
+            title="把这一层从画面上移除（可撤销）"
+            onClick={onRemove}
+          >删除</button>
+          <span className="text-[11px] text-[var(--fc-faint)]">画布上拖/缩改位置与大小；颜色与特效在右栏</span>
+        </div>
       )}
     </div>
   )

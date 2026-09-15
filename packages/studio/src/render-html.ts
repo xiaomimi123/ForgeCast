@@ -105,6 +105,14 @@ function encodePathForUrl(src: string): string {
   return src.split('/').map((seg) => encodeURIComponent(seg)).join('/')
 }
 
+/** 裸 <img> 的自适配声明串。与 compositions 端 `imgFit()` 逐字等价，见下方 renderImageContent 注释。 */
+function imgFitAttr(style: LayerStyle): string {
+  if (style.width === undefined && style.height === undefined) return ''
+  const w = style.width !== undefined ? '100%' : 'auto'
+  const h = style.height !== undefined ? '100%' : 'auto'
+  return ` style="display:block;width:${w};height:${h};object-fit:contain"`
+}
+
 /**
  * demo 轮播图承袭原 buildDemoSections 的两种取景框（phoneWrap 竖图套手机外框 / wideWrap 横图
  * 居中+同图虚化背景）——cssClass 由 lower() 按 shot.orientation 写好，这里只按名字分流结构，
@@ -122,8 +130,14 @@ function encodePathForUrl(src: string): string {
  * 安全性（空格/`#`/`?`/`%` 等，逐段编码保留 `/`），`escapeHtml` 处理 HTML 属性安全性，两者管
  * 不同的问题、缺一不可，且顺序固定是先编码 URL 再转义 HTML——颠倒顺序会把编码产出的 `%` 又喂给
  * `escapeHtml`（那不转义 `%`，无害，但顺序仍按这个来，不做无谓的偏离）。
+ *
+ * 裸 <img> 分支额外拼一段自适配声明（imgFitAttr），让素材层的图撑到 .clip 外框设定的
+ * width/height 里、等比 contain。**只作用于裸分支 ⟺ 只作用于素材层**：demo 截图层在 lower()
+ * 里恒被写 phoneWrap/wideWrap，永远走不到裸分支，模板既有版式零变化。声明串与 compositions 端
+ * `imgFit()`（packages/compositions/src/Image.tsx）逐字等价，两端必须同改——沿 geom() ↔
+ * styleAttr() 那对的先例。
  */
-function renderImageContent(src: string, cssClass: string | undefined): string {
+function renderImageContent(src: string, cssClass: string | undefined, style: LayerStyle): string {
   const safeSrc = escapeHtml(encodePathForUrl(src))
   if (cssClass === 'phoneWrap') {
     return `<div class="phoneWrap"><div class="phone"><img src="${safeSrc}"/></div></div>`
@@ -131,7 +145,7 @@ function renderImageContent(src: string, cssClass: string | undefined): string {
   if (cssClass === 'wideWrap') {
     return `<div class="wideWrap"><div class="wideBg" style="background-image:url('${safeSrc}')"></div><div class="wideFg"><img src="${safeSrc}"/></div></div>`
   }
-  return `<img src="${safeSrc}"/>`
+  return `<img src="${safeSrc}"${imgFitAttr(style)}/>`
 }
 
 function renderContent(layer: Layer): string {
@@ -140,7 +154,7 @@ function renderContent(layer: Layer): string {
     case 'caption':
       return renderTextContent(layer, layer.content.text)
     case 'image':
-      return renderImageContent(layer.content.src, layer.style.cssClass)
+      return renderImageContent(layer.content.src, layer.style.cssClass, layer.style)
     case 'shape':
       return `<div class="shape shape-${layer.content.shape}"></div>`
     case 'video':

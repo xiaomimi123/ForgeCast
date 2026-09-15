@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, getBrandKit, putBrandKit, type AutoScoutStatus, type BrandKitView, type Project, type SettingsView } from '../api'
+import { api, getBrandKit, imageAssetUrl, listImageAssets, putBrandKit, type AutoScoutStatus, type BrandKitView, type Project, type SettingsView } from '../api'
 
 // 可编辑草稿：key 字段留空=不改（占位显示已存打码值）
 interface Draft {
@@ -169,8 +169,9 @@ export default function SettingsPage() {
 
 // key 字段留空=不改，与顶部 Draft 同惯例；但这里空字段的语义更强——PUT 前会把空串键整个剔除
 // （见 buildPutBody），所以「清空再保存」＝把该字段从 kit 里删掉，回到未设置状态。
-interface KitDraft { primaryColor: string; accentColor: string; titleScale: string; ctaText: string }
-const emptyKitDraft: KitDraft = { primaryColor: '', accentColor: '', titleScale: '', ctaText: '' }
+// logoAssetId 也走「字符串草稿」：下拉的 value 只能是 string，空串＝不设 logo（PUT 时删键）。
+interface KitDraft { primaryColor: string; accentColor: string; titleScale: string; ctaText: string; logoAssetId: string }
+const emptyKitDraft: KitDraft = { primaryColor: '', accentColor: '', titleScale: '', ctaText: '', logoAssetId: '' }
 
 /** 空字段（含空串）不进 PUT body——服务端整体覆盖存储的 kit，不注入的键就等于清空该字段。 */
 function buildPutBody(d: KitDraft): BrandKitView {
@@ -179,6 +180,7 @@ function buildPutBody(d: KitDraft): BrandKitView {
   if (d.accentColor.trim()) body.accentColor = d.accentColor.trim()
   if (d.titleScale.trim()) body.titleScale = Number(d.titleScale)
   if (d.ctaText.trim()) body.ctaText = d.ctaText
+  if (d.logoAssetId.trim()) body.logoAssetId = Number(d.logoAssetId)
   return body
 }
 
@@ -208,9 +210,17 @@ function BrandKitSection() {
     queryFn: () => getBrandKit(selected),
     enabled: !!selected,
   })
+  // logo 只能选**本项目上传的图片**（服务端 PUT 也按这个口径校验），所以列表里把 shot 那一类滤掉。
+  const images = useQuery({
+    queryKey: ['image-assets', selected],
+    queryFn: () => listImageAssets(selected),
+    enabled: !!selected,
+  })
+  const uploads = (images.data ?? []).filter((a) => a.kind === 'upload' && typeof a.id === 'number')
   const [d, setD] = useState<KitDraft>(emptyKitDraft)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [logoGone, setLogoGone] = useState(false)
 
   // 载入（或切项目）后回填草稿；titleScale 数字转字符串，未设置的字段留空串。
   // 不在这里 setSaved(false)——save 成功后会 invalidate 查询触发这个 effect 再跑一次，
@@ -221,11 +231,24 @@ function BrandKitSection() {
     setD({
       primaryColor: k.primaryColor ?? '', accentColor: k.accentColor ?? '',
       titleScale: k.titleScale !== undefined ? String(k.titleScale) : '', ctaText: k.ctaText ?? '',
+      logoAssetId: k.logoAssetId !== undefined ? String(k.logoAssetId) : '',
     })
   }, [kit.data])
 
   // 切项目：单独清掉「已保存」提示与错误提示，不依赖 kit.data 那条 effect
-  useEffect(() => { setSaved(false); setError('') }, [selected])
+  useEffect(() => { setSaved(false); setError(''); setLogoGone(false) }, [selected])
+
+  // 死胡同兜底：kit 里存的 logoAssetId 对应的素材被删了（剪辑台「删除素材」），下拉里没有任何一项
+  // 能匹配上——select 的 value 落空会静默显示成第一项「不使用 logo」，用户看不出发生了什么，
+  // 保存时又会把这个"看着没变"的值原样写回去。这里显式把草稿归空并挂一句提示：所见即所存，
+  // 点保存就等于把这条失效的 logo 从 kit 里清掉。
+  // 只在 images 查询**成功**后判断——加载中/失败时 uploads 为空数组，那时候归空会误清。
+  useEffect(() => {
+    if (!images.isSuccess || !d.logoAssetId) return
+    if (uploads.some((a) => String(a.id) === d.logoAssetId)) return
+    setLogoGone(true)
+    setD((p) => ({ ...p, logoAssetId: '' }))
+  }, [images.isSuccess, images.data, d.logoAssetId])
 
   const set = (patch: Partial<KitDraft>) => { setD((p) => ({ ...p, ...patch })); setSaved(false); setError('') }
 
@@ -234,6 +257,9 @@ function BrandKitSection() {
     onSuccess: () => { setSaved(true); setError(''); qc.invalidateQueries({ queryKey: ['brand-kit', selected] }) },
     onError: (e) => { setSaved(false); setError(extractErrorMessage(e)) },
   })
+
+  const logoItem = uploads.find((a) => String(a.id) === d.logoAssetId)
+  const logoPreview = logoItem ? imageAssetUrl(selected, logoItem) : ''
 
   return (
     <section className="space-y-3 card-forge p-4">
@@ -272,6 +298,21 @@ function BrandKitSection() {
               <input className={inputCls} value={d.ctaText} onChange={(e) => set({ ctaText: e.target.value })} />
             </Field>
           </div>
+          <Field label="品牌 logo" hint="出片时贴到画面右上角；选「不使用」＝不贴">
+            <div className="flex items-center gap-2">
+              {logoPreview && <img src={logoPreview} alt="" className="h-8 w-8 shrink-0 rounded border-[1.5px] border-ink object-contain bg-card" />}
+              <select className={inputCls} value={d.logoAssetId} onChange={(e) => set({ logoAssetId: e.target.value })}>
+                <option value="">不使用 logo</option>
+                {uploads.map((a) => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+              </select>
+            </div>
+            {logoGone && (
+              <p className="mt-1 text-xs text-red-600">原 logo 素材已删除，已重置为「不使用 logo」——点保存即从 kit 里清掉，或另选一张。</p>
+            )}
+            {uploads.length === 0 && (
+              <p className="mt-1 text-xs text-faint">本项目还没有上传过图片素材——去剪辑台「＋素材」里上传一张，再回来选。</p>
+            )}
+          </Field>
           <div className="flex items-center gap-3">
             <button className="btn-fire px-4 py-1.5 text-sm disabled:opacity-50" disabled={save.isPending} onClick={() => save.mutate()}>保存</button>
             {saved && <span className="text-sm text-green-600">已保存</span>}

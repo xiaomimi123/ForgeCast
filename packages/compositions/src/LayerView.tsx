@@ -85,7 +85,7 @@ export function LayerView(
       inner = <TextContent layer={layer} text={layer.content.text} timeSec={timeSec} elemIndexBase={elemIndexBase} />
       break
     case 'image':
-      inner = <ImageContent src={layer.content.src} cssClass={layer.style.cssClass} />
+      inner = <ImageContent src={layer.content.src} cssClass={layer.style.cssClass} style={layer.style} />
       break
     case 'shape':
       inner = <div className={`shape shape-${layer.content.shape}`} />

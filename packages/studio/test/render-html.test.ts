@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderSpecToHtml } from '../src/render-html'
+import { FX_CSS } from '../src/hyperframes'
 
 const spec: any = {
   version: 1, videoId: 'v1', slug: 's', template: 'flash', createdAt: '',
@@ -33,7 +34,7 @@ const queryImgSrc = 'assets/a?b.png'
 const encodedQuerySrc = 'assets/a%3Fb.png'
 const subdirSrc = 'assets/screens/a b.png'
 const encodedSubdirSrc = 'assets/screens/a%20b.png'
-function imageSpec(cssClass: string, src: string): any {
+function imageSpec(cssClass: string | undefined, src: string, extraStyle: any = {}): any {
   return {
     version: 1, videoId: 'v1', slug: 's', template: 'demo', createdAt: '',
     semantic: { hook: null, sourceAssetId: null, sections: [] },
@@ -42,7 +43,7 @@ function imageSpec(cssClass: string, src: string): any {
     warnings: [],
     layers: [
       { id: 'car0', kind: 'image', from: null, overridden: false, start: 6, duration: 6, track: 2,
-        content: { kind: 'image', src }, style: { cssClass }, effects: [] },
+        content: { kind: 'image', src }, style: { cssClass, ...extraStyle }, effects: [] },
     ],
   }
 }
@@ -68,6 +69,24 @@ describe('renderSpecToHtml：图片路径的 URL 编码（Fix round 3/4）', () 
     const { html } = renderSpecToHtml(imageSpec('phoneWrap', subdirSrc))
     expect(html).toContain(`src="${encodedSubdirSrc}"`)
     expect(html).not.toContain('%2F') // / 不应该被编码
+  })
+})
+
+describe('renderSpecToHtml：素材层 <img> 自适配（裸 img 分支 ⟺ 素材层）', () => {
+  it('只设 width → width:100%;height:auto（等比）', () => {
+    const { html } = renderSpecToHtml(imageSpec(undefined, 'assets/m.png', { width: 200 }))
+    expect(html).toContain('<img src="assets/m.png" style="display:block;width:100%;height:auto;object-fit:contain"/>')
+  })
+  it('双维都设 → 两个 100% + object-fit:contain', () => {
+    const { html } = renderSpecToHtml(imageSpec(undefined, 'assets/m.png', { width: 200, height: 200 }))
+    expect(html).toContain('<img src="assets/m.png" style="display:block;width:100%;height:100%;object-fit:contain"/>')
+  })
+  it('门禁：phoneWrap/wideWrap 截图层的 img 上零内联样式（模板版式不受影响）', () => {
+    for (const cls of ['phoneWrap', 'wideWrap']) {
+      const { html } = renderSpecToHtml(imageSpec(cls, 'assets/m.png', { width: 200, height: 200 }))
+      expect(html).toContain('<img src="assets/m.png"/>')
+      expect(html).not.toContain('object-fit:contain')
+    }
   })
 })
 
@@ -179,5 +198,52 @@ describe('styleAttr：LayerStyle 新字段映射（特效库 Task 1）', () => {
     const { html } = renderSpecToHtml(styleSpec({ borderWidth: 1, borderColor: '"><script>' }))
     expect(html).not.toContain('"><script>')
     expect(html).toContain('&quot;&gt;&lt;script&gt;')
+  })
+})
+
+/**
+ * 素材图层入口 Task 1：line 形状渲染（`shape` case 未新增任何分支，`shape-${layer.content.shape}`
+ * 本就是通用拼接——`shape:'line'` 落地即渲成 `shape shape-line`，样式全由 style.bg/width/height
+ * 驱动，无新 CSS）。既有 shape fixture（rect/ellipse）零变化——见下方独立 it。
+ */
+describe('renderSpecToHtml：line 形状（素材图层入口 Task 1）', () => {
+  const shapeSpec = (shape: 'rect' | 'ellipse' | 'line', style: any): any => ({
+    version: 1, videoId: 'v1', slug: 's', template: 'flash', createdAt: '',
+    semantic: { hook: null, sourceAssetId: null, sections: [] },
+    canvas: { width: 1080, height: 1920 }, durationSec: 30,
+    audio: { narration: null, bgm: null, beatGrid: null, captionsEnabled: false },
+    warnings: [],
+    layers: [
+      { id: 'media-0', kind: 'shape', from: null, overridden: true, start: 0, duration: 30, track: 1,
+        content: { kind: 'shape', shape }, style, effects: [] },
+    ],
+  })
+
+  it('渲成 class="shape shape-line"，几何/底色走内联 style，无新 CSS 规则', () => {
+    const { html } = renderSpecToHtml(shapeSpec('line', { x: 240, y: 100, width: 600, height: 6, bg: '#fff' }))
+    expect(html).toContain('<div id="media-0" class="clip"')
+    expect(html).toContain('class="shape shape-line"')
+    expect(html).toContain('left:240px')
+    expect(html).toContain('top:100px')
+    expect(html).toContain('width:600px')
+    expect(html).toContain('height:6px')
+    expect(html).toContain('background:#fff')
+  })
+
+  it('既有 rect/ellipse shape 渲染不受影响（①②门禁：非 line 形状零变化）', () => {
+    for (const shape of ['rect', 'ellipse'] as const) {
+      const { html } = renderSpecToHtml(shapeSpec(shape, { width: 400, height: 240 }))
+      expect(html).toContain(`class="shape shape-${shape}"`)
+      expect(html).not.toContain('shape-line')
+    }
+  })
+
+  /**
+   * Task 4：「圆形」得是真椭圆。px 圆角（LayerStyle.radius 的口径）非正方形只能画出胶囊形，
+   * 真椭圆只有百分比圆角能表达，所以规则落在基类 CSS。与 compositions/test/content.test.tsx
+   * 里读 base.css 的同名断言配对——两端必须同改。
+   */
+  it('FX_CSS 有 .shape-ellipse 百分比圆角（真椭圆，与 compositions base.css 同规则）', () => {
+    expect(FX_CSS).toMatch(/\.clip:has\(>\s*\.shape-ellipse\)\s*\{[^}]*border-radius:\s*50%/)
   })
 })

@@ -211,6 +211,12 @@ export const FX_CSS = `
          绝不能换成 position:relative——模板类 .cap/.card/.chat/.phoneWrap 与 .clip 同特异性、
          本段源序在后，会把它们的绝对定位打回文档流。 */
       .clip { isolation: isolate; }
+      /* 形状层「圆形」基类（与 compositions/src/styles/base.css 同改，理由见那边注释）：
+         真椭圆只有百分比圆角能表达，LayerStyle.radius 是 px；圆角必须落在着色的外层
+         .clip 上（内层 .shape-* 不着色），故走 :has。
+         :has() 浏览器下限：Chrome 105+ / Safari 15.4+ / Firefox 121+——出片端 Chrome Headless
+         远高于下限，无虞；更老的浏览器只是退化成方角。 */
+      .clip:has(> .shape-ellipse) { border-radius: 50%; }
       .bg-grid { background: radial-gradient(1200px 900px at 50% 20%, rgba(34,98,168,.38), transparent 62%), radial-gradient(1100px 850px at 82% 92%, rgba(96,52,168,.30), transparent 60%), linear-gradient(165deg, #0a0e1a, #0d1117 55%, #080a11); }
       .bg-grid .mv { position: absolute; inset: -25%; background-image: linear-gradient(rgba(96,178,255,.11) 2px, transparent 2px), linear-gradient(90deg, rgba(96,178,255,.11) 2px, transparent 2px); background-size: 80px 80px; -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); mask-image: radial-gradient(circle at 50% 45%, #000 52%, transparent 84%); }
       .bg-grid .sweep { position: absolute; top: -50%; left: -30%; width: 55%; height: 200%; background: linear-gradient(105deg, transparent, rgba(120,200,255,.10), transparent); transform: skewX(-12deg); }
